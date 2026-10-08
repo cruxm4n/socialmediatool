@@ -86,7 +86,10 @@ test("sur mobile, les deux décisions restent accessibles en bas de l'écran", a
   await openPending(page, "nordwind-cycles", "essai-li");
   await expect(page.getByRole("button", { name: "Modifications", exact: true })).toBeInViewport();
   await expect(page.getByRole("button", { name: "Approuver" }).last()).toBeInViewport();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  for (const path of ["", "/calendrier", "/a-valider", "/publications", "/historique"]) {
+    await page.goto(`/client/nordwind-cycles${path}`, { waitUntil: "networkidle" });
+    expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), path).toBeLessThanOrEqual(0);
+  }
   await sofia.close();
 });
 
@@ -211,12 +214,17 @@ test("un brouillon devient visible du client quand le tag est posé dans Buffer,
   await syncViaApi(request);
   await page.reload();
   await expect(postLink(page, "entretien-ig")).toBeVisible();
+  const detailUrl = (await postLink(page, "entretien-ig").getAttribute("href"))!;
 
   await mockBuffer(request, { action: "remove", key: "entretien-ig" });
   const result = await syncViaApi(request);
   expect(result.removed).toBe(1);
   await page.reload();
   await expect(postLink(page, "entretien-ig")).toHaveCount(0);
+
+  // L'ancienne adresse de la fiche ne mène plus nulle part pour la cliente.
+  await page.goto(detailUrl);
+  await expect(page.getByText("Cette page n'existe pas.")).toBeVisible();
   await sofia.close();
 });
 

@@ -40,7 +40,7 @@ export function ClientOverview({ organization, posts, now, profile }: SpaceProps
     .slice(0, 6);
 
   return (
-    <div className="grid animate-rise gap-8">
+    <div className="grid animate-rise grid-cols-1 gap-8">
       <PageHeader title={`Bonjour ${profile.fullName.split(" ")[0]}`} description={capitalize(formatDayLong(dayKeyOf(now, organization.timezone)))} />
 
       {pending.length > 0 ? (
@@ -115,7 +115,7 @@ export function ClientOverview({ organization, posts, now, profile }: SpaceProps
 export function ClientCalendarView({ organization, posts, now }: SpaceProps) {
   const basePath = basePathOf(organization);
   return (
-    <div className="grid animate-rise gap-6">
+    <div className="grid animate-rise grid-cols-1 gap-6">
       <PageHeader title="Calendrier" description="Les publications qui vous ont été proposées, à leur date prévue." />
       <EditorialCalendar posts={posts} now={now} statuses={CLIENT_STATUSES} hrefFor={(post) => `${basePath}/publications/${post.id}`} />
     </div>
@@ -127,7 +127,7 @@ export function ApprovalsView({ organization, posts }: SpaceProps) {
   const pending = posts.filter(canDecide);
 
   return (
-    <div className="grid animate-rise gap-6">
+    <div className="grid animate-rise grid-cols-1 gap-6">
       <PageHeader title="À valider" description="Les propositions de votre agence qui attendent votre décision." />
       {pending.length === 0 ? (
         <EmptyState
@@ -183,7 +183,7 @@ export function ClientPostsView({ organization, posts }: SpaceProps) {
   const options: (DisplayStatus | "all")[] = ["all", ...CLIENT_STATUSES.filter((value) => posts.some((post) => post.status === value))];
 
   return (
-    <div className="grid animate-rise gap-6">
+    <div className="grid animate-rise grid-cols-1 gap-6">
       <PageHeader title="Publications" description="Toutes les propositions qui vous ont été présentées." />
       <div className="-mx-4 flex gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" role="tablist" aria-label="Filtrer par statut">
         {options.map((option) => (
@@ -226,7 +226,7 @@ export function ClientHistoryView({
   const list = events.filter((event) => titles.has(event.postId) && CLIENT_EVENT_TYPES.includes(event.type));
 
   return (
-    <div className="grid animate-rise gap-6">
+    <div className="grid animate-rise grid-cols-1 gap-6">
       <PageHeader title="Historique" description="Les propositions reçues, vos décisions et les publications effectuées." />
       <div className="rounded-2xl border bg-card p-5 sm:p-6">
         <ActivityTimeline

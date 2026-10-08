@@ -44,7 +44,7 @@ export function PostsView({ posts, initialStatus = "all" }: { posts: PostView[];
   const selectedOrg = organizations.find((organization) => organization.id === orgFilter);
 
   return (
-    <div className="grid animate-rise gap-6">
+    <div className="grid animate-rise grid-cols-1 gap-6">
       <PageHeader
         title="Publications"
         description={

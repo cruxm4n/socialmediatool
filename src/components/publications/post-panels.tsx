@@ -91,7 +91,7 @@ export function PostContent({ post, showTechnical = false }: { post: PostView; s
   const externalLink = safeExternalUrl(post.externalLink);
   return (
     <section className="overflow-hidden rounded-2xl border bg-card">
-      <div className="grid gap-6 p-4 sm:p-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
+      <div className="grid grid-cols-1 gap-6 p-4 sm:p-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
         <dl className="grid content-start gap-5">
           <Field label="Réseau">
             <span className="flex items-center gap-2 font-medium">

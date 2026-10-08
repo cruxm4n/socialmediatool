@@ -74,7 +74,7 @@ export function AdminOverview({
   const selectedOrg = organizations.find((organization) => organization.id === orgFilter);
 
   return (
-    <div className="grid animate-rise gap-8">
+    <div className="grid animate-rise grid-cols-1 gap-8">
       <PageHeader
         title={`Bonjour ${profile.fullName.split(" ")[0]}`}
         description={
@@ -169,7 +169,7 @@ export function AdminOverview({
         </div>
       </section>
 
-      <div className="grid items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 items-start gap-8 xl:grid-cols-[minmax(0,1fr)_340px]">
         <section aria-labelledby="todo-title">
           <h2 id="todo-title" className="mb-3 font-display text-xl font-medium">
             À traiter
@@ -209,7 +209,7 @@ export function AdminCalendarView({ posts, now }: { posts: PostView[]; now: stri
   const { orgFilter } = useAdmin();
   const scoped = posts.filter((post) => matchesOrgFilter(orgFilter, post.organization?.id));
   return (
-    <div className="grid animate-rise gap-6">
+    <div className="grid animate-rise grid-cols-1 gap-6">
       <PageHeader title="Calendrier" description="Toutes les publications Buffer à leur date prévue. Le client affiché dépend du sélecteur en haut de page." />
       <EditorialCalendar
         posts={scoped}
@@ -277,7 +277,7 @@ export function ClientsView({
   const { organizations } = useAdmin();
 
   return (
-    <div className="grid animate-rise gap-8">
+    <div className="grid animate-rise grid-cols-1 gap-8">
       <PageHeader title="Clients" description="Chaque canal Buffer est rattaché à un client : c'est ce lien qui détermine ce que le client voit." />
 
       <section aria-labelledby="channels-title">

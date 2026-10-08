@@ -59,6 +59,8 @@ function toChannel(row: any): Channel {
 
 /** Les données simulées (« mock- ») et les vraies ne s'affichent jamais ensemble. */
 const MOCK_PATTERN = "mock-%";
+/** En mode simulé, seuls les posts de la série en cours sont affichés : ceux des séries de tests passées restent en base. */
+const mockRunPattern = () => `mock-${env.mockRunId}-%`;
 /** Les posts publiés depuis plus longtemps ne sont plus chargés : ils alourdiraient chaque page sans utilité. */
 const PUBLISHED_HISTORY_DAYS = 90;
 
@@ -81,7 +83,7 @@ export async function listChannels(): Promise<Channel[]> {
 export async function listPosts(): Promise<Post[]> {
   const supabase = await createSessionClient();
   let query = supabase.from("posts").select(POST_COLUMNS).is("removed_at", null).order("due_at", { ascending: true, nullsFirst: false });
-  query = env.bufferMode === "mock" ? query.like("buffer_post_id", MOCK_PATTERN) : query.not("buffer_post_id", "like", MOCK_PATTERN);
+  query = env.bufferMode === "mock" ? query.like("buffer_post_id", mockRunPattern()) : query.not("buffer_post_id", "like", MOCK_PATTERN);
   const since = new Date(Date.now() - PUBLISHED_HISTORY_DAYS * 86_400_000).toISOString();
   query = query.or(`buffer_status.neq.sent,sent_at.gte.${since},sent_at.is.null`);
   const { data, error } = await query;

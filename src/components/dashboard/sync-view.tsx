@@ -18,7 +18,7 @@ export function SyncView({ runs, mode, reviewTag }: { runs: SyncRun[]; mode: "re
   const lastQuota = runs.find((run) => run.rateLimit)?.rateLimit;
 
   return (
-    <div className="grid animate-rise gap-6">
+    <div className="grid animate-rise grid-cols-1 gap-6">
       <PageHeader
         title="Synchronisation"
         description="Chaque synchronisation lit Buffer, met à jour les publications, puis programme celles que le client a approuvées."

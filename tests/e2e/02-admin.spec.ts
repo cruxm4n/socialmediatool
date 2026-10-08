@@ -35,8 +35,21 @@ test.describe("espace administrateur", () => {
     await page.getByRole("dialog").getByRole("link", { name: "Synchronisation" }).click();
     await expect(page.getByRole("heading", { level: 1, name: "Synchronisation" })).toBeVisible();
     await expect(page.getByRole("dialog")).toHaveCount(0);
-    // Aucun défilement horizontal de la page.
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
+  test("aucune page admin ne déborde de l'écran sur mobile", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    for (const path of ["/admin", "/admin/calendrier", "/admin/publications", "/admin/clients", "/admin/synchronisation", "/admin/parametres"]) {
+      await page.goto(path, { waitUntil: "networkidle" });
+      expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth), path).toBeLessThanOrEqual(0);
+    }
+  });
+
+  test("chaque publication n'apparaît qu'une fois dans la liste", async ({ page }) => {
+    await page.goto("/admin/publications");
+    const ids = await page.locator("[data-post]").evaluateAll((links) => links.map((link) => link.getAttribute("data-post")));
+    expect(ids.length).toBe(16);
+    expect(new Set(ids).size).toBe(ids.length);
   });
 
   test("ne propose plus aucun outil de création de publication", async ({ page }) => {

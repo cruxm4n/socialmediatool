@@ -78,7 +78,7 @@ export function ReviewView({
   };
 
   return (
-    <div className="grid animate-rise gap-6 pb-24 sm:pb-0">
+    <div className="grid animate-rise grid-cols-1 gap-6 pb-24 sm:pb-0">
       <div>
         <Link
           href={decidable ? `${basePath}/a-valider` : `${basePath}/publications`}
@@ -158,9 +158,9 @@ export function ReviewView({
         </StatusBanner>
       )}
 
-      <div className="grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <div className="grid grid-cols-1 items-start gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
         <PostContent post={post} />
-        <div className="grid gap-6">
+        <div className="grid grid-cols-1 gap-6">
           <Panel title="Échanges avec votre agence">
             <CommentThread postId={post.id} comments={comments} profiles={profiles} timezone={post.timezone} />
           </Panel>

@@ -19,7 +19,7 @@ export default async function Page() {
   ];
 
   return (
-    <div className="grid animate-rise gap-6">
+    <div className="grid animate-rise grid-cols-1 gap-6">
       <PageHeader title="Paramètres" description="La configuration lue par le serveur. Elle se modifie dans le fichier .env.local, puis en redémarrant l'application." />
       <ul className="overflow-hidden rounded-2xl border bg-card">
         {rows.map((row) => (
