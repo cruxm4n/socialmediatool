@@ -18,6 +18,27 @@ test.describe("espace administrateur", () => {
     }
   });
 
+  test("un indicateur de la vue d'ensemble ouvre la liste filtrée sur ce statut", async ({ page }) => {
+    await page.goto("/admin");
+    await page.getByRole("link", { name: /Erreurs/ }).click();
+    await expect(page).toHaveURL(/\/admin\/publications\?statut=error$/);
+    await expect(page.getByRole("tab", { name: /Erreur/ })).toHaveAttribute("aria-selected", "true");
+    await expect(postLink(page, "abonnement-fb")).toBeVisible();
+    await expect(postLink(page, "guji-ig")).toHaveCount(0);
+  });
+
+  test("le menu mobile donne accès à toutes les sections", async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.goto("/admin");
+    await expect(page.getByRole("navigation", { name: "Navigation principale" })).toBeHidden();
+    await page.getByRole("button", { name: "Ouvrir le menu" }).click();
+    await page.getByRole("dialog").getByRole("link", { name: "Synchronisation" }).click();
+    await expect(page.getByRole("heading", { level: 1, name: "Synchronisation" })).toBeVisible();
+    await expect(page.getByRole("dialog")).toHaveCount(0);
+    // Aucun défilement horizontal de la page.
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  });
+
   test("ne propose plus aucun outil de création de publication", async ({ page }) => {
     await page.goto("/admin");
     await expect(page.getByRole("button", { name: /Créer une publication|Nouvelle publication/ })).toHaveCount(0);

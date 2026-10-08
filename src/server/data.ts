@@ -59,6 +59,8 @@ function toChannel(row: any): Channel {
 
 /** Les données simulées (« mock- ») et les vraies ne s'affichent jamais ensemble. */
 const MOCK_PATTERN = "mock-%";
+/** Les posts publiés depuis plus longtemps ne sont plus chargés : ils alourdiraient chaque page sans utilité. */
+const PUBLISHED_HISTORY_DAYS = 90;
 
 function fail(context: string, message: string): never {
   throw new Error(`Lecture impossible (${context}) : ${message}`);
@@ -80,6 +82,8 @@ export async function listPosts(): Promise<Post[]> {
   const supabase = await createSessionClient();
   let query = supabase.from("posts").select(POST_COLUMNS).is("removed_at", null).order("due_at", { ascending: true, nullsFirst: false });
   query = env.bufferMode === "mock" ? query.like("buffer_post_id", MOCK_PATTERN) : query.not("buffer_post_id", "like", MOCK_PATTERN);
+  const since = new Date(Date.now() - PUBLISHED_HISTORY_DAYS * 86_400_000).toISOString();
+  query = query.or(`buffer_status.neq.sent,sent_at.gte.${since},sent_at.is.null`);
   const { data, error } = await query;
   if (error) fail("posts", error.message);
   return data.map(toPost);
@@ -112,17 +116,20 @@ export async function listComments(postId: string): Promise<Comment[]> {
   }));
 }
 
-/** Historique d'un post, ou des posts donnés (les plus récents d'abord). */
-export async function listEvents(postIds: string[], limit = 200): Promise<PostEvent[]> {
-  if (postIds.length === 0) return [];
+/**
+ * Historique, les plus récents d'abord. Avec `postId` : celui d'un post.
+ * Sans : les derniers événements de tout ce que l'utilisateur a le droit de voir.
+ */
+export async function listEvents(options: { postId?: string; limit?: number } = {}): Promise<PostEvent[]> {
   const supabase = await createSessionClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("post_events")
     .select("id, post_id, type, actor_id, detail, version, created_at")
-    .in("post_id", postIds)
     .order("created_at", { ascending: false })
     .order("id", { ascending: false })
-    .limit(limit);
+    .limit(options.limit ?? 200);
+  if (options.postId) query = query.eq("post_id", options.postId);
+  const { data, error } = await query;
   if (error) fail("historique", error.message);
   return data.map((row) => ({
     id: row.id,

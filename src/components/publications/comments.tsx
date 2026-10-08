@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/dates";
 import type { Comment, Profile } from "@/lib/types";
 import { cn } from "@/lib/utils";
+import { leaveIfExpired } from "@/lib/action-result";
 import { addComment } from "@/server/actions";
 
 export function CommentThread({
@@ -31,6 +32,7 @@ export function CommentThread({
     if (!body.trim()) return;
     startTransition(async () => {
       const result = await addComment({ postId, body });
+      if (leaveIfExpired(result)) return;
       if (result.ok) {
         setBody("");
         toast.success(result.message);

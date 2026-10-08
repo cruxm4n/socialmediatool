@@ -19,14 +19,18 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { addDays, capitalize, dayKeyOf, dayNumber, formatDayLong, timeOf, weekdayLabel } from "@/lib/dates";
 import { NETWORK_LABELS } from "@/lib/domain/networks";
 import { getPostAlerts, type Tone } from "@/lib/domain/status";
-import { DISPLAY_STATUSES, toNetwork, type Channel, type Organization, type PostEvent, type Profile } from "@/lib/types";
+import { DISPLAY_STATUSES, toNetwork, type Channel, type DisplayStatus, type Organization, type PostEvent, type Profile } from "@/lib/types";
 import { DEFAULT_TIMEZONE, type PostView } from "@/lib/view";
 import { cn } from "@/lib/utils";
+import { leaveIfExpired } from "@/lib/action-result";
 import { assignChannel } from "@/server/actions";
 
-function Stat({ icon: Icon, tone, value, label, hint }: { icon: LucideIcon; tone: Tone; value: number; label: string; hint: string }) {
+function Stat({ icon: Icon, tone, value, label, hint, status }: { icon: LucideIcon; tone: Tone; value: number; label: string; hint: string; status: DisplayStatus }) {
   return (
-    <div className="rounded-2xl border bg-card p-4 sm:p-5">
+    <Link
+      href={`/admin/publications?statut=${status}`}
+      className="rounded-2xl border bg-card p-4 outline-none transition-shadow hover:shadow-soft focus-visible:ring-3 focus-visible:ring-ring/50 sm:p-5"
+    >
       <div className="flex items-center justify-between">
         <span className={cn("flex size-9 items-center justify-center rounded-xl", TONE_CLASSES[tone].badge)}>
           <Icon className="size-[18px]" />
@@ -35,7 +39,7 @@ function Stat({ icon: Icon, tone, value, label, hint }: { icon: LucideIcon; tone
       </div>
       <p className="mt-4 text-sm font-semibold">{label}</p>
       <p className="text-xs text-muted-foreground">{hint}</p>
-    </div>
+    </Link>
   );
 }
 
@@ -113,10 +117,10 @@ export function AdminOverview({
       )}
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4 lg:gap-4">
-        <Stat icon={Clock} tone="amber" value={scoped.filter((post) => post.status === "pending_approval").length} label="En attente du client" hint="Soumises à validation" />
-        <Stat icon={MessageSquareWarning} tone="rose" value={scoped.filter((post) => post.status === "changes_requested").length} label="Modifications demandées" hint="À reprendre dans Buffer" />
-        <Stat icon={CircleCheckBig} tone="blue" value={scoped.filter((post) => post.status === "scheduled").length} label="Programmées" hint="Dans Buffer, à venir" />
-        <Stat icon={TriangleAlert} tone="red" value={scoped.filter((post) => post.status === "error").length} label="Erreurs" hint="À vérifier" />
+        <Stat icon={Clock} tone="amber" value={scoped.filter((post) => post.status === "pending_approval").length} label="En attente du client" hint="Soumises à validation" status="pending_approval" />
+        <Stat icon={MessageSquareWarning} tone="rose" value={scoped.filter((post) => post.status === "changes_requested").length} label="Modifications demandées" hint="À reprendre dans Buffer" status="changes_requested" />
+        <Stat icon={CircleCheckBig} tone="blue" value={scoped.filter((post) => post.status === "scheduled").length} label="Programmées" hint="Dans Buffer, à venir" status="scheduled" />
+        <Stat icon={TriangleAlert} tone="red" value={scoped.filter((post) => post.status === "error").length} label="Erreurs" hint="À vérifier" status="error" />
       </div>
 
       <section aria-labelledby="week-title">
@@ -227,6 +231,7 @@ function ChannelRow({ channel, organizations }: { channel: Channel; organization
   const change = (value: string) =>
     startTransition(async () => {
       const result = await assignChannel({ channelId: channel.id, organizationId: value === UNASSIGNED ? null : value });
+      if (leaveIfExpired(result)) return;
       if (result.ok) toast.success(result.message);
       else toast.error(result.message);
     });

@@ -131,11 +131,51 @@ describe("client de l'API Buffer", () => {
     expect(error).toMatchObject({ kind: "rate_limit", retryAfterSeconds: 600 });
   });
 
-  it("signale une panne réseau sans faire échouer le serveur", async () => {
+  it("retente une lecture une fois après une panne passagère, puis réussit", async () => {
+    let attempts = 0;
+    const fetchImpl = vi.fn(async () => {
+      attempts += 1;
+      if (attempts === 1) throw new Error("ECONNRESET");
+      return json({ data: { post: RAW_POST } });
+    }) as unknown as typeof fetch;
+    const post = await new BufferProvider("k", "À valider", fetchImpl).getPost("p1");
+    expect(post?.id).toBe("p1");
+    expect(attempts).toBe(2);
+  });
+
+  it("abandonne une lecture après deux pannes et le signale", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("ECONNRESET");
     }) as unknown as typeof fetch;
     await expect(new BufferProvider("k", "À valider", fetchImpl).getPost("p1")).rejects.toMatchObject({ kind: "network" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("ne retente jamais une écriture : on ignore si Buffer l'a prise en compte", async () => {
+    const fetchImpl = vi.fn(async () => {
+      throw new Error("ECONNRESET");
+    }) as unknown as typeof fetch;
+    await expect(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost)).rejects.toMatchObject({ kind: "network" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("traite une erreur 5xx comme une panne passagère et une erreur 401 comme une clé invalide", async () => {
+    const down = fakeBuffer(() => json({}, { status: 503 }));
+    await expect(new BufferProvider("k", "À valider", down.fetchImpl).getPost("p1")).rejects.toMatchObject({ kind: "network" });
+    expect(down.calls).toHaveLength(2);
+
+    const denied = fakeBuffer(() => json({}, { status: 401 }));
+    await expect(new BufferProvider("k", "À valider", denied.fetchImpl).getPost("p1")).rejects.toThrow("BUFFER_API_KEY");
+    expect(denied.calls).toHaveLength(1);
+  });
+
+  it("ne conclut pas à des suppressions quand Buffer ne renvoie aucun canal", async () => {
+    const { fetchImpl } = fakeBuffer((query) => {
+      if (query.includes("account")) return json({ data: { account: { organizations: [{ id: "org1" }] } } });
+      return json({ data: { channels: [], active: { edges: [], pageInfo: { hasNextPage: false, endCursor: null } }, sent: { edges: [], pageInfo: { hasNextPage: false, endCursor: null } } } });
+    });
+    const snapshot = await new BufferProvider("k", "À valider", fetchImpl).fetchSnapshot();
+    expect(snapshot.complete).toBe(false);
   });
 });
 

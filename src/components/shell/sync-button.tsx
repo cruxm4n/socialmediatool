@@ -1,11 +1,13 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useRef, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { leaveIfExpired } from "@/lib/action-result";
 import { syncNow } from "@/server/actions";
 
 function summarize(result: Awaited<ReturnType<typeof syncNow>>): string {
@@ -26,6 +28,7 @@ export function SyncButton({ variant = "outline", label = "Synchroniser" }: { va
   const run = () =>
     startTransition(async () => {
       const result = await syncNow();
+      if (leaveIfExpired(result)) return;
       if (result.ok) toast.success("Synchronisation terminée", { description: summarize(result) });
       else toast.error("Synchronisation impossible", { description: result.error });
     });
@@ -36,4 +39,27 @@ export function SyncButton({ variant = "outline", label = "Synchroniser" }: { va
       <span className="max-sm:sr-only">{pending ? "Synchronisation…" : label}</span>
     </Button>
   );
+}
+
+/** Au-delà de ce délai sans synchronisation, l'ouverture de l'espace admin en déclenche une. */
+const STALE_AFTER_MS = 15 * 60_000;
+
+/**
+ * Tant qu'aucun planificateur (n8n, cron) n'est branché, c'est l'ouverture de l'espace admin
+ * qui tient les données à jour. Silencieux, au plus une fois par chargement de l'application.
+ */
+export function AutoSync({ lastSyncAt }: { lastSyncAt: string | null }) {
+  const router = useRouter();
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (started.current || !lastSyncAt) return; // jamais synchronisé : l'admin lance la première lui-même
+    if (Date.now() - Date.parse(lastSyncAt) < STALE_AFTER_MS) return;
+    started.current = true;
+    void syncNow().then((result) => {
+      if (result.ok) router.refresh();
+    });
+  }, [lastSyncAt, router]);
+
+  return null;
 }

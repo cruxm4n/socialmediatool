@@ -75,7 +75,15 @@ export async function scheduleApprovedPosts(postId?: string): Promise<{ schedule
   let failures = 0;
   let stale = false;
 
+  let blocked: string | null = null;
+
   for (const post of claimed ?? []) {
+    if (blocked) {
+      // Buffer est hors d'atteinte : inutile d'insister, ces posts seront repris à la prochaine synchronisation.
+      failures += 1;
+      await rpc("complete_scheduling", { p_post_id: post.id, p_ok: false, p_error: blocked });
+      continue;
+    }
     try {
       const live = await provider.getPost(post.buffer_post_id);
       if (!live) throw new ProviderError("Ce post n'existe plus dans Buffer.");
@@ -91,6 +99,7 @@ export async function scheduleApprovedPosts(postId?: string): Promise<{ schedule
       scheduled += 1;
     } catch (error) {
       failures += 1;
+      if (error instanceof ProviderError && error.kind !== "api") blocked = describe(error);
       await rpc("complete_scheduling", { p_post_id: post.id, p_ok: false, p_error: describe(error) });
     }
   }

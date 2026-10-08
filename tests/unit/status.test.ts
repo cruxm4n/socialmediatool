@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { canDecide, deriveStatus, getPostAlerts, postTitle } from "@/lib/domain/status";
+import { canDecide, deriveStatus, getPostAlerts, hasUsableDueDate, postTitle, safeExternalUrl } from "@/lib/domain/status";
 import type { Post } from "@/lib/types";
 
 const NOW = "2026-10-08T08:00:00.000Z";
@@ -72,5 +72,24 @@ describe("titre d'un post", () => {
     expect(postTitle({ text: "\n\nBonjour à tous\nSuite" })).toBe("Bonjour à tous");
     expect(postTitle({ text: "" })).toBe("Post sans texte");
     expect(postTitle({ text: "un deux trois quatre cinq" }, 12)).toBe("un deux…");
+  });
+});
+
+describe("date prévue", () => {
+  it("n'est utilisable que si elle existe et se situe dans le futur", () => {
+    expect(hasUsableDueDate({ dueAt: FUTURE }, NOW)).toBe(true);
+    expect(hasUsableDueDate({ dueAt: NOW }, NOW)).toBe(false);
+    expect(hasUsableDueDate({ dueAt: "2026-10-01T08:00:00.000Z" }, NOW)).toBe(false);
+    expect(hasUsableDueDate({ dueAt: null }, NOW)).toBe(false);
+  });
+});
+
+describe("lien vers la publication en ligne", () => {
+  it("n'accepte que les adresses http et https", () => {
+    expect(safeExternalUrl("https://x.com/a/status/1")).toBe("https://x.com/a/status/1");
+    expect(safeExternalUrl("javascript:alert(1)")).toBeNull();
+    expect(safeExternalUrl("data:text/html,<script>alert(1)</script>")).toBeNull();
+    expect(safeExternalUrl("pas une adresse")).toBeNull();
+    expect(safeExternalUrl(null)).toBeNull();
   });
 });

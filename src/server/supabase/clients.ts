@@ -3,6 +3,7 @@ import "server-only";
 import { createServerClient } from "@supabase/ssr";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { cookies } from "next/headers";
+import { cache } from "react";
 import WebSocket from "ws";
 
 import { env } from "@/server/env";
@@ -10,8 +11,11 @@ import { env } from "@/server/env";
 // supabase-js exige un WebSocket même si le temps réel n'est pas utilisé ; Node 20 n'en fournit pas.
 const realtime = { transport: WebSocket as unknown as typeof globalThis.WebSocket };
 
-/** Client lié à la session de l'utilisateur : toutes les lectures passent par les règles RLS. */
-export async function createSessionClient(): Promise<SupabaseClient> {
+/**
+ * Client lié à la session de l'utilisateur : toutes les lectures passent par les règles RLS.
+ * Créé une seule fois par requête.
+ */
+export const createSessionClient = cache(async (): Promise<SupabaseClient> => {
   const cookieStore = await cookies();
   return createServerClient(env.supabaseUrl, env.supabaseKey, {
     realtime,
@@ -27,7 +31,7 @@ export async function createSessionClient(): Promise<SupabaseClient> {
       },
     },
   });
-}
+});
 
 let automationClient: SupabaseClient | null = null;
 

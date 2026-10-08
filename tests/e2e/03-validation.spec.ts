@@ -29,6 +29,10 @@ test.describe("validation par le client", () => {
     await syncViaApi(request);
     expect((await mockBuffer(request, { action: "stats", key: "guji-li" })).scheduleCalls).toBe(before + 1);
 
+    // Une fois la décision prise, la fiche propose la publication suivante à valider.
+    await page.getByRole("link", { name: "Publication suivante à valider" }).click();
+    await expect(page.getByText("Cette proposition attend votre décision")).toBeVisible();
+
     await page.goto("/client/maison-colibri/a-valider");
     await expect(postLink(page, "guji-li")).toHaveCount(0);
   });
@@ -63,6 +67,27 @@ test.describe("validation par le client", () => {
     await chip.first().click();
     await expect(page).toHaveURL(/\/client\/maison-colibri\/publications\/[0-9a-f-]{36}$/);
   });
+});
+
+test("une publication dont la date est dépassée ne peut pas être approuvée", async ({ browser, request }) => {
+  const sofia = await browser.newContext({ storageState: authFile("SOFIA") });
+  const page = await sofia.newPage();
+  await openPending(page, "nordwind-cycles", "expire-fb");
+  await expect(page.getByText("La date prévue est absente ou dépassée")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Approuver" }).first()).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Demander des modifications" })).toBeEnabled();
+  expect((await mockBuffer(request, { action: "stats", key: "expire-fb" })).post.status).toBe("draft");
+  await sofia.close();
+});
+
+test("sur mobile, les deux décisions restent accessibles en bas de l'écran", async ({ browser }) => {
+  const sofia = await browser.newContext({ storageState: authFile("SOFIA"), viewport: { width: 390, height: 844 } });
+  const page = await sofia.newPage();
+  await openPending(page, "nordwind-cycles", "essai-li");
+  await expect(page.getByRole("button", { name: "Modifications", exact: true })).toBeInViewport();
+  await expect(page.getByRole("button", { name: "Approuver" }).last()).toBeInViewport();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await sofia.close();
 });
 
 test("une publication modifiée dans Buffer pendant la relecture ne peut pas être approuvée telle quelle", async ({ browser, request }) => {

@@ -31,6 +31,36 @@ test.describe("accès et connexion", () => {
     await expect(page.getByRole("heading", { level: 1, name: "Bonjour Sofia" })).toBeVisible();
   });
 
+  test("les réponses portent les en-têtes de sécurité", async ({ request }) => {
+    const headers = (await request.get("/connexion")).headers();
+    expect(headers["x-frame-options"]).toBe("DENY");
+    expect(headers["x-content-type-options"]).toBe("nosniff");
+    expect(headers["content-security-policy"]).toContain("frame-ancestors 'none'");
+    expect(headers["x-powered-by"]).toBeUndefined();
+  });
+
+  test("une session expirée renvoie vers la connexion au lieu d'agir", async ({ browser }) => {
+    const context = await browser.newContext({ storageState: authFile("HUGO") });
+    const page = await context.newPage();
+    await page.goto("/client/maison-colibri/publications");
+    await page.locator("[data-post]").first().click();
+    await expect(page.getByLabel("Ajouter un commentaire")).toBeVisible();
+
+    // La session disparaît (expiration, déconnexion depuis un autre onglet…).
+    await context.clearCookies();
+    await page.getByLabel("Ajouter un commentaire").fill("Commentaire envoyé sans session.");
+    await page.getByRole("button", { name: "Commenter" }).click();
+    await expect(page).toHaveURL(/\/connexion$/);
+
+    // Rien n'a été enregistré.
+    const check = await browser.newContext({ storageState: authFile("INES") });
+    const checkPage = await check.newPage();
+    await checkPage.goto("/client/maison-colibri/historique");
+    await expect(checkPage.getByText("Commentaire envoyé sans session.")).toHaveCount(0);
+    await check.close();
+    await context.close();
+  });
+
   test("les routes d'automatisation refusent un appel sans secret", async ({ request }) => {
     expect((await request.post("/api/automation/sync")).status()).toBe(401);
     expect((await request.post("/api/automation/sync", { headers: { "x-automation-secret": "faux" } })).status()).toBe(401);

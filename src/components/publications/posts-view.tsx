@@ -20,9 +20,9 @@ import { cn } from "@/lib/utils";
 
 const normalize = (value: string) => value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-export function PostsView({ posts }: { posts: PostView[] }) {
+export function PostsView({ posts, initialStatus = "all" }: { posts: PostView[]; initialStatus?: DisplayStatus | "all" }) {
   const { orgFilter, organizations } = useAdmin();
-  const [status, setStatus] = useState<DisplayStatus | "all">("all");
+  const [status, setStatus] = useState<DisplayStatus | "all">(initialStatus);
   const [query, setQuery] = useState("");
 
   const scoped = posts.filter((post) => matchesOrgFilter(orgFilter, post.organization?.id));

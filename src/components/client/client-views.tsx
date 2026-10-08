@@ -223,7 +223,7 @@ export function ClientHistoryView({
 }: SpaceProps & { events: PostEvent[]; profiles: Profile[] }) {
   const basePath = basePathOf(organization);
   const titles = new Map(posts.map((post) => [post.id, post.title]));
-  const list = events.filter((event) => CLIENT_EVENT_TYPES.includes(event.type));
+  const list = events.filter((event) => titles.has(event.postId) && CLIENT_EVENT_TYPES.includes(event.type));
 
   return (
     <div className="grid animate-rise gap-6">

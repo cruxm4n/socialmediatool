@@ -123,6 +123,9 @@ function buildState(runId: string): MockState {
       post("essai-li", "nordwind", "linkedin", "draft", true, at(14, "08:30"),
         "Tester avant de s'équiper : nous prêtons un vélo cargo pendant 48 heures aux professionnels de la métropole lilloise.\n\nVos trajets, vos charges, vos horaires. Sans engagement.",
         image("nordwind-essai")),
+      // Soumis au client alors que sa date est déjà passée : il ne doit pas pouvoir être approuvé.
+      post("expire-fb", "nordwind", "facebook", "draft", true, at(-1, "09:00"),
+        "Dernier jour pour s'inscrire à la démonstration de demain matin."),
       post("entretien-ig", "nordwind", "instagram", "draft", false, at(13, "12:00"),
         "Avant l'hiver, cinq gestes pour votre vélo cargo : pneus, freins, chaîne, batterie, éclairage.\n\n#entretien #vélocargo",
         image("nordwind-entretien")),

@@ -11,6 +11,6 @@ export default async function Page({ params }: PageProps<"/client/[org]/historiq
   const { org } = await params;
   const space = await requireClientSpace(org);
   const { posts, now } = await loadClientSpace(space.organization);
-  const [events, profiles] = await Promise.all([listEvents(posts.map((post) => post.id), 100), listProfiles()]);
+  const [events, profiles] = await Promise.all([listEvents({ limit: 300 }), listProfiles()]);
   return <ClientHistoryView organization={space.organization} posts={posts} now={now} events={events} profiles={profiles} />;
 }

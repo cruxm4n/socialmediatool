@@ -215,19 +215,49 @@ describe("décision du client", () => {
   });
 });
 
+describe("garde-fous ajoutés après audit", () => {
+  it("refuse d'approuver une publication dont la date est passée ou absente, mais accepte une demande de modifications", async () => {
+    await sync([{ key: "date-passee", dueAt: "2020-01-01T09:00:00.000Z" }, { key: "date-absente", dueAt: null }]);
+    expect((await decide(ines, "date-passee", "approved")).error?.message).toBe("date_invalid");
+    expect((await decide(ines, "date-absente", "approved")).error?.message).toBe("date_invalid");
+    expect((await row("date-passee")).approval_status).toBe("pending");
+    expect((await decide(ines, "date-passee", "changes_requested", "Merci de reprogrammer")).error).toBeNull();
+  });
+
+  it("un client ne lit pas les événements techniques, même en interrogeant l'API directement", async () => {
+    await sync([{ key: "evt-technique" }]);
+    await decide(ines, "evt-technique", "approved");
+    const post = await row("evt-technique");
+    await claimOne("evt-technique");
+    await automation.rpc("complete_scheduling", { p_secret: SECRET, p_post_id: post.id, p_ok: false, p_error: "Détail technique confidentiel" });
+
+    const types = async (as: SupabaseClient) =>
+      ((await as.from("post_events").select("type, detail").eq("post_id", post.id)).data ?? []).map((event) => event.type).sort();
+    expect(await types(admin)).toEqual(["approved", "schedule_failed", "submitted"]);
+    expect(await types(ines)).toEqual(["approved", "submitted"]);
+  });
+});
+
 describe("programmation", () => {
   beforeAll(async () => {
-    await sync([{ key: "prog-ok" }, { key: "prog-non-approuve" }, { key: "prog-modifs" }, { key: "prog-passe", dueAt: "2020-01-01T09:00:00.000Z" }, { key: "prog-echec" }]);
+    await sync([{ key: "prog-ok" }, { key: "prog-non-approuve" }, { key: "prog-modifs" }, { key: "prog-echec" }]);
     await decide(ines, "prog-ok", "approved");
     await decide(ines, "prog-modifs", "changes_requested", "À revoir");
-    await decide(ines, "prog-passe", "approved");
     await decide(ines, "prog-echec", "approved");
   });
 
-  it("ne réserve jamais un post non approuvé, refusé ou dont la date est passée", async () => {
+  it("ne réserve jamais un post non approuvé ou refusé", async () => {
     expect((await claimOne("prog-non-approuve")).data).toEqual([]);
     expect((await claimOne("prog-modifs")).data).toEqual([]);
-    expect((await claimOne("prog-passe")).data).toEqual([]);
+  });
+
+  it("ne réserve pas un post approuvé dont la date est entre-temps devenue trop proche ou passée", async () => {
+    // Approuvé avec une date future, puis la date est avancée dans le passé : l'empreinte change, la validation tombe.
+    await sync([{ key: "prog-date" }]);
+    await decide(ines, "prog-date", "approved");
+    await sync([{ key: "prog-date", dueAt: "2020-01-01T09:00:00.000Z" }]);
+    expect((await row("prog-date")).approval_status).toBe("pending");
+    expect((await claimOne("prog-date")).data).toEqual([]);
   });
 
   it("deux programmations simultanées : le post n'est réservé qu'une fois", async () => {

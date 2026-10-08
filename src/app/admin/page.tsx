@@ -9,7 +9,6 @@ export const metadata: Metadata = { title: "Vue d'ensemble" };
 
 export default async function Page() {
   await requireAdmin();
-  const [workspace, profiles] = await Promise.all([loadWorkspace(), listProfiles()]);
-  const events = await listEvents(workspace.posts.map((post) => post.id), 30);
+  const [workspace, profiles, events] = await Promise.all([loadWorkspace(), listProfiles(), listEvents({ limit: 60 })]);
   return <AdminOverview posts={workspace.posts} channels={workspace.channels} events={events} profiles={profiles} now={workspace.now} />;
 }

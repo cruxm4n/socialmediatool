@@ -14,7 +14,7 @@ export default async function Page({ params }: PageProps<"/admin/publications/[i
   const post = await getPost(id);
   if (!post) notFound();
 
-  const [channels, comments, events, profiles] = await Promise.all([listChannels(), listComments(id), listEvents([id]), listProfiles()]);
+  const [channels, comments, events, profiles] = await Promise.all([listChannels(), listComments(id), listEvents({ postId: id }), listProfiles()]);
   const [view] = buildPostViews([post], channels, session.organizations);
 
   return <PostDetail post={view} comments={comments} events={events} profiles={profiles} now={new Date().toISOString()} reviewTag={env.reviewTag} />;

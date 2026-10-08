@@ -130,3 +130,19 @@ export const CLIENT_EVENT_TYPES: PostEventType[] = [
   "scheduled",
   "published",
 ];
+
+/** La publication peut-elle encore être programmée à sa date ? Même règle que la fonction SQL decide_post. */
+export function hasUsableDueDate(post: Pick<Post, "dueAt">, now: string): boolean {
+  return post.dueAt !== null && Date.parse(post.dueAt) > Date.parse(now);
+}
+
+/** N'accepte que les liens http(s) : une adresse venue de l'extérieur ne doit jamais pouvoir exécuter du code. */
+export function safeExternalUrl(url: string | null): string | null {
+  if (!url) return null;
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}

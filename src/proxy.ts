@@ -29,7 +29,11 @@ export async function proxy(request: NextRequest) {
   const { data } = await supabase.auth.getUser();
   const { pathname } = request.nextUrl;
 
-  if (!data.user && pathname !== "/connexion") {
+  // Une action serveur (envoi de formulaire, clic) n'est pas redirigée : elle vérifie elle-même la session
+  // et répond « session expirée », ce que l'interface sait afficher. Une redirection ici resterait sans effet visible.
+  const isServerAction = request.method === "POST" && request.headers.has("next-action");
+
+  if (!data.user && pathname !== "/connexion" && !isServerAction) {
     const url = request.nextUrl.clone();
     url.pathname = "/connexion";
     url.search = "";

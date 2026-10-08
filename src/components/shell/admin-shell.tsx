@@ -6,7 +6,7 @@ import { Menu } from "lucide-react";
 import { AdminSidebarContent } from "@/components/shell/admin-sidebar";
 import { useAdmin } from "@/components/shell/admin-context";
 import { OrgSwitcher } from "@/components/shell/org-switcher";
-import { SyncButton } from "@/components/shell/sync-button";
+import { AutoSync, SyncButton } from "@/components/shell/sync-button";
 import { UserMenu } from "@/components/shell/user-menu";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { formatDateTime } from "@/lib/dates";
@@ -48,6 +48,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
             : "Jamais synchronisé"}
         </p>
         <span className="ml-auto md:hidden" />
+        <AutoSync lastSyncAt={lastSyncAt} />
         <SyncButton />
         <UserMenu profile={profile} />
       </header>

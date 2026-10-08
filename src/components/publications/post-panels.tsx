@@ -5,7 +5,7 @@ import { MediaThumb } from "@/components/shared/media-thumb";
 import { NetworkIcon } from "@/components/shared/network-icon";
 import { formatDateTime } from "@/lib/dates";
 import { NETWORK_LABELS } from "@/lib/domain/networks";
-import type { PostAlert } from "@/lib/domain/status";
+import { safeExternalUrl, type PostAlert } from "@/lib/domain/status";
 import type { PostView } from "@/lib/view";
 import { cn } from "@/lib/utils";
 
@@ -88,6 +88,7 @@ export function AlertList({ alerts }: { alerts: PostAlert[] }) {
 
 /** Contenu du post à gauche, aperçu simulé du réseau à droite. */
 export function PostContent({ post, showTechnical = false }: { post: PostView; showTechnical?: boolean }) {
+  const externalLink = safeExternalUrl(post.externalLink);
   return (
     <section className="overflow-hidden rounded-2xl border bg-card">
       <div className="grid gap-6 p-4 sm:p-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
@@ -128,9 +129,9 @@ export function PostContent({ post, showTechnical = false }: { post: PostView; s
             )}
           </Field>
 
-          {post.externalLink && (
+          {externalLink && (
             <Field label="Publication en ligne">
-              <a href={post.externalLink} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1.5 font-medium text-brand hover:underline">
+              <a href={externalLink} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 font-medium text-brand hover:underline">
                 Voir sur {NETWORK_LABELS[post.network]} <ExternalLink className="size-3.5" />
               </a>
             </Field>

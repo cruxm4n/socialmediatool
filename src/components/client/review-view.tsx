@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Ban, Check, CircleCheckBig, CircleDot, Clock, MessageSquareWarning, PenLine, Rocket } from "lucide-react";
+import { ArrowLeft, ArrowRight, Ban, Check, CircleCheckBig, CircleDot, Clock, MessageSquareWarning, PenLine, Rocket } from "lucide-react";
 import { toast } from "sonner";
 
 import { ActivityTimeline } from "@/components/publications/activity";
@@ -16,9 +16,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/dates";
 import { NETWORK_LABELS } from "@/lib/domain/networks";
-import { canDecide, CLIENT_EVENT_TYPES } from "@/lib/domain/status";
+import { canDecide, CLIENT_EVENT_TYPES, hasUsableDueDate } from "@/lib/domain/status";
 import type { Comment, PostEvent, Profile } from "@/lib/types";
 import type { PostView } from "@/lib/view";
+import { leaveIfExpired, type ActionResult } from "@/lib/action-result";
 import { approvePost, requestChanges } from "@/server/actions";
 
 /** Écran de validation : le client relit la proposition puis décide. */
@@ -28,12 +29,17 @@ export function ReviewView({
   events,
   profiles,
   basePath,
+  now,
+  nextPendingId,
 }: {
   post: PostView;
   comments: Comment[];
   events: PostEvent[];
   profiles: Profile[];
   basePath: string;
+  now: string;
+  /** Autre publication en attente, proposée une fois celle-ci traitée. */
+  nextPendingId: string | null;
 }) {
   const router = useRouter();
   const [dialog, setDialog] = useState<"approve" | "changes" | null>(null);
@@ -42,9 +48,12 @@ export function ReviewView({
   const [pending, startTransition] = useTransition();
 
   const decidable = canDecide(post);
+  // Une publication dont la date est passée ne pourrait plus être programmée : l'approbation est fermée.
+  const approvable = decidable && hasUsableDueDate(post, now);
   const approver = profiles.find((profile) => profile.id === post.approvedById);
 
-  const finish = (result: { ok: boolean; message: string }) => {
+  const finish = (result: ActionResult) => {
+    if (leaveIfExpired(result)) return;
     setDialog(null);
     if (result.ok) toast.success(result.message);
     else toast.error(result.message);
@@ -96,14 +105,25 @@ export function ReviewView({
               <Button variant="outline" size="lg" className="bg-card" onClick={() => setDialog("changes")}>
                 <PenLine /> Demander des modifications
               </Button>
-              <Button size="lg" onClick={() => setDialog("approve")}>
+              <Button size="lg" onClick={() => setDialog("approve")} disabled={!approvable}>
                 <Check /> Approuver
               </Button>
             </div>
           }
         >
-          Vérifiez le texte, le visuel et la date ci-dessous.
+          {approvable
+            ? "Vérifiez le texte, le visuel et la date ci-dessous."
+            : "La date prévue est absente ou dépassée : cette publication ne peut pas être approuvée en l'état. Demandez une modification pour que votre agence la reprogramme."}
         </StatusBanner>
+      )}
+      {!decidable && nextPendingId && (
+        <Link
+          href={`${basePath}/publications/${nextPendingId}`}
+          className="flex items-center justify-between gap-3 rounded-2xl border bg-card px-4 py-3 text-sm font-semibold outline-none transition-shadow hover:shadow-soft focus-visible:ring-3 focus-visible:ring-ring/50"
+        >
+          Publication suivante à valider
+          <ArrowRight className="size-4" />
+        </Link>
       )}
       {post.status === "pending_approval" && !decidable && (
         <StatusBanner tone="neutral" icon={Clock} title="Validation momentanément indisponible">
@@ -160,7 +180,7 @@ export function ReviewView({
           <Button variant="outline" size="lg" className="h-11 flex-1" onClick={() => setDialog("changes")}>
             Modifications
           </Button>
-          <Button size="lg" className="h-11 flex-1" onClick={() => setDialog("approve")}>
+          <Button size="lg" className="h-11 flex-1" onClick={() => setDialog("approve")} disabled={!approvable}>
             <Check /> Approuver
           </Button>
         </div>

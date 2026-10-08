@@ -16,6 +16,8 @@ import {
 
 const ENDPOINT = "https://api.buffer.com";
 const MAX_PAGES = 5;
+/** Au-delà, la requête est abandonnée : une page ne doit pas rester bloquée sur Buffer. */
+const TIMEOUT_MS = 15_000;
 
 const POST_FIELDS = `
   id status text dueAt sentAt updatedAt externalLink channelId channelService schedulingType
@@ -68,7 +70,21 @@ export class BufferProvider implements PublishingProvider {
     private readonly fetchImpl: typeof fetch = fetch,
   ) {}
 
+  /**
+   * Une lecture est retentée une fois après une panne passagère (réseau, erreur 5xx).
+   * Une écriture ne l'est jamais : on ne sait pas si Buffer l'a prise en compte.
+   */
   private async request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    const isRead = !query.trimStart().startsWith("mutation");
+    try {
+      return await this.send<T>(query, variables);
+    } catch (error) {
+      if (isRead && error instanceof ProviderError && error.kind === "network") return this.send<T>(query, variables);
+      throw error;
+    }
+  }
+
+  private async send<T>(query: string, variables: Record<string, unknown>): Promise<T> {
     let response: Response;
     try {
       response = await this.fetchImpl(ENDPOINT, {
@@ -76,9 +92,14 @@ export class BufferProvider implements PublishingProvider {
         headers: { Authorization: `Bearer ${this.apiKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ query, variables }),
         cache: "no-store",
+        signal: AbortSignal.timeout(TIMEOUT_MS),
       });
     } catch (cause) {
-      throw new ProviderError(`Buffer injoignable : ${cause instanceof Error ? cause.message : String(cause)}`, "network");
+      const timedOut = cause instanceof Error && cause.name === "TimeoutError";
+      throw new ProviderError(
+        timedOut ? "Buffer ne répond pas (délai dépassé)." : `Buffer injoignable : ${cause instanceof Error ? cause.message : String(cause)}`,
+        "network",
+      );
     }
 
     this.lastRateLimit = parseRateLimit(response.headers.get("ratelimit")) ?? this.lastRateLimit;
@@ -86,6 +107,13 @@ export class BufferProvider implements PublishingProvider {
     if (response.status === 429) {
       const retryAfter = Number(response.headers.get("retry-after")) || undefined;
       throw new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", retryAfter);
+    }
+
+    if (response.status === 401 || response.status === 403) {
+      throw new ProviderError("Buffer refuse la clé d'API : vérifiez BUFFER_API_KEY.");
+    }
+    if (response.status >= 500) {
+      throw new ProviderError(`Buffer est momentanément indisponible (HTTP ${response.status}).`, "network");
     }
 
     const body = (await response.json().catch(() => null)) as { data?: T; errors?: { message: string }[] } | null;
@@ -169,6 +197,9 @@ export class BufferProvider implements PublishingProvider {
         if (page === MAX_PAGES - 1) complete = false;
       }
     }
+
+    // Aucun canal alors que le compte en avait : réponse anormale. On ne conclut pas que tout a été supprimé.
+    if (channels.length === 0) complete = false;
 
     return { channels, posts, complete, rateLimit: this.lastRateLimit };
   }
