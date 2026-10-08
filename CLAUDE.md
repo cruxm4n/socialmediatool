@@ -17,6 +17,7 @@
 - `npm run test:db` — tests de la base Supabase (isolation, concurrence)
 - `npm run test:e2e` — parcours Playwright, Buffer simulé, port 3100
 - Avant de dire qu'une tâche est finie : lancer les trois, et rapporter le résultat réel.
+- Git : `main` porte l'état validé ; travailler dans une branche et committer par lot cohérent.
 
 ## Règles du projet
 
@@ -36,6 +37,8 @@
 - Couleurs : variables de `src/app/globals.css` uniquement, sauf les aperçus de réseaux qui imitent une interface tierce.
 - Composants shadcn/ui : `npx shadcn@latest add <nom>`.
 - Un bouton fait toujours quelque chose. Ne jamais présenter comme opérationnel ce qui ne l'est pas.
+- Toute grille de mise en page reçoit `grid-cols-1` : sans colonne explicite, un contenu long élargit la page sur mobile (bug rencontré).
+- Une action serveur renvoie un `ActionResult` ; côté navigateur, appeler `leaveIfExpired(result)` avant de l'exploiter.
 
 ## Next.js 16
 

@@ -58,6 +58,8 @@ tests/                     unit/ (règles), integration/ (base), e2e/ (parcours)
 2. **Déprogrammer** les posts modifiés après validation (`list_posts_to_unschedule`, `complete_unscheduling`).
 3. **Programmer** les posts approuvés (`claim_posts_for_scheduling`, `complete_scheduling`).
 
+Tant qu'aucun planificateur n'est branché, l'ouverture de l'espace admin déclenche une synchronisation si la dernière date de plus de quinze minutes.
+
 L'interface ne lit que la base. Remplacer ce fichier par des workflows n8n qui appellent les mêmes fonctions SQL ne demande aucun changement d'écran.
 
 ## Modèle de données
@@ -93,7 +95,11 @@ Chaque post a une **empreinte** calculée sur son texte, sa date, son canal et s
 | Post programmé à la main dans Buffer sans validation | Alerte pour l'admin ; Cadence n'y touche pas |
 | Tag retiré d'un brouillon en attente | Retiré de la validation, invisible pour le client |
 | Post supprimé dans Buffer | Marqué supprimé, jamais effacé |
-| Date prévue dépassée | Non programmé, alerte pour l'admin |
+| Date prévue absente ou dépassée | Approbation refusée (base et interface) ; le client peut demander une modification |
+| Quota Buffer atteint ou Buffer injoignable | Arrêt immédiat des appels, posts repris à la synchronisation suivante |
+| Cinq échecs de programmation de suite | Nouvel essai au plus une fois par heure, sans abandon définitif |
+| Session expirée pendant une action | Rien n'est enregistré, renvoi vers la connexion |
+| Canal déconnecté dans Buffer | Alerte sur la fiche de la publication |
 | Canal rattaché à aucun client | Alerte pour l'admin ; personne ne peut valider |
 
 ## Sécurité
@@ -102,12 +108,14 @@ Chaque post a une **empreinte** calculée sur son texte, sa date, son canal et s
 - **Aucune écriture directe.** Les tables sont en lecture seule pour l'API. Les modifications passent par des fonctions SQL qui vérifient l'identité (`decide_post`, `add_comment`) ou le secret d'automatisation.
 - **La clé Buffer reste sur le serveur.** Elle n'est lue que dans `src/server/`, marqué `server-only` : l'importer depuis un composant navigateur fait échouer la compilation.
 - **Secret d'automatisation.** Seule son empreinte est en base, dans un schéma non exposé par l'API.
-- **Détails techniques cachés au client.** Il voit « incident technique », pas le message d'erreur de Buffer.
+- **Détails techniques cachés au client.** Il voit « incident technique ». Les événements techniques de l'historique lui sont fermés par la base elle-même.
+- **En-têtes de sécurité** sur toutes les réponses (`next.config.ts`) : pas d'affichage dans un cadre tiers, pas de détection de type, référent limité.
+- **Liens externes** : seule une adresse `http(s)` renvoyée par Buffer est rendue cliquable.
 
 ### Points de vigilance connus
 
 - Les fonctions d'automatisation sont appelables sans session, protégées par le seul secret. C'est un choix : le projet n'utilise pas la clé « service role » de Supabase. Le conseiller de sécurité Supabase le signale en avertissement ; voir DECISIONS.md, D12.
-- Les messages d'erreur de programmation sont masqués dans l'interface client, mais lisibles par un client qui interrogerait l'API directement sur ses propres posts.
+- Les colonnes `schedule_error` et `buffer_error` d'un post restent lisibles par un client qui interrogerait l'API directement sur ses propres posts (l'historique, lui, est protégé). Les masquer demanderait une vue dédiée.
 - La protection contre les mots de passe compromis de Supabase Auth est désactivée (réglage du projet).
 
 ## Rendu Next.js 16

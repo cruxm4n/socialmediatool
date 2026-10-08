@@ -10,17 +10,23 @@ npm run test:e2e    # parcours dans un navigateur, Buffer simulé, port 3100
 
 Les tests automatiques n'appellent **jamais** l'API Buffer : ils utilisent un Buffer simulé. Les essais sur le vrai Buffer sont manuels et consignés plus bas.
 
-## Résultats du 8 octobre 2026
+## Résultats du 8 octobre 2026 (après l'audit de nuit)
 
 | Vérification | Commande | Résultat |
 | --- | --- | --- |
 | Lint | `npm run lint` | Aucune erreur, aucun avertissement |
 | TypeScript | `npm run typecheck` | Aucune erreur |
-| Tests des règles | `npm run test` | 30 réussis sur 30 |
+| Règles et couche de service | `npm run test` | 48 réussis sur 48 |
 | Compilation | `npm run build` | Réussie |
-| Tests de la base | `npm run test:db` | 22 réussis sur 22 |
-| Parcours | `npm run test:e2e` | 26 réussis sur 26 |
-| Essai réel Buffer | manuel, scripté | Réussi, voir ci-dessous |
+| Base de données | `npm run test:db` | 25 réussis sur 25 |
+| Parcours | `npm run test:e2e` | 34 réussis sur 34 |
+| Essai réel Buffer | manuel, scripté | Réussi, rejoué après l'audit |
+
+| Suite | Avant l'audit | Après |
+| --- | --- | --- |
+| Règles | 30 | 48 |
+| Base | 22 | 25 |
+| Parcours | 26 | 34 |
 
 ## Essais sur le vrai Buffer
 
@@ -64,23 +70,37 @@ L'échec de l'étape 4 a conduit à renvoyer systématiquement le texte validé 
 
 Quota consommé par l'ensemble des essais : environ 40 requêtes sur 500 par jour.
 
+### Essai 3 — même parcours, rejoué après l'audit de nuit
+
+Mêmes quinze étapes, mêmes résultats. Un post personnel de l'utilisateur, programmé pour le 14 octobre, était présent dans le compte : il a été lu par la synchronisation, affiché, et n'a subi aucune modification. Contrôle final : zéro post de test restant.
+
+Un premier lancement s'était arrêté à l'étape 3 sur une erreur du script d'essai (attente d'un message qui ne s'affiche pas quand le canal est déjà rattaché). Les deux posts créés ont été supprimés avant de relancer.
+
 ## Ce que couvrent les tests automatiques
 
-### Règles (`tests/unit/`, 30 tests)
+### Règles et couche de service (`tests/unit/`, 48 tests)
+
+- **Couche de service isolée** (`sync.test.ts`) : rien n'est programmé si le texte, la date ou les médias ont changé dans Buffer ; ni si le post a disparu ou n'est plus un brouillon ; pas de reprogrammation d'un post déjà programmé ; arrêt des appels dès que le quota est atteint ; un refus sur un post n'empêche pas les suivants ; ordre lecture → déprogrammation → programmation ; échec enregistré si Buffer est injoignable.
+- Client Buffer : nouvel essai d'une lecture après une panne, jamais d'une écriture ; erreurs 5xx et 401 ; aucun canal renvoyé.
+- Date prévue utilisable ; lien externe limité à `http(s)`.
 
 - Statut affiché à partir des trois états ; alertes pour l'admin ; droit de décider.
 - Client Buffer avec un faux réseau : lecture des canaux et posts, reconnaissance du tag, clé transmise, texte renvoyé à la programmation, médias renvoyés si le post n'a pas de texte, refus sans date, refus de Buffer remonté, quota dépassé, panne réseau.
 - Comparaison du contenu validé et du contenu présent dans Buffer.
 - Dates : fuseaux, changement d'heure, grille du calendrier.
 
-### Base de données (`tests/integration/`, 22 tests)
+### Base de données (`tests/integration/`, 25 tests)
+
+- **Garde-fous de l'audit** : approbation refusée si la date est passée ou absente ; un client ne lit pas les événements techniques, même par l'API ; une validation tombe si la date est avancée dans le passé.
 
 - **Isolation** : un client ne lit que les posts soumis de son organisation ; pas les brouillons ; pas le journal ; un visiteur non connecté ne lit rien ; personne n'écrit directement dans les tables ; un client ne décide ni ne commente chez un autre ; seul l'admin rattache un canal ; les fonctions d'automatisation exigent le secret.
 - **Décision** : refus pour un admin ; refus d'une version périmée ; commentaire obligatoire pour une demande de modifications ; **deux validations simultanées, une seule retenue** ; refus si le post n'est plus un brouillon.
 - **Programmation** : jamais pour un post non approuvé, refusé ou à date passée ; **deux programmations simultanées, une seule réservation** ; nouvelle tentative après échec.
 - **Synchronisation** : rejouable sans effet ; validation annulée et déprogrammation demandée après modification ; nouvelle version après correction ; suivi du tag ; retour en brouillon dans Buffer ; post disparu marqué, jamais effacé.
 
-### Parcours (`tests/e2e/`, 26 tests)
+### Parcours (`tests/e2e/`, 34 tests)
+
+- **Ajouts de l'audit** : en-têtes de sécurité ; session expirée pendant une action ; indicateur cliquable ; menu mobile ; aucun débordement horizontal sur les onze pages en 390 px ; unicité des publications dans la liste ; date dépassée non approuvable ; publication suivante à valider ; décisions accessibles en bas d'écran sur mobile ; adresse d'une publication supprimée.
 
 - **Accès** : renvoi vers la connexion ; mauvais mot de passe ; chaque rôle dans son espace ; déconnexion ; routes d'automatisation fermées sans secret.
 - **Isolation** : un client ne voit pas l'autre ; l'espace d'un autre client renvoie 404 ; l'espace admin lui est fermé ; l'adresse directe d'une publication d'un autre client ne révèle rien.
@@ -101,9 +121,14 @@ Quota consommé par l'ensemble des essais : environ 40 requêtes sur 500 par jou
 
 ## Bugs trouvés par les tests
 
-- **Déconnexion globale.** Se déconnecter fermait toutes les sessions du compte, y compris sur d'autres appareils. Corrigé : seule la session courante est fermée.
-- **Détail technique visible du client.** Le message d'erreur de Buffer apparaissait dans l'historique côté client. Corrigé : le client voit « incident technique ».
-- **Glisser-déposer décalé** (prototype, fonction retirée depuis).
+Liste complète et corrections dans [NIGHT_REPORT.md](NIGHT_REPORT.md). Les principaux :
+
+- **Pages élargies sur mobile** (926 px sur un écran de 390 px).
+- **Publication approuvée jamais retentée** après cinq échecs de programmation.
+- **Session expirée sans effet visible** lors d'une action.
+- **Approbation possible d'une publication à date passée.**
+- **Déconnexion globale** : se déconnecter fermait les sessions des autres appareils.
+- **Détail technique visible du client** dans l'historique.
 
 ## Limites connues
 
@@ -112,5 +137,5 @@ Quota consommé par l'ensemble des essais : environ 40 requêtes sur 500 par jou
 - Une page de publication introuvable s'affiche correctement mais avec un code HTTP 200 au lieu de 404.
 - Navigation au clavier et lecteurs d'écran : non testés de façon systématique.
 - `Dockerfile` et `docker-compose.yml` : jamais exécutés.
-- `npm audit` signale 9 vulnérabilités « high » dans les dépendances de développement. Non analysées ; à examiner avant toute mise en ligne.
+- `npm audit` signale 9 vulnérabilités « high ». Analysées : toutes viennent du paquet `braces`, sans version corrigée disponible, utilisé uniquement par des outils de développement.
 - Supabase prévient que Node.js 20 ne sera bientôt plus pris en charge : passer à Node 22.

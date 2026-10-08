@@ -9,10 +9,11 @@
 | Supabase | Schéma, authentification, RLS, fonctions de validation et de programmation | Terminé (projet `socialflow-dev`) |
 | Couche de service | Synchronisation, programmation et déprogrammation Buffer côté serveur | Terminé |
 | Essai réel | Brouillon → validation → programmation → modification → déprogrammation sur un vrai compte Buffer | Réussi le 8 octobre 2026 |
+| Audit de nuit | Fiabilité, sécurité, mobile, tests supplémentaires | Voir [NIGHT_REPORT.md](NIGHT_REPORT.md) |
 
 ## Reste à faire
 
-1. **Synchronisation automatique.** Aujourd'hui : bouton, ou tâche planifiée à installer. Ensuite n8n ([docs/N8N.md](docs/N8N.md)).
+1. **Synchronisation automatique.** Aujourd'hui : bouton, synchronisation à l'ouverture de l'espace admin (si la dernière date de plus de quinze minutes), ou tâche planifiée à installer. Ensuite n8n ([docs/N8N.md](docs/N8N.md)).
 2. **Écran de gestion des clients et des utilisateurs.** Ils se créent pour l'instant dans Supabase (`supabase/seed.example.sql`).
 3. **Notifications.** Le client n'est pas prévenu d'une nouvelle proposition, ni l'admin d'une décision.
 4. **Essais Buffer complémentaires** : vidéo, post sans texte, Instagram et TikTok en mode rappel, médias téléversés dans Buffer.

@@ -53,6 +53,7 @@ Les données simulées et réelles ne s'affichent jamais ensemble.
 ### Synchroniser sans n8n
 
 - À la main : bouton **Synchroniser** (en-tête de l'espace admin).
+- À l'ouverture de l'espace admin, si la dernière synchronisation date de plus de quinze minutes.
 - Automatiquement, en attendant n8n, avec une tâche planifiée sur la machine qui héberge l'application :
 
 ```bash
@@ -79,4 +80,5 @@ Première utilisation des parcours : `npx playwright install --only-shell chromi
 - [TESTING.md](TESTING.md) — tests et résultats
 - [DECISIONS.md](DECISIONS.md) — décisions et leurs raisons
 - [ROADMAP.md](ROADMAP.md) — ce qui est fait, ce qui reste
+- [NIGHT_REPORT.md](NIGHT_REPORT.md) — audit et améliorations du 8 octobre 2026
 - [CLAUDE.md](CLAUDE.md) — conventions pour les sessions Claude Code
