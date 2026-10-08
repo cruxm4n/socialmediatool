@@ -1,0 +1,13 @@
+# Déploiement de production — préparé pour la phase 6, NON TESTÉ en phase 1.
+# Ne pas lancer sur le VPS avant la phase 6.
+services:
+  web:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - path: .env.production
+        required: false
+    ports:
+      # Écoute uniquement sur la machine elle-même : l'application n'est pas
+      # joignable depuis Internet tant qu'un reverse proxy HTTPS n'est pas configuré.
+      - "127.0.0.1:3000:3000"

@@ -1,0 +1,234 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-instrument-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-fraunces), ui-serif, Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+
+  /* Tokens propres au produit */
+  --color-brand: var(--brand);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-tone-neutral: var(--tone-neutral);
+  --color-tone-neutral-soft: var(--tone-neutral-soft);
+  --color-tone-amber: var(--tone-amber);
+  --color-tone-amber-soft: var(--tone-amber-soft);
+  --color-tone-rose: var(--tone-rose);
+  --color-tone-rose-soft: var(--tone-rose-soft);
+  --color-tone-green: var(--tone-green);
+  --color-tone-green-soft: var(--tone-green-soft);
+  --color-tone-blue: var(--tone-blue);
+  --color-tone-blue-soft: var(--tone-blue-soft);
+  --color-tone-red: var(--tone-red);
+  --color-tone-red-soft: var(--tone-red-soft);
+  --color-net-linkedin: #0a66c2;
+  --color-net-instagram: #d62976;
+  --color-net-facebook: #1877f2;
+  --color-net-tiktok: #161616;
+
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  --shadow-soft: 0 1px 2px oklch(0.2 0.01 80 / 0.04), 0 4px 16px oklch(0.2 0.01 80 / 0.05);
+  --shadow-lift: 0 2px 4px oklch(0.2 0.01 80 / 0.05), 0 12px 32px oklch(0.2 0.01 80 / 0.1);
+}
+
+/*
+ * Palette : papier chaud + encre, un seul accent cobalt.
+ * Les couleurs vives sont réservées aux statuts et aux réseaux.
+ */
+:root {
+  --background: oklch(0.985 0.004 90);
+  --foreground: oklch(0.21 0.012 80);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.21 0.012 80);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.21 0.012 80);
+  --primary: oklch(0.23 0.012 80);
+  --primary-foreground: oklch(0.985 0.004 90);
+  --secondary: oklch(0.955 0.006 90);
+  --secondary-foreground: oklch(0.23 0.012 80);
+  --muted: oklch(0.962 0.005 90);
+  --muted-foreground: oklch(0.5 0.012 80);
+  --accent: oklch(0.955 0.006 90);
+  --accent-foreground: oklch(0.23 0.012 80);
+  --destructive: oklch(0.56 0.21 27);
+  --border: oklch(0.915 0.007 90);
+  --input: oklch(0.9 0.007 90);
+  --ring: oklch(0.62 0.15 262);
+  --chart-1: oklch(0.87 0 0);
+  --chart-2: oklch(0.556 0 0);
+  --chart-3: oklch(0.439 0 0);
+  --chart-4: oklch(0.371 0 0);
+  --chart-5: oklch(0.269 0 0);
+  --radius: 0.75rem;
+  --sidebar: oklch(0.972 0.005 90);
+  --sidebar-foreground: oklch(0.21 0.012 80);
+  --sidebar-primary: oklch(0.23 0.012 80);
+  --sidebar-primary-foreground: oklch(0.985 0.004 90);
+  --sidebar-accent: oklch(0.94 0.007 90);
+  --sidebar-accent-foreground: oklch(0.23 0.012 80);
+  --sidebar-border: oklch(0.915 0.007 90);
+  --sidebar-ring: oklch(0.62 0.15 262);
+
+  --brand: oklch(0.5 0.19 262);
+  --brand-soft: oklch(0.95 0.03 262);
+  --brand-foreground: oklch(0.99 0 0);
+
+  --tone-neutral: oklch(0.45 0.012 80);
+  --tone-neutral-soft: oklch(0.95 0.005 90);
+  --tone-amber: oklch(0.5 0.12 65);
+  --tone-amber-soft: oklch(0.955 0.05 85);
+  --tone-rose: oklch(0.5 0.17 15);
+  --tone-rose-soft: oklch(0.955 0.03 15);
+  --tone-green: oklch(0.44 0.11 155);
+  --tone-green-soft: oklch(0.95 0.045 155);
+  --tone-blue: oklch(0.47 0.16 255);
+  --tone-blue-soft: oklch(0.95 0.03 255);
+  --tone-red: oklch(0.5 0.2 27);
+  --tone-red-soft: oklch(0.95 0.035 27);
+}
+
+/* Prêt pour un futur mode sombre : il suffira d'ajouter la classe .dark sur <html>. */
+.dark {
+  --background: oklch(0.17 0.008 80);
+  --foreground: oklch(0.96 0.005 90);
+  --card: oklch(0.21 0.008 80);
+  --card-foreground: oklch(0.96 0.005 90);
+  --popover: oklch(0.21 0.008 80);
+  --popover-foreground: oklch(0.96 0.005 90);
+  --primary: oklch(0.94 0.005 90);
+  --primary-foreground: oklch(0.2 0.01 80);
+  --secondary: oklch(0.27 0.008 80);
+  --secondary-foreground: oklch(0.96 0.005 90);
+  --muted: oklch(0.26 0.008 80);
+  --muted-foreground: oklch(0.72 0.01 80);
+  --accent: oklch(0.27 0.008 80);
+  --accent-foreground: oklch(0.96 0.005 90);
+  --destructive: oklch(0.7 0.19 22);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.65 0.15 262);
+  --sidebar: oklch(0.19 0.008 80);
+  --sidebar-foreground: oklch(0.96 0.005 90);
+  --sidebar-primary: oklch(0.94 0.005 90);
+  --sidebar-primary-foreground: oklch(0.2 0.01 80);
+  --sidebar-accent: oklch(0.27 0.008 80);
+  --sidebar-accent-foreground: oklch(0.96 0.005 90);
+  --sidebar-border: oklch(1 0 0 / 10%);
+  --sidebar-ring: oklch(0.65 0.15 262);
+
+  --brand: oklch(0.72 0.14 262);
+  --brand-soft: oklch(0.3 0.06 262);
+  --brand-foreground: oklch(0.17 0.008 80);
+
+  --tone-neutral: oklch(0.8 0.01 80);
+  --tone-neutral-soft: oklch(0.28 0.008 80);
+  --tone-amber: oklch(0.84 0.12 80);
+  --tone-amber-soft: oklch(0.32 0.05 75);
+  --tone-rose: oklch(0.8 0.12 15);
+  --tone-rose-soft: oklch(0.31 0.06 15);
+  --tone-green: oklch(0.82 0.13 155);
+  --tone-green-soft: oklch(0.3 0.05 155);
+  --tone-blue: oklch(0.8 0.11 255);
+  --tone-blue-soft: oklch(0.3 0.06 255);
+  --tone-red: oklch(0.78 0.15 27);
+  --tone-red-soft: oklch(0.31 0.07 27);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "ss01", "cv11";
+  }
+  h1,
+  h2 {
+    text-wrap: balance;
+  }
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: pointer;
+  }
+}
+
+@utility font-display {
+  font-family: var(--font-heading);
+  font-optical-sizing: auto;
+  letter-spacing: -0.015em;
+}
+
+/*
+ * Apparition discrète des contenus de page.
+ * « backwards » et non « both » : une fois l'animation finie, aucun transform ne reste
+ * sur l'élément. Un transform résiduel décalerait les éléments en position fixe qu'il
+ * contient, dont la carte suivie par le pointeur pendant un glisser-déposer.
+ */
+@utility animate-rise {
+  animation: rise 0.35s cubic-bezier(0.2, 0.7, 0.2, 1) backwards;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
