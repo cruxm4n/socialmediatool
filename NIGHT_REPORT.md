@@ -15,7 +15,7 @@ Session du 8 octobre 2026, en autonomie. Travail sur la branche Git `nuit/audit-
 2. **Régénérez la clé d'API Buffer.** Elle a transité par la conversation. Mettez la nouvelle dans `.env.local` puis relancez l'application.
 3. **Relancez votre serveur de développement** (`npm run dev`). Celui qui tourne a été lancé avant que le script ne limite l'écoute à `127.0.0.1` : il écoute encore sur toutes les interfaces réseau.
 4. **Fusionnez la branche si le résultat vous convient** : `git checkout main && git merge nuit/audit-ameliorations`.
-5. **Dans Supabase** (Authentication > Policies de mot de passe) : activez la protection contre les mots de passe compromis. C'est un réglage du projet que je ne peux pas modifier.
+5. **Dans Supabase**, réglages d'authentification, rubrique mots de passe : activez la protection contre les mots de passe compromis. C'est un réglage du projet que je ne peux pas modifier.
 6. **Disque.** Il était plein à 100 % en fin de session. J'ai vidé le cache de téléchargement de npm (1,9 Go, entièrement régénérable) : il reste 2,2 Go. Le dossier `.next/dev` de votre serveur de développement pèse 717 Mo et se vide en supprimant `.next` serveur arrêté.
 
 ## Bugs détectés et corrigés
@@ -60,7 +60,7 @@ Session du 8 octobre 2026, en autonomie. Travail sur la branche Git `nuit/audit-
 - Temps de chargement mesurés en local, base distante : entre 0,8 et 2,1 secondes par page.
 
 ### Qualité du code
-- Projet placé sous Git, trois commits cohérents.
+- Projet placé sous Git, un commit par lot de modifications.
 - Sept composants d'interface inutilisés supprimés ; l'outil `shadcn` déplacé en dépendance de développement.
 - Type commun `ActionResult` pour toutes les actions serveur.
 - Migration SQL versionnée : `supabase/migrations/0002_fiabilite.sql`.
