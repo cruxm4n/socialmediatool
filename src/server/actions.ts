@@ -124,7 +124,9 @@ export async function approvePost(input: { postId: string; expectedHash: string 
   let message = "Publication approuvée et programmée dans Buffer.";
   try {
     const scheduling = await scheduleApprovedPosts(result.postId);
-    if (scheduling.paused) {
+    if (scheduling.writesDisabled) {
+      message = "Publication approuvée. La programmation dans Buffer n'est pas encore activée par votre agence : elle sera faite dès son activation.";
+    } else if (scheduling.paused) {
       message = "Publication approuvée. Le quota de requêtes Buffer est atteint : la programmation reprendra d'elle-même à la fin de la pause.";
     } else if (scheduling.scheduled === 0) {
       message = "Publication approuvée. La programmation dans Buffer n'a pas abouti : votre agence est prévenue et elle sera retentée.";

@@ -54,6 +54,8 @@ export interface ProviderSnapshot {
   scopeConnectionIds?: string[];
   /** Connexions qui n'ont pas pu être lues (panne, quota, secret illisible) : signalées, jamais ignorées en silence. */
   connectionErrors?: { connectionId: string; label: string; message: string }[];
+  /** Connexions volontairement non lues pendant ce passage planifié (quota presque épuisé) : rien n'en est déduit. */
+  skippedConnections?: { connectionId: string; label: string; until: string }[];
 }
 
 /** Contenu d'un brouillon préparé dans le Studio de Cadence. */
@@ -123,10 +125,17 @@ export class ProviderError extends Error {
    */
   connectionId?: string;
 
+  /**
+   * Refus décidé par Cadence AVANT tout appel au fournisseur (résultat certain : rien n'est parti) :
+   * « writes_disabled » : barrière d'activation des écritures fermée ; « blocked » : configuration invalide.
+   */
+  refusal?: "writes_disabled" | "blocked";
+
   /** Même erreur, avec l'identifiant d'un post créé avant l'échec. */
   withCreatedPost(postId: string): ProviderError {
     const copy = new ProviderError(this.message, this.kind, this.retryAfterSeconds, this.outcome, postId);
     copy.connectionId = this.connectionId;
+    copy.refusal = this.refusal;
     return copy;
   }
 }

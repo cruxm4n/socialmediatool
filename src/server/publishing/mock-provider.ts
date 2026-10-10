@@ -28,6 +28,8 @@ interface MockState {
   loseNextScheduleResponse: boolean;
   /** Simule un refus certain du quota (429) lors de la prochaine écriture. */
   rateLimitNextWrite: number | null;
+  /** Simule un compte injoignable : toute opération échoue (panne réseau) tant que c'est vrai. */
+  unavailable?: boolean;
 }
 
 const PARIS = "Europe/Paris";
@@ -192,6 +194,11 @@ export class MockProvider implements PublishingProvider {
     return getState(this.runId, this.account);
   }
 
+  /** Compte simulé injoignable : aucune opération n'aboutit, et rien n'est modifié. */
+  private reach(): void {
+    if (this.state.unavailable) throw new ProviderError("Buffer simulé injoignable (panne simulée).", "network", undefined, "failed");
+  }
+
   private find(id: string): ProviderPost {
     const post = this.state.posts.find((item) => item.id === id);
     if (!post) throw new ProviderError("Post introuvable dans le Buffer simulé.");
@@ -199,6 +206,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async fetchSnapshot(): Promise<ProviderSnapshot> {
+    this.reach();
     const state = this.state;
     return {
       channels: structuredClone(state.channels),
@@ -209,11 +217,13 @@ export class MockProvider implements PublishingProvider {
   }
 
   async getPost(id: string): Promise<ProviderPost | null> {
+    this.reach();
     const post = this.state.posts.find((item) => item.id === id);
     return post ? structuredClone(post) : null;
   }
 
   async schedulePost(post: ProviderPost): Promise<ProviderPost> {
+    this.reach();
     const state = this.state;
     state.scheduleCalls += 1;
     if (state.failNextSchedule) {
@@ -242,6 +252,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async unschedulePost(post: ProviderPost): Promise<ProviderPost> {
+    this.reach();
     const stored = this.find(post.id);
     stored.status = "draft";
     stored.updatedAt = new Date().toISOString();
@@ -249,6 +260,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async createDraft(content: DraftContent): Promise<ProviderPost> {
+    this.reach();
     const state = this.state;
     if (state.failNextCreate) {
       const message = state.failNextCreate;
@@ -283,6 +295,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async findDraftCandidates(lookup: DraftLookup): Promise<{ candidates: ProviderPost[]; possible: ProviderPost[]; complete: boolean }> {
+    this.reach();
     const instant = Date.parse(lookup.dueAt);
     const exact = (post: ProviderPost) =>
       post.channelId === lookup.channelId && post.text === lookup.text && post.dueAt !== null && Date.parse(post.dueAt) === instant &&
@@ -295,6 +308,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async updateDraft(postId: string, content: DraftContent): Promise<ProviderPost> {
+    this.reach();
     const stored = this.find(postId);
     if (stored.status === "sent" || stored.status === "sending") throw new ProviderError("Ce post est déjà publié.");
     Object.assign(stored, {
@@ -308,6 +322,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async rescheduleDraft(post: ProviderPost, dueAt: string): Promise<ProviderPost> {
+    this.reach();
     const stored = this.find(post.id);
     if (stored.status !== "draft") throw new ProviderError("Seul un brouillon peut changer de date depuis Cadence.");
     stored.dueAt = dueAt;
@@ -334,6 +349,11 @@ export class MockProvider implements PublishingProvider {
   remove(id: string) {
     const state = this.state;
     state.posts = state.posts.filter((item) => item.id !== id);
+  }
+
+  /** Rend le compte simulé injoignable, ou le rétablit. */
+  setUnavailable(unavailable: boolean) {
+    this.state.unavailable = unavailable;
   }
 
   failNextSchedule(message: string) {

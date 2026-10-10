@@ -12,6 +12,8 @@ interface AdminContextValue {
   organizations: Organization[];
   /** « real » : Buffer réel. « mock » : Buffer simulé. */
   mode: "real" | "mock";
+  /** État de Buffer sur ce serveur : comptes utilisables, envoi activé ou non, configuration invalide. */
+  buffer: { accounts: number; writesEnabled: boolean; problem: string | null };
   /** Adresse et clé publiques de Supabase, pour le dépôt de médias depuis le navigateur. */
   supabase: { url: string; key: string };
   /** État de la synchronisation avec Buffer, lu au rendu de la page. */
@@ -55,10 +57,14 @@ export function AdminProvider({
     }
   }, []);
   const { profile, organizations, mode, sync, syncIntervalMinutes, renderedAt, supabase } = value;
+  const { accounts, writesEnabled, problem } = value.buffer;
   const context = useMemo(() => {
     const attempts = [sync.lastSuccessAt, sync.lastFailureAt].filter((item): item is string => item !== null).sort();
-    return { profile, organizations, mode, sync, syncIntervalMinutes, renderedAt, supabase, lastSyncAt: attempts.at(-1) ?? null, orgFilter, setOrgFilter };
-  }, [profile, organizations, mode, sync, syncIntervalMinutes, renderedAt, supabase, orgFilter, setOrgFilter]);
+    return {
+      profile, organizations, mode, buffer: { accounts, writesEnabled, problem }, sync, syncIntervalMinutes, renderedAt, supabase,
+      lastSyncAt: attempts.at(-1) ?? null, orgFilter, setOrgFilter,
+    };
+  }, [profile, organizations, mode, accounts, writesEnabled, problem, sync, syncIntervalMinutes, renderedAt, supabase, orgFilter, setOrgFilter]);
   return <AdminContext.Provider value={context}>{children}</AdminContext.Provider>;
 }
 

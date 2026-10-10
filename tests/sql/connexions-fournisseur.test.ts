@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { afterEach, describe, expect, it } from "vitest";
 
 import { SECRET, FUTURE, LocalDb, type Actor } from "../support/local-db";
@@ -16,11 +18,26 @@ const B = "22222222-2222-4222-8222-222222222222";
 
 type Seed = Awaited<ReturnType<LocalDb["seed"]>>;
 
-const create = (actor: Actor, id: string, args: { mode?: string; label?: string; org?: string | null; source?: string; ciphertext?: string | null; accountKey?: string | null }) =>
-  db.as(actor, "select public.admin_create_provider_connection($1, $2, $3, $4, $5, $6, 1, $7, $8)", [
-    id, args.mode ?? "real", args.label ?? "Compte", args.org ?? null, args.source ?? "stored",
-    args.ciphertext === undefined ? "v1.aaa.bbb.ccc" : args.ciphertext, args.ciphertext === null ? null : "1234", args.accountKey ?? null,
-  ]);
+/** Empreinte factice d'une clé (64 caractères hexadécimaux), distincte par texte chiffré. */
+const fingerprint = (text: string) => createHash("sha256").update(text).digest("hex");
+
+/**
+ * Connexion RÉELLE : depuis 0013, seul le serveur l'enregistre (secret d'automatisation + acteur administrateur),
+ * avec l'identité du compte qu'il a constatée. `account: null` : clé non vérifiée (serveur en simulation).
+ */
+const create = (actor: { userId: string }, id: string, args: { label?: string; org?: string | null; ciphertext?: string; account?: string | null } = {}) => {
+  const ciphertext = args.ciphertext ?? `v1.${id.slice(0, 8)}.bbb.ccc`;
+  return db.automation("server_create_provider_connection", {
+    p_actor: actor.userId, p_id: id, p_label: args.label ?? "Compte", p_organization_id: args.org ?? null, p_ciphertext: ciphertext,
+    p_key_version: 1, p_hint: "1234", p_fingerprint: fingerprint(ciphertext),
+    p_external_account_id: args.account === undefined ? `compte-${id.slice(0, 8)}` : args.account, p_external_account_label: null,
+  });
+};
+const replace = async (actor: { userId: string }, id: string, ciphertext: string, account: string | null) =>
+  (await db.automation<{ server_set_provider_credential: string }>("server_set_provider_credential", {
+    p_actor: actor.userId, p_connection_id: id, p_ciphertext: ciphertext, p_key_version: 1, p_hint: "9999", p_fingerprint: fingerprint(ciphertext),
+    p_external_account_id: account, p_external_account_label: null,
+  }))[0].server_set_provider_credential;
 
 /** Deux clients, chacun avec SA connexion réelle, et un canal lu depuis chaque compte. */
 async function twoAccounts(): Promise<Seed> {
@@ -70,7 +87,7 @@ describe("reprise de l'existant", () => {
     expect((await db.post("p1")).approval_status).toBe("pending");
   });
 
-  it("un ancien appelant (sans connexion dans le relevé) fonctionne comme avant", async () => {
+  it("un ancien appelant (sans connexion dans le relevé) fonctionne comme avant tant qu'aucun compte historique réel n'existe", async () => {
     db = await LocalDb.create();
     await db.seed();
     expect(await db.sync([{ id: "p1" }, { id: "p2" }])).toMatchObject({ created: 2 });
@@ -97,7 +114,10 @@ describe("isolation des connexions (RLS et rôles réels)", () => {
 
   it("un client ne crée, ne remplace ni ne révoque une connexion ; écrire directement dans les tables est refusé", async () => {
     const seed = await twoAccounts();
+    // Même en présentant le secret du serveur, un acteur qui n'est pas administrateur est refusé.
     await expect(create(seed.ines, "33333333-3333-4333-8333-333333333333", { org: seed.colibri })).rejects.toThrow(/forbidden/);
+    await expect(replace(seed.ines, A, "v1.x.y.z", null)).rejects.toThrow(/forbidden/);
+    await expect(db.as(seed.ines, "select public.admin_create_provider_connection($1, 'mock', 'x', null, 'none', null, 1, null, 'cabc')", ["33333333-3333-4333-8333-333333333333"])).rejects.toThrow(/forbidden/);
     await expect(db.as(seed.ines, "select public.admin_set_provider_credential($1, 'v1.x.y.z')", [A])).rejects.toThrow(/forbidden/);
     await expect(db.as(seed.sofia, "select public.admin_revoke_provider_connection($1, true)", [A])).rejects.toThrow(/forbidden/);
     for (const actor of [seed.ines, seed.admin]) {
@@ -184,14 +204,14 @@ describe("la lecture d'un compte ne touche que ses publications", () => {
 });
 
 describe("remplacement et révocation", () => {
-  it("remplacer la clé garde la connexion ; une clé d'un AUTRE compte est refusée", async () => {
+  it("remplacer la clé garde la connexion ; une clé d'un AUTRE compte est refusée et l'ancienne reste en place", async () => {
     const seed = await twoAccounts();
-    await db.as(seed.admin, "select public.admin_set_provider_credential($1, 'v1.nouvelle.t.c', 1, '9999', 'compte-colibri')", [A]);
-    await expect(db.as(seed.admin, "select public.admin_set_provider_credential($1, 'v1.autre.t.c', 1, '0000', 'compte-etranger')", [A])).rejects.toThrow(/provider_account_mismatch/);
+    expect(await replace(seed.admin, A, "v1.nouvelle.t.c", "compte-11111111")).toBe("replaced");
+    expect(await replace(seed.admin, A, "v1.autre.t.c", "compte-etranger")).toBe("account_mismatch");
     const [{ provider_connections_for_run: run }] = await db.automation<{ provider_connections_for_run: { id: string; ciphertext: string }[] }>("provider_connections_for_run", { p_mode: "real" });
     expect(run.find((c) => c.id === A)?.ciphertext).toBe("v1.nouvelle.t.c");
     expect(run.find((c) => c.id === B)?.ciphertext).toBe("v1.secretB.t.c");
-    await expect(db.as(seed.admin, "select public.admin_set_provider_credential($1, 'pas-chiffre')", [A])).rejects.toThrow(/credential_required/);
+    await expect(replace(seed.admin, A, "pas-chiffre", "compte-11111111")).rejects.toThrow(/credential_required/);
   });
 
   it("révocation refusée tant qu'une programmation n'est pas rapprochée ; la décision forcée est tracée ; B n'est pas touché", async () => {
@@ -214,7 +234,7 @@ describe("remplacement et révocation", () => {
     expect(run.map((c) => c.id)).toEqual([B]);
     // Une connexion révoquée ne se réactive pas et ne reçoit plus de clé.
     await expect(db.sql("update public.provider_connections set status = 'active', revoked_at = null where id = $1", [A])).rejects.toThrow(/provider_connection_revoked/);
-    await expect(db.as(seed.admin, "select public.admin_set_provider_credential($1, 'v1.x.y.z')", [A])).rejects.toThrow(/provider_connection_revoked/);
+    await expect(replace(seed.admin, A, "v1.x.y.z", "compte-11111111")).rejects.toThrow(/provider_connection_revoked/);
   });
 
   it("le compte simulé de démonstration ne se révoque pas", async () => {
@@ -241,11 +261,12 @@ describe("quota par compte", () => {
 });
 
 describe("état du schéma", () => {
-  it("la préparation au service exige 0012", async () => {
+  it("la préparation au service exige 0012 et 0013", async () => {
     db = await LocalDb.create();
     await db.seed();
     const [{ schema_status: status }] = await db.automation<{ schema_status: { ready: boolean; checks: Record<string, boolean> } }>("schema_status", {});
     expect(status.checks["0012"]).toBe(true);
+    expect(status.checks["0013"]).toBe(true);
     expect(status.ready).toBe(true);
   });
 });

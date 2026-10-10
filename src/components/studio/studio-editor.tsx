@@ -76,6 +76,7 @@ export function StudioEditor({
   media,
   scheduled,
   now,
+  sendUnavailable = null,
 }: {
   /** null : nouveau contenu, créé au premier enregistrement. */
   draft: StudioDraft | null;
@@ -87,6 +88,8 @@ export function StudioEditor({
   /** Publications déjà prévues, pour signaler les conflits de date. */
   scheduled: ScheduledItem[];
   now: string;
+  /** Envoi vers Buffer impossible pour ce client (aucun compte connecté, envoi non activé…) : la raison, ou null. */
+  sendUnavailable?: string | null;
 }) {
   const router = useRouter();
   const timezone = organization.timezone;
@@ -342,7 +345,7 @@ export function StudioEditor({
               {status === "saving" ? <LoaderCircle className="size-3.5 animate-spin" /> : status === "error" ? <CloudOff className="size-3.5" /> : status === "saved" ? <Check className="size-3.5" /> : null}
               {SAVE_LABELS[status]}
             </span>
-            <Button size="lg" disabled={blocking || submitting || status === "error" || unknownPush.length > 0} onClick={() => setConfirm("submit")}>
+            <Button size="lg" disabled={blocking || submitting || status === "error" || unknownPush.length > 0 || sendUnavailable !== null} title={sendUnavailable ?? undefined} onClick={() => setConfirm("submit")}>
               {submitting ? <LoaderCircle className="animate-spin" /> : <Send />}
               {inBuffer > 0 ? "Renvoyer en validation" : "Envoyer en validation"}
             </Button>
@@ -353,6 +356,11 @@ export function StudioEditor({
       {saveError && (
         <p className="flex items-start gap-2 rounded-2xl bg-tone-red-soft px-4 py-3 text-sm text-tone-red" role="alert">
           <CircleAlert className="mt-0.5 size-4 shrink-0" /> {saveError}
+        </p>
+      )}
+      {sendUnavailable && (
+        <p className="flex items-start gap-2 rounded-2xl bg-tone-amber-soft px-4 py-3 text-sm text-tone-amber" role="status" data-testid="envoi-indisponible">
+          <CircleAlert className="mt-0.5 size-4 shrink-0" /> Le contenu s&apos;enregistre, mais il ne peut pas être envoyé en validation : {sendUnavailable}
         </p>
       )}
       {inBuffer > 0 && (

@@ -3,13 +3,15 @@ import Link from "next/link";
 import { Check, X } from "lucide-react";
 
 import { ConnectionsPanel } from "@/components/admin/connections-panel";
+import { ReencryptButton } from "@/components/admin/reencrypt-button";
 import { PageHeader } from "@/components/shared/page-header";
 import { isArchived } from "@/lib/domain/clients";
 import { requireAdmin } from "@/server/auth";
 import { listConnectionEvents, listProviderConnections } from "@/server/connections";
-import { credentialKeyAvailable } from "@/server/credentials";
+import { credentialKeyAvailable, currentKeyVersion } from "@/server/credentials";
 import { getSyncStatus } from "@/server/data";
-import { env, realBufferBlockedInDevelopment } from "@/server/env";
+import { bufferModeProblem, env, realBufferBlockedInDevelopment } from "@/server/env";
+import { notificationMode } from "@/server/notifications";
 import { readiness } from "@/server/readiness";
 
 export const metadata: Metadata = { title: "Paramètres" };
@@ -27,7 +29,11 @@ const SECTIONS = [
 const EVENT_LABELS: Record<string, string> = {
   created: "Connexion créée",
   credential_replaced: "Clé remplacée",
-  verified: "Connexion vérifiée",
+  verified: "Connexion vérifiée (compte constaté chez Buffer)",
+  verification_failed: "Vérification non aboutie",
+  credential_reencrypted: "Clé re-chiffrée (rotation de la clé maître)",
+  revoke_requested: "Révocation demandée (nouveaux effets bloqués)",
+  revoke_cancelled: "Demande de révocation annulée",
   revoked: "Connexion révoquée",
   revoke_refused: "Révocation refusée (opérations en attente)",
   collision: "Canal annoncé par un autre compte",
@@ -54,7 +60,7 @@ function Rows({ rows }: { rows: { label: string; value: React.ReactNode; ok?: bo
       {rows.map((row) => (
         <li key={row.label} className="flex flex-wrap items-center gap-x-4 gap-y-1 border-b px-5 py-3.5 last:border-b-0">
           {row.ok === undefined ? <span className="size-4 shrink-0" /> : row.ok ? <Check className="size-4 shrink-0 text-tone-green" /> : <X className="size-4 shrink-0 text-tone-red" />}
-          <span className="w-56 shrink-0 text-sm font-semibold">{row.label}</span>
+          <span className="w-full shrink-0 text-sm font-semibold sm:w-56">{row.label}</span>
           <span className="min-w-0 flex-1 basis-48 text-sm text-muted-foreground">{row.value}</span>
           {row.note && <span className="text-xs text-muted-foreground">{row.note}</span>}
         </li>
@@ -74,6 +80,11 @@ export default async function Page() {
   const archived = session.organizations.length - active.length;
   const labels = new Map((connections ?? []).map((connection) => [connection.id, connection.label]));
   const simulated = env.bufferMode === "mock";
+  const problem = bufferModeProblem();
+  const keyVersion = (() => { try { return currentKeyVersion(); } catch { return null; } })();
+  const outdatedKeys = (connections ?? []).filter((connection) => connection.status !== "revoked" && connection.keyVersion !== null && keyVersion !== null && connection.keyVersion !== keyVersion).length;
+  const usable = (connections ?? []).filter((connection) => connection.mode === env.bufferMode && connection.status === "active" && connection.verified).length;
+  const sendsNotifications = notificationMode() === "webhook";
 
   return (
     <div className="grid animate-rise grid-cols-1 gap-8">
@@ -88,7 +99,7 @@ export default async function Page() {
         <Rows rows={[
           { label: "Application", value: "Cadence" },
           { label: "Langue", value: "Français", note: "non modifiable" },
-          { label: "Fuseau d'affichage", value: "Celui de chaque client (fiche client)", note: "Europe/Paris par défaut" },
+          { label: "Fuseau horaire", value: "Chaque client a le sien (fiche client) ; les écrans d'administration sont en heure de Paris" },
           { label: "Adresse publique", value: env.appUrl ?? "Non définie : les notifications n'ont pas de lien", ok: Boolean(env.appUrl) },
         ]} />
       </Section>
@@ -97,7 +108,7 @@ export default async function Page() {
         <Rows rows={[
           { label: "Clients actifs", value: <Link href="/admin/clients" className="font-medium text-foreground underline-offset-4 hover:underline">{active.length} client{active.length > 1 ? "s" : ""}</Link> },
           { label: "Clients archivés", value: `${archived}`, note: "leurs utilisateurs n'ont plus accès" },
-          { label: "Rôles", value: "Administrateur, client", note: "attribués par l'administrateur" },
+          { label: "Rôles", value: "Administrateur (l'agence) et client (membre d'un ou plusieurs clients)", note: "pas de droits par membre" },
         ]} />
       </Section>
 
@@ -105,10 +116,19 @@ export default async function Page() {
         <Rows rows={[
           {
             label: "Mode du serveur",
-            value: simulated ? "Simulé : aucun appel à Buffer, données fictives" : "Réel : les opérations sont envoyées à Buffer",
+            value: problem ?? (simulated ? "Simulé : aucun appel à Buffer, données fictives (autorisé explicitement sur ce serveur)" : "Réel : Buffer est lu par les comptes connectés ci-dessous"),
+            ok: problem === null,
             note: realBufferBlockedInDevelopment() ? "mode réel ignoré en développement" : undefined,
           },
-          { label: "Chiffrement des clés", value: credentialKeyAvailable() ? "Disponible : les clés sont chiffrées avant enregistrement" : "Indisponible : aucune clé Buffer ne peut être enregistrée", ok: credentialKeyAvailable() },
+          ...(simulated ? [] : [
+            { label: "Comptes Buffer utilisables", value: usable === 0 ? "Aucun compte Buffer connecté : rien n'est lu ni envoyé" : `${usable} compte${usable > 1 ? "s" : ""} connecté${usable > 1 ? "s" : ""} et vérifié${usable > 1 ? "s" : ""}`, ok: usable > 0 },
+            {
+              label: "Envoi vers Buffer",
+              value: env.bufferWritesEnabled ? "Activé : brouillons, programmations et annulations sont envoyés à Buffer" : "Non activé : Buffer est lu, mais rien n'y est créé, programmé ni annulé",
+              note: env.bufferWritesEnabled ? undefined : "s'active côté serveur (CADENCE_BUFFER_WRITES), sur décision explicite",
+            },
+          ]),
+          { label: "Chiffrement des clés", value: credentialKeyAvailable() ? `Disponible (clé maître n° ${keyVersion ?? "?"}) : les clés sont chiffrées avant enregistrement` : "Indisponible : aucune clé Buffer ne peut être enregistrée", ok: credentialKeyAvailable() },
         ]} />
         {connections === null ? (
           <p className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Les connexions demandent la migration 0012 de la base de données.</p>
@@ -118,6 +138,7 @@ export default async function Page() {
             organizations={active.map((organization) => ({ id: organization.id, name: organization.name }))}
             serverMode={env.bufferMode}
             canStoreKeys={credentialKeyAvailable()}
+            writesEnabled={env.bufferWritesEnabled}
           />
         )}
       </Section>
@@ -135,7 +156,7 @@ export default async function Page() {
 
       <Section id="notifications" title="Notifications" description="Messages envoyés aux clients et à l'administrateur.">
         <Rows rows={[
-          { label: "Mode", value: env.notificationMode === "webhook" && !simulated ? "Envoi réel" : "Simulation : aucun message ne sort du serveur" },
+          { label: "Mode", value: sendsNotifications ? "Envoi réel" : "Simulation : aucun message ne sort du serveur" },
           { label: "Contenu", value: env.notificationContent === "minimal" ? "Minimal : aucun texte de publication dans les messages" : "Complet" },
           { label: "Préférences", value: <Link href="/admin/notifications" className="font-medium text-foreground underline-offset-4 hover:underline">Journal et préférences</Link> },
         ]} />
@@ -143,9 +164,16 @@ export default async function Page() {
 
       <Section id="securite" title="Sécurité" description="Accès et opérations sensibles. Les secrets ne sont jamais affichés.">
         <Rows rows={[
-          { label: "Inscription publique", value: "Fermée : les comptes sont créés par l'administrateur" },
+          { label: "Comptes utilisateurs", value: "Créés par l'administrateur depuis la fiche d'un client" },
           { label: "Secret d'automatisation", value: process.env.AUTOMATION_SECRET ? "Présent" : "Absent", ok: Boolean(process.env.AUTOMATION_SECRET) },
           { label: "Clés Buffer", value: "Chiffrées en base, déchiffrées par le serveur uniquement, jamais envoyées au navigateur" },
+          {
+            label: "Rotation de la clé maître",
+            value: outdatedKeys === 0
+              ? "Toutes les clés Buffer sont chiffrées avec la clé maître courante"
+              : <span className="flex flex-wrap items-center gap-3">{outdatedKeys} clé{outdatedKeys > 1 ? "s" : ""} Buffer encore chiffrée{outdatedKeys > 1 ? "s" : ""} avec une ancienne clé maître <ReencryptButton /></span>,
+            ok: outdatedKeys === 0,
+          },
         ]} />
         <div className="rounded-2xl border bg-card">
           <p className="border-b px-5 py-3 text-sm font-semibold">Journal des connexions</p>
@@ -172,7 +200,7 @@ export default async function Page() {
           ...ready.checks.filter((check) => !check.ok).map((check) => ({ label: "À corriger", value: check.name, ok: false })),
           { label: "Planificateur", value: status.lastScheduledAt ? `Dernier passage : ${dateTime(status.lastScheduledAt)}` : "Jamais passé", note: `toutes les ${env.syncIntervalMinutes} min` },
           { label: "Dernier échec", value: status.lastFailureAt ? `${dateTime(status.lastFailureAt)} — ${status.lastError ?? ""}` : "Aucun" },
-          { label: "Sauvegardes", value: "Suivies hors de l'application (supervision du serveur)", note: "voir RUNBOOK" },
+          { label: "Sauvegardes", value: "Suivies hors de l'application, par la supervision du serveur", note: "voir docs/SAUVEGARDE.md" },
         ]} />
       </Section>
     </div>

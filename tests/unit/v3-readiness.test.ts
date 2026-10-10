@@ -30,7 +30,7 @@ const GOOD = {
 };
 
 beforeEach(() => {
-  answer = { ready: true, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": true, "0012": true } };
+  answer = { ready: true, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": true, "0012": true, "0013": true } };
   failure = null;
 });
 afterEach(() => {
@@ -87,7 +87,7 @@ describe("readiness", () => {
     expect(result.checks.at(-1)?.name).toContain("0011 absente");
   });
 
-  it("mode réel sans clé Buffer, adresse en HTTP non locale, secret trop court : non prête", async () => {
+  it("mode réel sans clé de chiffrement des connexions, adresse en HTTP non locale, secret trop court : non prête", async () => {
     configure({ ...GOOD, BUFFER_MODE: "real" });
     expect((await readiness()).ready).toBe(false);
     configure({ ...GOOD, NEXT_PUBLIC_SUPABASE_URL: "http://projet.exemple.org" });

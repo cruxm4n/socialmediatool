@@ -2,6 +2,7 @@ import "server-only";
 
 import type { PostAsset } from "@/lib/types";
 import { MissingFunctionError, rpc } from "@/server/automation-rpc";
+import { BUFFER_WRITES_DISABLED, env } from "@/server/env";
 import { activeRateLimitPause, recordRateLimit } from "@/server/quota";
 import { ProviderError, sameContent, type PublishingProvider } from "@/server/publishing/provider";
 
@@ -83,6 +84,11 @@ export async function unscheduleInvalidatedPosts(provider: PublishingProvider, o
   const outcome: CompensationOutcome = { done: 0, failures: 0, blocked: null, rateLimited: null, deferred: 0 };
   if (pending.length === 0) return outcome;
 
+  // Barrière d'activation fermée : aucune écriture ne part, annulation comprise. L'état reste « à confirmer ».
+  if (provider.mode === "real" && !env.bufferWritesEnabled) {
+    for (const post of pending) await rpc("complete_unscheduling", { p_post_id: post.id, p_ok: false, p_error: `${BUFFER_WRITES_DISABLED} Annulation reportée.` });
+    return { ...outcome, failures: pending.length, deferred: pending.length, blocked: BUFFER_WRITES_DISABLED };
+  }
   // Un refus de quota (429) n'est pas contourné, même pour annuler : l'état reste « à confirmer » et visible.
   const pause = await activeRateLimitPause(provider.mode);
   if (pause?.hard) {

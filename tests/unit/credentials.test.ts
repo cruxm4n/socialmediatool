@@ -91,7 +91,7 @@ describe("mode réel et serveur de développement", () => {
     warn.mockRestore();
   });
 
-  it("en production et en test, BUFFER_MODE=real reste le mode réel ; toute autre valeur reste simulée", async () => {
+  it("en production et en test, BUFFER_MODE=real reste le mode réel ; hors production, toute autre valeur reste simulée", async () => {
     const { env } = await import("@/server/env");
     Object.assign(process.env, { BUFFER_MODE: "real", NODE_ENV: "production" });
     expect(env.bufferMode).toBe("real");
@@ -99,6 +99,108 @@ describe("mode réel et serveur de développement", () => {
     expect(env.bufferMode).toBe("real");
     process.env.BUFFER_MODE = "Real";
     expect(env.bufferMode).toBe("mock");
+  });
+
+  it("EN PRODUCTION, le Buffer simulé n'est jamais choisi en silence : mode absent, mal écrit ou « mock » sans autorisation", async () => {
+    const { env, bufferModeProblem, simulatedBufferAllowed } = await import("@/server/env");
+    Object.assign(process.env, { NODE_ENV: "production" });
+    delete process.env.CADENCE_ALLOW_SIMULATED_BUFFER;
+    for (const value of [undefined, "", "Real", "mock", "simulation"]) {
+      if (value === undefined) delete process.env.BUFFER_MODE;
+      else process.env.BUFFER_MODE = value;
+      expect(env.bufferMode).toBe("real");
+      expect(bufferModeProblem()).toMatch(/BUFFER_MODE/);
+      expect(simulatedBufferAllowed()).toBe(false);
+    }
+    // L'autorisation seule ne suffit pas non plus : il faut AUSSI demander explicitement le mode simulé.
+    process.env.CADENCE_ALLOW_SIMULATED_BUFFER = "1";
+    delete process.env.BUFFER_MODE;
+    expect(env.bufferMode).toBe("real");
+    expect(bufferModeProblem()).not.toBeNull();
+    process.env.BUFFER_MODE = "mock";
+    expect(env.bufferMode).toBe("mock");
+    expect(bufferModeProblem()).toBeNull();
+    process.env.BUFFER_MODE = "real";
+    expect(env.bufferMode).toBe("real");
+    expect(bufferModeProblem()).toBeNull();
+  });
+
+  it("les écritures vers le vrai Buffer sont fermées par défaut ; seule CADENCE_BUFFER_WRITES=enabled les ouvre", async () => {
+    const { env } = await import("@/server/env");
+    Object.assign(process.env, { BUFFER_MODE: "real", NODE_ENV: "production" });
+    for (const value of [undefined, "", "1", "true", "Enabled", "disabled"]) {
+      if (value === undefined) delete process.env.CADENCE_BUFFER_WRITES;
+      else process.env.CADENCE_BUFFER_WRITES = value;
+      expect(env.bufferWritesEnabled).toBe(false);
+    }
+    process.env.CADENCE_BUFFER_WRITES = "enabled";
+    expect(env.bufferWritesEnabled).toBe(true);
+    // Le Buffer simulé n'envoie rien nulle part : la barrière ne le concerne pas.
+    delete process.env.CADENCE_BUFFER_WRITES;
+    Object.assign(process.env, { BUFFER_MODE: "mock", NODE_ENV: "test" });
+    expect(env.bufferWritesEnabled).toBe(true);
+  });
+});
+
+describe("rotation de la clé maître", () => {
+  const original = { ...process.env };
+  afterEach(() => {
+    process.env = { ...original };
+  });
+  const key = () => randomBytes(32).toString("base64");
+
+  it("un secret chiffré avec l'ancienne clé reste lisible pendant la rotation, puis se re-chiffre avec la nouvelle", async () => {
+    const { encryptCredential, decryptCredential, currentKeyVersion } = await load();
+    const [k1, k2] = [key(), key()];
+    process.env.CADENCE_CREDENTIALS_KEY = k1;
+    expect(currentKeyVersion()).toBe(1);
+    const v1 = encryptCredential(A, SECRET);
+
+    // Rotation : nouvelle clé courante (n° 2), l'ancienne reste disponible sous son numéro.
+    Object.assign(process.env, { CADENCE_CREDENTIALS_KEY: k2, CADENCE_CREDENTIALS_KEY_VERSION: "2", CADENCE_CREDENTIALS_PREVIOUS_KEYS: `1:${k1}` });
+    expect(currentKeyVersion()).toBe(2);
+    expect(decryptCredential(A, v1, 1)).toBe(SECRET);
+    const v2 = encryptCredential(A, decryptCredential(A, v1, 1));
+    expect(decryptCredential(A, v2, 2)).toBe(SECRET);
+    // Chaque secret ne se lit qu'avec la clé de SA version : aucune clé n'est essayée « au cas où ».
+    expect(() => decryptCredential(A, v1, 2)).toThrow(/indéchiffrable/);
+    expect(() => decryptCredential(A, v2, 1)).toThrow(/indéchiffrable/);
+
+    // Ancienne clé retirée du serveur : les secrets re-chiffrés restent lisibles, les anciens non — et l'erreur le dit.
+    delete process.env.CADENCE_CREDENTIALS_PREVIOUS_KEYS;
+    expect(decryptCredential(A, v2, 2)).toBe(SECRET);
+    expect(() => decryptCredential(A, v1, 1)).toThrow(/Clé de chiffrement n° 1 absente/);
+  });
+
+  it("la clé maître n'est jamais générée par le serveur : absente ou mal formée, tout est refusé avec un message sans secret", async () => {
+    const { encryptCredential, credentialKeyAvailable, currentKeyVersion, credentialStorageFingerprint } = await load();
+    delete process.env.CADENCE_CREDENTIALS_KEY;
+    expect(credentialKeyAvailable()).toBe(false);
+    expect(() => encryptCredential(A, SECRET)).toThrow(/CADENCE_CREDENTIALS_KEY/);
+    expect(() => credentialStorageFingerprint(SECRET)).toThrow(/CADENCE_CREDENTIALS_KEY/);
+    const short = Buffer.alloc(16, 1).toString("base64");
+    process.env.CADENCE_CREDENTIALS_KEY = short;
+    let message = "";
+    try { encryptCredential(A, SECRET); } catch (error) { message = (error as Error).message; }
+    expect(message).toMatch(/32 octets/);
+    expect(message).not.toContain(short);
+    process.env.CADENCE_CREDENTIALS_KEY = key();
+    for (const bad of ["0", "-1", "1.5", "deux"]) {
+      process.env.CADENCE_CREDENTIALS_KEY_VERSION = bad;
+      expect(() => currentKeyVersion()).toThrow(/entier positif/);
+    }
+  });
+
+  it("l'empreinte d'une clé d'API dépend de la clé maître, ne révèle pas la clé et distingue deux clés", async () => {
+    const { credentialStorageFingerprint } = await load();
+    process.env.CADENCE_CREDENTIALS_KEY = key();
+    const first = credentialStorageFingerprint(SECRET);
+    expect(first).toMatch(/^[0-9a-f]{64}$/);
+    expect(first).toBe(credentialStorageFingerprint(SECRET));
+    expect(first).not.toBe(credentialStorageFingerprint(`${SECRET}x`));
+    expect(first).not.toContain(SECRET);
+    process.env.CADENCE_CREDENTIALS_KEY = key();
+    expect(credentialStorageFingerprint(SECRET)).not.toBe(first);
   });
 });
 

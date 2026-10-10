@@ -18,7 +18,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { ACL_SNAPSHOT_SQL, diffSnapshots, parseSnapshot, snapshotFromJson } from "./lib/acl-snapshot.mjs";
-import { postgresIn, readManifest, restoreBackup, sha256File, validateBackup } from "./lib/restore.mjs";
+import { postgresIn, readManifest, restoreBackup, sha256File, validateBackup, verifyRestoredCredentials } from "./lib/restore.mjs";
 
 const args = process.argv.slice(2);
 const option = (name, fallback = undefined) => {
@@ -95,6 +95,14 @@ try {
     if (expected === null) continue;
     const actual = safe(`select md5(coalesce(string_agg(t::text, '|' order by t::text), '')) from ${table} t;`);
     check(`contenu restauré à l'identique : ${table}`, actual === expected);
+  }
+  // Clés Buffer chiffrées (0012) : restaurées à l'identique ci-dessus ; sont-elles encore déchiffrables ? La clé
+  // maître n'est PAS dans la sauvegarde : elle doit être fournie à ce script par l'environnement. Sans elle, le
+  // contrôle est signalé « non fait », jamais « réussi ».
+  const credentials = verifyRestoredCredentials(pg, dbName);
+  if (credentials.applicable && credentials.total > 0) {
+    if (!credentials.keyProvided) console.log(`NON VÉRIFIÉ  ${credentials.total} clé(s) Buffer chiffrée(s) restaurée(s) : clé maître non fournie (CADENCE_CREDENTIALS_KEY), déchiffrement non contrôlé.`);
+    else check(`clés Buffer restaurées déchiffrables avec la clé maître fournie (${credentials.total})`, credentials.unreadable.length === 0, `illisibles : ${credentials.unreadable.join(", ")}`);
   }
   const migrations = (safe("select version from supabase_migrations.schema_migrations order by version;", "") ?? "").split("\n").filter(Boolean);
   check("historique des migrations restauré", JSON.stringify(migrations) === JSON.stringify(manifest.migrations));

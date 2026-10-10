@@ -66,6 +66,7 @@ const makeRouter = () =>
     recordState: async (id, state) => {
       connectionStates.push({ id, state });
     },
+    loadStates: async () => null,
     build: (connection) => (connection.id === A ? providerA : providerB),
   });
 vi.mock("@/server/publishing", () => ({ getProvider: () => makeRouter() }));

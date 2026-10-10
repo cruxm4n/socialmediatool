@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { ProviderError, type DraftContent, type ProviderPost, type PublishingProvider } from "@/server/publishing/provider";
-import { ConnectionRouter, type ConnectionRow, type ConnectionState, type RouterDeps } from "@/server/publishing/router";
+import { ConnectionRouter, type ConnectionRow, type ConnectionState, type DurableConnectionState, type RouterDeps } from "@/server/publishing/router";
 import { emptyState, FileProvider, readState, writeState, type FakeBufferState } from "../support/file-provider";
 
 /*
@@ -27,6 +27,7 @@ let providerB: FileProvider;
 let routes: { posts: Record<string, string>; channels: Record<string, string> };
 let states: { id: string; state: ConnectionState }[];
 let rows: ConnectionRow[] | null;
+let durable: Record<string, DurableConnectionState> | null;
 let built: string[];
 let now: number;
 
@@ -56,6 +57,8 @@ function router(overrides: Partial<RouterDeps> = {}): ConnectionRouter {
     recordState: async (id, state) => {
       states.push({ id, state });
     },
+    // État durable relu avant chaque opération. `null` : base sans 0013 (l'état chargé au départ fait foi).
+    loadStates: async () => durable,
     build: (connection) => {
       built.push(connection.id);
       if (connection.id === A) return providerA;
@@ -79,6 +82,7 @@ beforeEach(() => {
   rows = [row(A, "Colibri"), row(B, "Nordwind")];
   states = [];
   built = [];
+  durable = null;
   now = Date.parse("2030-01-01T00:00:00Z");
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
@@ -272,3 +276,219 @@ describe("le marquage d'une erreur ne se perd pas", () => {
   });
 });
 
+
+/*
+ * Contrôle indépendant du 10 octobre 2026 — un routeur DÉJÀ CHARGÉ doit obéir à l'état durable de la base
+ * (P1-01 révocation, P1-04 pause), et la version de production ne doit ni simuler ni écrire sans autorisation.
+ */
+const active = (): Record<string, DurableConnectionState> => ({ [A]: { status: "active", pausedUntil: null, credentialAt: "t0" }, [B]: { status: "active", pausedUntil: null, credentialAt: "t0" } });
+
+describe("un routeur déjà chargé relit l'état durable avant chaque opération", () => {
+  it("révocation confirmée après le chargement : plus aucune écriture ni lecture sur A, B continue (N10)", async () => {
+    durable = active();
+    const loaded = router();
+    await loaded.fetchSnapshot();
+    const before = total(providerA);
+    durable[A] = { status: "revoked", pausedUntil: null };
+    for (const call of [() => loaded.createDraft(content("ch-a")), () => loaded.schedulePost(post("post-a", "ch-a")), () => loaded.unschedulePost(post("post-a", "ch-a")), () => loaded.getPost("post-a")]) {
+      const error = await call().catch((cause) => cause);
+      expect(error).toBeInstanceOf(ProviderError);
+      expect(error).toMatchObject({ connectionId: A, outcome: "failed" });
+      expect(error.message).toMatch(/révoquée/);
+    }
+    expect(total(providerA)).toBe(before);
+    await loaded.createDraft(content("ch-b"));
+    expect(providerB.calls("createDraft")).toBe(1);
+  });
+
+  it("connexion disparue de la base : traitée comme révoquée, jamais comme utilisable", async () => {
+    durable = active();
+    const loaded = router();
+    await loaded.fetchSnapshot();
+    delete durable[A];
+    await expect(loaded.createDraft(content("ch-a"))).rejects.toThrow(/révoquée/);
+    expect(providerA.calls("createDraft")).toBe(0);
+  });
+
+  it("pause de quota enregistrée par un AUTRE worker après le chargement : aucune requête sur A, B continue (N11)", async () => {
+    durable = active();
+    const loaded = router();
+    await loaded.fetchSnapshot();
+    const before = total(providerA);
+    durable[A] = { status: "active", pausedUntil: new Date(now + 48 * 3600_000).toISOString(), credentialAt: "t0" };
+    const error = await loaded.createDraft(content("ch-a")).catch((cause) => cause);
+    expect(error).toMatchObject({ kind: "rate_limit", connectionId: A });
+    expect(error.retryAfterSeconds).toBeGreaterThan(172_000);
+    await expect(loaded.unschedulePost(post("post-a", "ch-a"))).rejects.toMatchObject({ kind: "rate_limit" });
+    expect(total(providerA)).toBe(before);
+    await loaded.unschedulePost(post("post-b", "ch-b"));
+    expect(providerB.calls("unschedulePost")).toBe(1);
+    // Une pause plus courte lue ensuite ne raccourcit pas celle déjà connue.
+    durable[A] = { status: "active", pausedUntil: new Date(now + 60_000).toISOString(), credentialAt: "t0" };
+    now += 120_000;
+    await expect(loaded.createDraft(content("ch-a"))).rejects.toMatchObject({ kind: "rate_limit" });
+  });
+
+  it("clé remplacée pendant le passage : le client chargé (ancienne clé) n'envoie plus rien", async () => {
+    durable = active();
+    const loaded = router();
+    await loaded.fetchSnapshot();
+    durable[A] = { status: "active", pausedUntil: null, credentialAt: "t1" };
+    await expect(loaded.createDraft(content("ch-a"))).rejects.toThrow(/clé.*a changé/);
+    expect(providerA.calls("createDraft")).toBe(0);
+    // Un nouveau routeur (prochain passage) repart avec la nouvelle clé.
+    await router().createDraft(content("ch-a"));
+    expect(providerA.calls("createDraft")).toBe(1);
+  });
+
+  it("état illisible en base : l'opération est REFUSÉE (résultat certain), rien n'est envoyé", async () => {
+    const loaded = router({ loadStates: async () => { throw new Error("base injoignable"); } });
+    const error = await loaded.createDraft(content("ch-a")).catch((cause) => cause);
+    expect(error).toMatchObject({ outcome: "failed", connectionId: A });
+    expect(error.message).toMatch(/illisible en base.*rien n'a été envoyé/);
+    expect(total(providerA)).toBe(0);
+  });
+
+  it("révocation demandée : annuler et lire restent possibles avec la clé conservée ; aucun NOUVEL effet", async () => {
+    durable = active();
+    rows = [row(A, "Colibri", { status: "revoking" }), row(B, "Nordwind")];
+    durable[A].status = "revoking";
+    const loaded = router();
+    for (const call of [() => loaded.createDraft(content("ch-a")), () => loaded.schedulePost(post("post-a", "ch-a")), () => loaded.updateDraft("post-a", content("ch-a")), () => loaded.rescheduleDraft(post("post-a", "ch-a"), DUE)]) {
+      await expect(call()).rejects.toThrow(/Révocation demandée/);
+    }
+    expect(total(providerA)).toBe(0);
+    expect((await loaded.getPost("post-a"))?.id).toBe("post-a");
+    expect((await loaded.unschedulePost(post("post-a", "ch-a"))).status).toBe("draft");
+    expect(providerA.calls("unschedulePost")).toBe(1);
+    // Demande posée APRÈS le chargement : même effet.
+    durable = active();
+    rows = [row(A, "Colibri"), row(B, "Nordwind")];
+    const later = router();
+    await later.fetchSnapshot();
+    durable[A].status = "revoking";
+    await expect(later.createDraft(content("ch-a"))).rejects.toThrow(/Révocation demandée/);
+    expect(providerA.calls("createDraft")).toBe(0);
+  });
+
+  it("clé jamais vérifiée auprès du fournisseur : la connexion est inutilisable, aucun client n'est construit", async () => {
+    rows = [row(A, "Colibri", { verified: false }), row(B, "Nordwind")];
+    const loaded = router();
+    await expect(loaded.createDraft(content("ch-a"))).rejects.toThrow(/non vérifiée/);
+    expect(built).toEqual([B]);
+    const snapshot = await loaded.fetchSnapshot();
+    expect(snapshot.scopeConnectionIds).toEqual([B]);
+    expect(snapshot.connectionErrors?.[0]).toMatchObject({ connectionId: A });
+  });
+
+  it("pause de quota impossible à enregistrer : retentée, puis signalée dans l'erreur ; le compte n'est plus sollicité", async () => {
+    let attempts = 0;
+    const loaded = router({ recordState: async () => { attempts += 1; throw new Error("base injoignable"); } });
+    patch(fileA, (state) => state.faults.push("unschedulePost:429"));
+    const error = await loaded.unschedulePost(post("post-a", "ch-a")).catch((cause) => cause);
+    expect(error).toMatchObject({ kind: "rate_limit", connectionId: A });
+    expect(error.message).toMatch(/pause de ce compte n'a pas pu être enregistrée/);
+    expect(attempts).toBe(2);
+    const calls = total(providerA);
+    await expect(loaded.getPost("post-a")).rejects.toMatchObject({ kind: "rate_limit" });
+    expect(total(providerA)).toBe(calls);
+  });
+});
+
+describe("production : ni simulateur silencieux, ni écriture sans autorisation", () => {
+  it("barrière d'activation fermée : toutes les écritures sont refusées avant tout appel ; les lectures passent", async () => {
+    const loaded = router({ writesDisabled: "Les écritures vers Buffer ne sont pas activées." });
+    for (const call of [
+      () => loaded.createDraft(content("ch-a")), () => loaded.updateDraft("post-a", content("ch-a")), () => loaded.rescheduleDraft(post("post-a", "ch-a"), DUE),
+      () => loaded.schedulePost(post("post-a", "ch-a")), () => loaded.unschedulePost(post("post-a", "ch-a")),
+    ]) {
+      const error = await call().catch((cause) => cause);
+      expect(error).toMatchObject({ refusal: "writes_disabled", outcome: "failed", kind: "api" });
+      expect(error.connectionId).toBeUndefined();
+    }
+    expect(total(providerA) + total(providerB)).toBe(0);
+    expect((await loaded.fetchSnapshot()).posts.length).toBe(2);
+    expect((await loaded.getPost("post-a"))?.id).toBe("post-a");
+    expect(readState(fileA).posts["post-a"].status).toBe("scheduled");
+  });
+
+  it("configuration invalide : aucune opération, lecture comprise, et aucun fournisseur n'est construit", async () => {
+    const loaded = router({ blocked: "BUFFER_MODE doit valoir « real » en production." });
+    for (const call of [() => loaded.fetchSnapshot(), () => loaded.getPost("post-a"), () => loaded.createDraft(content("ch-a")), () => loaded.findDraftCandidates({ channelId: "ch-a", text: "x", dueAt: DUE })]) {
+      await expect(call()).rejects.toMatchObject({ refusal: "blocked", outcome: "failed" });
+    }
+    expect(built).toEqual([]);
+    expect(total(providerA) + total(providerB)).toBe(0);
+  });
+
+  it("mode réel sans aucun compte connecté : relevé vide signalé, aucune écriture possible, aucun compte inventé", async () => {
+    rows = [];
+    const loaded = router({ mode: "real" });
+    const snapshot = await loaded.fetchSnapshot();
+    expect(snapshot).toMatchObject({ channels: [], posts: [], complete: false, scopeConnectionIds: [] });
+    expect(snapshot.connectionErrors?.[0].message).toMatch(/Aucune connexion fournisseur active/);
+    await expect(loaded.createDraft(content("ch-a"))).rejects.toThrow(/révoquée ou indisponible/);
+    expect(built).toEqual([]);
+  });
+});
+
+describe("lecture en parallèle et quota presque épuisé", () => {
+  const slow = (provider: FileProvider, ms: number, rateLimit: Record<string, number> | null = null): PublishingProvider =>
+    Object.assign(Object.create(provider), {
+      fetchSnapshot: async () => {
+        await new Promise((resolve) => setTimeout(resolve, ms));
+        return { ...(await provider.fetchSnapshot()), rateLimit };
+      },
+    });
+
+  it("un compte lent ne retarde pas la lecture des autres ; le relevé garde l'ordre des connexions", async () => {
+    const finished: string[] = [];
+    const loaded = router({
+      build: (connection) => Object.assign(Object.create(connection.id === A ? providerA : providerB), {
+        fetchSnapshot: async () => {
+          await new Promise((resolve) => setTimeout(resolve, connection.id === A ? 120 : 5));
+          finished.push(connection.id);
+          return (connection.id === A ? providerA : providerB).fetchSnapshot();
+        },
+      }),
+    });
+    const started = Date.now();
+    const snapshot = await loaded.fetchSnapshot();
+    expect(finished).toEqual([B, A]);
+    expect(Date.now() - started).toBeLessThan(240);
+    expect(snapshot.scopeConnectionIds).toEqual([A, B]);
+    expect(snapshot.channels.map((channel) => channel.id)).toEqual(["ch-a", "ch-b"]);
+  });
+
+  it("quota presque épuisé sur A (plusieurs comptes) : espacement enregistré pour A seul, aucune pause, aucun ralentissement global", async () => {
+    const backoffs: { id: string; seconds: number; reason: string }[] = [];
+    const loaded = router({
+      build: (connection) => (connection.id === A ? slow(providerA, 0, { "100-in-15min": 3, "250-in-24h": 200 }) : slow(providerB, 0, { "100-in-15min": 90 })),
+      recordReadBackoff: async (id, seconds, reason) => { backoffs.push({ id, seconds, reason }); },
+    });
+    const snapshot = await loaded.fetchSnapshot();
+    expect(backoffs.map((item) => item.id)).toEqual([A]);
+    expect(backoffs[0].seconds).toBeGreaterThan(0);
+    expect(backoffs[0].reason).toMatch(/lectures planifiées de ce compte espacées/);
+    expect(snapshot.rateLimit).toBeNull();
+    expect(states.filter((item) => item.state.pauseSeconds)).toEqual([]);
+    // Écritures et annulations du compte A restent possibles : l'espacement ne concerne que ses lectures planifiées.
+    await loaded.unschedulePost(post("post-a", "ch-a"));
+    expect(providerA.calls("unschedulePost")).toBe(1);
+  });
+
+  it("passage planifié : le compte espacé n'est pas lu et rien n'en est déduit ; un passage manuel le lit", async () => {
+    rows = [row(A, "Colibri", { readBackoffUntil: new Date(now + 3600_000).toISOString() }), row(B, "Nordwind")];
+    const planned = await router({ respectReadBackoff: true }).fetchSnapshot();
+    expect(providerA.calls("fetchSnapshot")).toBe(0);
+    expect(planned.scopeConnectionIds).toEqual([B]);
+    expect(planned.complete).toBe(false);
+    expect(planned.skippedConnections).toEqual([{ connectionId: A, label: "Colibri", until: new Date(now + 3600_000).toISOString() }]);
+    expect(planned.connectionErrors).toEqual([]);
+    const manual = await router().fetchSnapshot();
+    expect(manual.scopeConnectionIds).toEqual([A, B]);
+    // Tous les comptes espacés : ce n'est pas une panne de lecture.
+    rows = [row(A, "Colibri", { readBackoffUntil: new Date(now + 3600_000).toISOString() })];
+    await expect(router({ respectReadBackoff: true }).fetchSnapshot()).resolves.toMatchObject({ complete: false, scopeConnectionIds: [] });
+  });
+});

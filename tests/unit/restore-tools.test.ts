@@ -1,4 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { randomBytes } from "node:crypto";
+
+import { afterEach, describe, expect, it } from "vitest";
 
 import { diffSnapshots, normalizeAcl, parseSnapshot } from "../../scripts/lib/acl-snapshot.mjs";
 
@@ -81,5 +83,46 @@ describe("sommaire du dump (pg_restore -l)", () => {
     expect(selection.full).not.toContain(toc[1]);
     expect(selection.data).toEqual([toc[7], toc[8]]);
     expect(selection.policies).toEqual([toc[11]]);
+  });
+});
+
+describe("clés Buffer restaurées : encore déchiffrables ?", () => {
+  const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+  const B = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
+  const saved = { ...process.env };
+  afterEach(() => {
+    process.env = { ...saved };
+  });
+  /** Faux accès à la base restaurée : la table existe et contient ces lignes (identifiant|version|texte chiffré). */
+  const database = (rows: string[] | null) => ({ psql: (_database: string, query: string) => (query.includes("to_regclass") ? (rows === null ? "f" : "t") : (rows ?? []).join("\n")) });
+
+  it("déchiffre avec la clé maître FOURNIE (jamais lue dans la sauvegarde), version par version ; une clé absente ou fausse est signalée", async () => {
+    const { verifyRestoredCredentials } = await import("../../scripts/lib/restore.mjs");
+    const { encryptCredential } = await import("@/server/credentials");
+    const [k1, k2] = [randomBytes(32).toString("base64"), randomBytes(32).toString("base64")];
+    process.env.CADENCE_CREDENTIALS_KEY = k1;
+    const rowA = `${A}|1|${encryptCredential(A, "cle-synthetique-a")}`;
+    Object.assign(process.env, { CADENCE_CREDENTIALS_KEY: k2, CADENCE_CREDENTIALS_KEY_VERSION: "2" });
+    const rowB = `${B}|2|${encryptCredential(B, "cle-synthetique-b")}`;
+    const pg = database([rowA, rowB]);
+
+    // Clé courante + ancienne clé : tout se lit.
+    expect(verifyRestoredCredentials(pg, "x", { CADENCE_CREDENTIALS_KEY: k2, CADENCE_CREDENTIALS_KEY_VERSION: "2", CADENCE_CREDENTIALS_PREVIOUS_KEYS: `1:${k1}` })).toMatchObject({ total: 2, readable: 2, unreadable: [], keyProvided: true });
+    // Ancienne clé maître perdue : la clé chiffrée avec elle est signalée, par son identifiant de connexion seulement.
+    expect(verifyRestoredCredentials(pg, "x", { CADENCE_CREDENTIALS_KEY: k2, CADENCE_CREDENTIALS_KEY_VERSION: "2" })).toMatchObject({ readable: 1, unreadable: [A] });
+    // Mauvaise clé maître courante : la clé chiffrée avec elle ne se lit pas ; aucune autre clé n'est essayée à sa place.
+    expect(verifyRestoredCredentials(pg, "x", { CADENCE_CREDENTIALS_KEY: randomBytes(32).toString("base64"), CADENCE_CREDENTIALS_KEY_VERSION: "2", CADENCE_CREDENTIALS_PREVIOUS_KEYS: `1:${k1}` })).toMatchObject({ readable: 1, unreadable: [B] });
+    // Clé maître non fournie : le contrôle n'est PAS déclaré réussi.
+    expect(verifyRestoredCredentials(pg, "x", {})).toMatchObject({ total: 2, readable: 0, keyProvided: false, applicable: true });
+    // Un texte chiffré recopié sur une autre connexion ne se déchiffre pas.
+    const grafted = database([`${B}|1|${rowA.split("|")[2]}`]);
+    expect(verifyRestoredCredentials(grafted, "x", { CADENCE_CREDENTIALS_KEY: k1 })).toMatchObject({ unreadable: [B] });
+    // Sauvegarde d'avant la migration 0012 : sans objet.
+    expect(verifyRestoredCredentials(database(null), "x", { CADENCE_CREDENTIALS_KEY: k1 })).toMatchObject({ applicable: false, total: 0 });
+  });
+
+  it("une sauvegarde au niveau 0012 ou plus doit contenir les trois tables de connexions", async () => {
+    const { REQUIRED_SINCE } = await import("../../scripts/lib/restore.mjs");
+    expect(REQUIRED_SINCE).toMatchObject({ "public.provider_connections": "0012", "private.provider_credentials": "0012", "public.provider_connection_events": "0012" });
   });
 });

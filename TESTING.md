@@ -297,3 +297,20 @@ Six tests périmés ou fragiles ont aussi été corrigés (sélecteurs devenus a
 | Ports | `tests/unit/lock-test-ports.test.ts` (faux `iptables`) | idempotence, IPv4/IPv6, diagnostics ; **jamais exécuté sur l'hôte** |
 
 Contexte propre : lancer ces commandes depuis une copie de travail **sans fichier `.env*`** (Next et Vite en chargent automatiquement), avec `CADENCE_NO_LOCAL_ENV=1`.
+
+## Multi-comptes : cycle de vie des connexions (migration 0013, 10 octobre 2026)
+
+Suites ajoutées après le contrôle indépendant du commit `4e132cb` (cinq défauts P1 reproduits). Aucune n'appelle Buffer : deux faux comptes persistants, ou un faux serveur HTTP injecté.
+
+| Quoi | Commande | Ce que ça prouve |
+| --- | --- | --- |
+| Base (PGlite, rôles réels) | `npx vitest run tests/sql/connexions-cycle-de-vie.test.ts tests/sql/connexions-fournisseur.test.ts` | clé réelle et identité par le serveur seulement, compte et clé non réutilisables, rotation, révocation demandée, réservation refusée sur connexion révoquée, collision de publication sans mutation, ancien appelant borné |
+| Routeur | `npx vitest run tests/unit/connection-router.test.ts` | état durable relu avant chaque opération (révocation, pause, clé remplacée), barrière d'écriture, configuration invalide, lecture en parallèle, espacement par compte |
+| Identité du compte, actions serveur | `npx vitest run tests/unit/connection-identity.test.ts` | faux Buffer HTTP : clé refusée ou non vérifiable jamais enregistrée, autre compte refusé, aucune clé dans les réponses, rotation de la clé maître |
+| Mode de production | `npx vitest run tests/unit/credentials.test.ts tests/unit/v3-readiness.test.ts` | aucun simulateur silencieux en production, écritures fermées par défaut |
+| **Intégration native, deux comptes** | `node scripts/test-stack.mjs up --fixture` puis `TEST_SCOPE=integration npx vitest run tests/integration/multi-comptes.test.ts` | les 18 contre-tests du contrôle indépendant (N01–N18) et 8 variantes : deux transactions concurrentes dans les deux ordres, SIGKILL après l'effet externe, vrai `runSync` avec un compte en panne ou en pause, ancien appelant |
+| Migrations natives | `node scripts/migration-lab.mjs` | 0013 : prérequis, interruption en cours de route annulée en entier (schéma, données, clés chiffrées), reprise, ancien appelant |
+| Parcours navigateur, deux clients | `npx playwright test tests/e2e/10-multi-comptes.spec.ts` | création des clients et des connexions, attribution des canaux, validation, panne d'un compte, reprise sans doublon, révocation, aucune action croisée, mobile |
+
+Limites : la concurrence entre transactions n'est pas jouable sur PGlite (une seule connexion) — elle l'est dans l'intégration native. Les tests à clé factice ne prouvent pas qu'une vraie clé appartient au bon compte : cela demande un essai réel, sur autorisation.
+

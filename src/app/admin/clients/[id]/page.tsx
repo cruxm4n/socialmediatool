@@ -35,7 +35,7 @@ export default async function Page({ params }: PageProps<"/admin/clients/[id]">)
       {scoped && (
         <section id="comptes-buffer" aria-labelledby="comptes-buffer-titre" className="grid grid-cols-1 gap-3">
           <div>
-            <h2 id="comptes-buffer-titre" className="text-base font-semibold">Comptes Buffer de ce client</h2>
+            <h2 id="comptes-buffer-titre" className="text-base font-semibold">Intégrations — compte Buffer de ce client</h2>
             <p className="text-sm text-muted-foreground">
               Paramètres propres à {organization.name}. Les canaux d&apos;un compte appartenant à ce client ne peuvent servir aucun autre client.
               {scoped.shared.length > 0 ? ` ${scoped.shared.length} compte${scoped.shared.length > 1 ? "s" : ""} partagé${scoped.shared.length > 1 ? "s" : ""} de l'agence reste${scoped.shared.length > 1 ? "nt" : ""} géré${scoped.shared.length > 1 ? "s" : ""} dans les paramètres généraux.` : ""}
@@ -49,6 +49,7 @@ export default async function Page({ params }: PageProps<"/admin/clients/[id]">)
               organizations={[{ id: organization.id, name: organization.name }]}
               serverMode={env.bufferMode}
               canStoreKeys={credentialKeyAvailable()}
+              writesEnabled={env.bufferWritesEnabled}
               organizationId={organization.id}
             />
           )}

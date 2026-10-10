@@ -22,6 +22,28 @@ export function realBufferBlockedInDevelopment(): boolean {
   return blocked;
 }
 
+/** Le Buffer simulé est-il autorisé sur ce serveur ? Toujours hors production ; en production, sur autorisation explicite. */
+export function simulatedBufferAllowed(): boolean {
+  return process.env.NODE_ENV !== "production" || process.env.CADENCE_ALLOW_SIMULATED_BUFFER === "1";
+}
+
+/**
+ * Configuration de production invalide pour le fournisseur, ou null. Dans ce cas AUCUNE opération n'a lieu (ni
+ * lecture ni écriture) : un mode absent, mal écrit ou une simulation non autorisée ne deviennent jamais un simulateur.
+ */
+export function bufferModeProblem(): string | null {
+  if (process.env.NODE_ENV !== "production") return null;
+  const requested = process.env.BUFFER_MODE;
+  if (requested === "real") return null;
+  if (requested === "mock") {
+    return simulatedBufferAllowed() ? null : "BUFFER_MODE=mock est refusé en production sans CADENCE_ALLOW_SIMULATED_BUFFER=1 : aucun fournisseur simulé n'est utilisé.";
+  }
+  return "BUFFER_MODE doit valoir « real » en production : aucune opération vers Buffer n'a lieu tant qu'il n'est pas défini.";
+}
+
+/** Phrase affichée quand une écriture est refusée par la barrière d'activation. */
+export const BUFFER_WRITES_DISABLED = "Les écritures vers Buffer ne sont pas activées sur ce serveur (CADENCE_BUFFER_WRITES) : rien n'a été envoyé.";
+
 export const env = {
   get supabaseUrl() {
     return required("NEXT_PUBLIC_SUPABASE_URL");
@@ -33,15 +55,25 @@ export const env = {
     return required("AUTOMATION_SECRET");
   },
   /**
-   * Par prudence, tout ce qui n'est pas explicitement « real » utilise le Buffer simulé.
-   * En développement (`next dev`), BUFFER_MODE=real est IGNORÉ sauf autorisation explicite
-   * (CADENCE_ALLOW_REAL_BUFFER_IN_DEV=1) : un `.env.local` copié de la production ne peut plus faire appeler le vrai
-   * Buffer par un serveur de développement.
+   * Mode du fournisseur.
+   *  - `real` : le vrai Buffer, par les connexions enregistrées (aucune connexion → aucun appel).
+   *  - `mock` : le Buffer simulé. Hors production (tests, `next dev`) c'est le défaut. EN PRODUCTION il n'est jamais
+   *    choisi en silence : il exige BUFFER_MODE=mock ET CADENCE_ALLOW_SIMULATED_BUFFER=1 (piles de test, démonstration).
+   *    Toute autre configuration de production est le mode réel ; si elle est invalide (`bufferModeProblem()`), le
+   *    fournisseur est bloqué en entier plutôt que remplacé par un simulateur.
+   *  - En développement (`next dev`), BUFFER_MODE=real est IGNORÉ sauf CADENCE_ALLOW_REAL_BUFFER_IN_DEV=1.
    */
   get bufferMode(): BufferMode {
-    if (process.env.BUFFER_MODE !== "real") return "mock";
-    if (realBufferBlockedInDevelopment()) return "mock";
-    return "real";
+    if (process.env.BUFFER_MODE === "real") return realBufferBlockedInDevelopment() ? "mock" : "real";
+    return simulatedBufferAllowed() && (process.env.NODE_ENV !== "production" || process.env.BUFFER_MODE === "mock") ? "mock" : "real";
+  },
+  /**
+   * Barrière d'activation des ÉCRITURES vers le vrai Buffer (créer, modifier, programmer, déprogrammer). Fermée par
+   * défaut : connecter un compte et le lire ne suffit pas à autoriser la moindre publication. Elle ne s'ouvre que par
+   * CADENCE_BUFFER_WRITES=enabled, décision explicite de l'exploitant. Sans objet pour le Buffer simulé.
+   */
+  get bufferWritesEnabled(): boolean {
+    return this.bufferMode === "mock" || process.env.CADENCE_BUFFER_WRITES === "enabled";
   },
   get bufferApiKey() {
     return required("BUFFER_API_KEY");

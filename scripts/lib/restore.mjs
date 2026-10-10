@@ -9,7 +9,7 @@
 //     DONNÉES seulement, déclencheurs désactivés ; les schémas de Cadence sont restaurés en entier ;
 //   - toute erreur grave est rapportée, jamais masquée.
 import { execFileSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createDecipheriv, createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
@@ -32,6 +32,7 @@ export const REQUIRED_SINCE = {
   "public.notifications": "0007", "public.notification_preferences": "0007",
   "public.media_assets": "0008", "public.studio_drafts": "0008", "public.studio_variants": "0008", "public.post_versions": "0008",
   "public.channel_owner_history": "0010", "public.studio_push_events": "0011",
+  "public.provider_connections": "0012", "private.provider_credentials": "0012", "public.provider_connection_events": "0012",
   "auth.users": "0000", "auth.identities": "0000", "storage.objects": "0000",
 };
 export const REQUIRED_SCHEMAS = ["public", "private", "auth", "storage", "supabase_migrations"];
@@ -235,4 +236,43 @@ export function selectTocEntries(lines, plan) {
     }
   }
   return out;
+}
+
+/**
+ * Les clés Buffer restaurées sont-elles encore DÉCHIFFRABLES ? La clé maître n'est jamais dans la sauvegarde : elle
+ * est lue dans l'environnement de ce script (CADENCE_CREDENTIALS_KEY, _KEY_VERSION, _PREVIOUS_KEYS), comme le fait
+ * l'application (src/server/credentials.ts). Rien n'est affiché ni conservé des clés ; aucune clé de repli.
+ * Renvoie { total, readable, unreadable: [identifiants de connexion], keyProvided }.
+ * @param {{ psql: (database: string, query: string) => string }} pg
+ * @param {string} database
+ * @param {Record<string, string | undefined>} [env]
+ */
+export function verifyRestoredCredentials(pg, database, env = process.env) {
+  const exists = pg.psql(database, "select to_regclass('private.provider_credentials') is not null;") === "t";
+  if (!exists) return { total: 0, readable: 0, unreadable: [], keyProvided: Boolean(env.CADENCE_CREDENTIALS_KEY), applicable: false };
+  const rows = pg.psql(database, "select connection_id || '|' || key_version || '|' || ciphertext from private.provider_credentials order by connection_id;").split("\n").filter(Boolean);
+  const keyProvided = Boolean(env.CADENCE_CREDENTIALS_KEY);
+  if (!keyProvided) return { total: rows.length, readable: 0, unreadable: [], keyProvided, applicable: true };
+  const current = Number(env.CADENCE_CREDENTIALS_KEY_VERSION || 1);
+  const keys = new Map([[current, Buffer.from(env.CADENCE_CREDENTIALS_KEY.trim(), "base64")]]);
+  for (const item of (env.CADENCE_CREDENTIALS_PREVIOUS_KEYS ?? "").split(",")) {
+    const separator = item.indexOf(":");
+    if (separator > 0) keys.set(Number(item.slice(0, separator).trim()), Buffer.from(item.slice(separator + 1).trim(), "base64"));
+  }
+  const unreadable = [];
+  for (const row of rows) {
+    const [connectionId, version, ciphertext] = row.split("|");
+    const [format, iv, tag, data] = ciphertext.split(".");
+    const key = keys.get(Number(version));
+    try {
+      if (format !== "v1" || !key || key.length !== 32) throw new Error("clé ou format");
+      const decipher = createDecipheriv("aes-256-gcm", key, Buffer.from(iv, "base64url"));
+      decipher.setAAD(Buffer.from(`cadence:provider-connection:${connectionId}`));
+      decipher.setAuthTag(Buffer.from(tag, "base64url"));
+      Buffer.concat([decipher.update(Buffer.from(data, "base64url")), decipher.final()]);
+    } catch {
+      unreadable.push(connectionId);
+    }
+  }
+  return { total: rows.length, readable: rows.length - unreadable.length, unreadable, keyProvided, applicable: true };
 }

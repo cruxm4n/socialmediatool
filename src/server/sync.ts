@@ -7,7 +7,7 @@ import { dispatchNotifications } from "@/server/notifications";
 import { getProvider } from "@/server/publishing";
 import { activeRateLimitPause, DEFAULT_RATE_LIMIT_PAUSE_SECONDS, recordRateLimit } from "@/server/quota";
 import { pilotLeadSatisfied } from "@/lib/domain/schedule-margins";
-import { env } from "@/server/env";
+import { BUFFER_WRITES_DISABLED, env } from "@/server/env";
 import { ProviderError, sameContent, type ProviderPost, type PublishingProvider } from "@/server/publishing/provider";
 import { runUrgentCycle } from "@/server/urgent";
 
@@ -57,6 +57,9 @@ async function pull(provider: PublishingProvider, triggeredBy: string, notes: Ru
   for (const failure of snapshot.connectionErrors ?? []) {
     notes.anomalies.push(failure.label ? `Compte « ${failure.label} » non lu : ${failure.message}` : failure.message);
   }
+  for (const skipped of snapshot.skippedConnections ?? []) {
+    notes.anomalies.push(`Compte « ${skipped.label} » : quota presque épuisé, lectures planifiées espacées jusqu'au ${skipped.until.slice(0, 16).replace("T", " à ")} UTC (les autres comptes ne sont pas concernés).`);
+  }
   if (!snapshot.complete && !snapshot.scopeConnectionIds) notes.anomalies.push("Lecture de Buffer incomplète : les publications absentes n'ont pas été marquées comme supprimées.");
   // Relevé de plusieurs comptes : seules les publications des comptes lus EN ENTIER peuvent être déclarées retirées.
   const scope = snapshot.scopeConnectionIds ? { scopeConnectionIds: snapshot.scopeConnectionIds } : {};
@@ -102,11 +105,15 @@ export interface ScheduleOutcome {
   compensationFailures: number;
   /** Quota en pause : rien n'a été réservé ni programmé. */
   paused?: { until: string; reason: string | null };
+  /** Barrière d'activation fermée (CADENCE_BUFFER_WRITES) : rien n'a été réservé ni programmé. */
+  writesDisabled?: boolean;
 }
 
 export async function scheduleApprovedPosts(postId?: string, options: { ignorePause?: boolean; lease?: Lease } = {}): Promise<ScheduleOutcome> {
   const provider = getProvider();
   const none: ScheduleOutcome = { scheduled: 0, failures: 0, stale: false, rateLimited: null, compensated: 0, compensationFailures: 0 };
+  // Le vrai Buffer n'est modifié que si l'exploitant a ouvert la barrière : sinon rien n'est même réservé.
+  if (provider.mode === "real" && !env.bufferWritesEnabled) return { ...none, writesDisabled: true };
   if (!options.ignorePause) {
     const paused = await activeRateLimitPause(provider.mode);
     if (paused) return { ...none, paused };
@@ -257,7 +264,7 @@ interface Lock {
 }
 
 async function guardedSync(triggeredBy: string, options: SyncOptions): Promise<SyncResult> {
-  const provider = getProvider();
+  const provider = getProvider({ scheduled: options.scheduled });
   // Un refus de Buffer (429) vaut pour TOUS les chemins, manuels compris : aucune requête n'est tentée avant
   // l'échéance demandée (elles seraient refusées et prolongeraient le refus). Une pause préventive, elle, laisse
   // l'exécution manuelle possible.
@@ -290,6 +297,7 @@ async function guardedSync(triggeredBy: string, options: SyncOptions): Promise<S
     ? { ensure: async () => (await rpc<boolean>("renew_sync_run", { p_mode: provider.mode, p_token: lock!.token, p_ttl_seconds: LOCK_TTL_SECONDS }).catch((error) => (error instanceof MissingFunctionError ? true : false))) !== false }
     : { ensure: async () => true };
   const { result, rateLimited } = await doSync(provider, triggeredBy, notes, options, lease);
+  if (provider.mode === "real" && !env.bufferWritesEnabled) notes.anomalies.push(`${BUFFER_WRITES_DISABLED} Les publications approuvées ne sont pas programmées.`);
   if (result.scheduleFailures) notes.anomalies.push(`${result.scheduleFailures} publication(s) approuvée(s) n'ont pas pu être programmées dans Buffer.`);
   if (result.unscheduleFailures) notes.anomalies.push(`${result.unscheduleFailures} publication(s) modifiée(s) après validation sont encore programmées dans Buffer.`);
 
@@ -326,7 +334,9 @@ async function doSync(
     // La compensation ne dépend pas de la lecture : une programmation à annuler est reprise à CHAQUE cycle, avant
     // toute nouvelle programmation, même quand la lecture de Buffer a échoué.
     const urgent = await runUrgentCycle(provider, { lease });
-    const unscheduled = { done: urgent.compensated, failures: urgent.compensationFailures, blocked: urgent.ok ? null : (urgent.error ?? "traitement urgent incomplet"), rateLimited: urgent.rateLimited };
+    // Seul un empêchement GLOBAL suspend les nouvelles programmations. Une annulation en échec sur le compte d'un
+    // client (quota, panne, clé refusée) ne retient pas les publications approuvées des autres comptes.
+    const unscheduled = { done: urgent.compensated, failures: urgent.compensationFailures, blocked: urgent.blocked ?? null, rateLimited: urgent.rateLimited };
     // Une panne d'infrastructure du traitement urgent (base non migrée, base injoignable) est une erreur de synchronisation.
     if (!urgent.ok && urgent.compensationFailures === 0 && !urgent.rateLimited && urgent.error) throw new Error(urgent.error);
     Object.assign(progress, { unscheduled: unscheduled.done, unscheduleFailures: unscheduled.failures });
