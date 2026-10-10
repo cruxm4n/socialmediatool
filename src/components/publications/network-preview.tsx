@@ -106,9 +106,10 @@ function ActionRow({ items }: { items: { icon: React.ComponentType<{ className?:
   return (
     <div className="flex items-center justify-around border-t border-neutral-200 px-2 py-2 text-neutral-500" aria-hidden="true">
       {items.map((item) => (
-        <span key={item.label} className="flex items-center gap-1.5 text-xs font-medium">
-          <item.icon className="size-4" />
-          {item.label}
+        <span key={item.label} className="flex min-w-0 items-center gap-1.5 text-xs font-medium whitespace-nowrap">
+          <item.icon className="size-4 shrink-0" />
+          {/* Étroit (mobile, colonne latérale du Studio) : les pictogrammes seuls, plutôt que des mots coupés. */}
+          <span className="hidden min-[480px]:inline xl:max-[1500px]:hidden">{item.label}</span>
         </span>
       ))}
     </div>

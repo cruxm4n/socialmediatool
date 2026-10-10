@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { Menu } from "lucide-react";
 
 import { AdminSidebarContent } from "@/components/shell/admin-sidebar";
@@ -9,16 +10,20 @@ import { OrgSwitcher } from "@/components/shell/org-switcher";
 import { AutoSync, SyncButton } from "@/components/shell/sync-button";
 import { UserMenu } from "@/components/shell/user-menu";
 import { Sheet, SheetContent, SheetDescription, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { formatDateTime } from "@/lib/dates";
-import { DEFAULT_TIMEZONE } from "@/lib/view";
+import { TONE_CLASSES } from "@/components/shared/status-badge";
+import { syncHealth } from "@/lib/domain/sync-health";
 import { cn } from "@/lib/utils";
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const [menuOpen, setMenuOpen] = useState(false);
-  const { profile, lastSyncAt, lastSyncFailed } = useAdmin();
+  const { profile, lastSyncAt, sync, syncIntervalMinutes, renderedAt } = useAdmin();
+  const health = syncHealth(sync, renderedAt, syncIntervalMinutes);
 
   return (
     <div className="min-h-dvh lg:pl-64">
+      <a href="#main-content" className="sr-only z-50 rounded-lg bg-card px-4 py-3 font-semibold shadow-lift focus:not-sr-only focus:fixed focus:top-2 focus:left-2">
+        Aller au contenu
+      </a>
       <aside className="fixed inset-y-0 left-0 z-30 hidden w-64 border-r bg-sidebar lg:block">
         <AdminSidebarContent />
       </aside>
@@ -39,21 +44,25 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </Sheet>
 
         <OrgSwitcher />
-        <p
-          className={cn("ml-auto hidden text-xs md:block", lastSyncFailed ? "font-medium text-tone-red" : "text-muted-foreground")}
+        <Link
+          href="/admin/synchronisation"
+          title={health.detail}
           data-testid="last-sync"
+          data-level={health.level}
+          className={cn(
+            "ml-auto flex h-8 min-w-0 items-center gap-2 rounded-full px-2.5 text-xs font-medium outline-none focus-visible:ring-3 focus-visible:ring-ring/50",
+            health.level === "ok" || health.level === "never" ? "text-muted-foreground hover:text-foreground" : TONE_CLASSES[health.tone].badge,
+          )}
         >
-          {lastSyncAt
-            ? `${lastSyncFailed ? "Dernière synchronisation en échec" : "Dernière synchronisation"} : ${formatDateTime(lastSyncAt, DEFAULT_TIMEZONE)}`
-            : "Jamais synchronisé"}
-        </p>
-        <span className="ml-auto md:hidden" />
+          <span className={cn("size-2 shrink-0 rounded-full", TONE_CLASSES[health.tone].dot, health.level === "running" && "animate-pulse")} aria-hidden="true" />
+          <span className="truncate max-md:sr-only">{health.label}</span>
+        </Link>
         <AutoSync lastSyncAt={lastSyncAt} />
         <SyncButton />
-        <UserMenu profile={profile} />
+        <UserMenu profile={profile} notificationsHref="/admin/notifications" />
       </header>
 
-      <main className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-[1320px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</main>
     </div>
   );
 }

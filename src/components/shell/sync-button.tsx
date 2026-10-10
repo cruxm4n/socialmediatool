@@ -17,6 +17,7 @@ function summarize(result: Awaited<ReturnType<typeof syncNow>>): string {
   if (result.scheduled) parts.push(`${result.scheduled} programmé${result.scheduled > 1 ? "s" : ""}`);
   if (result.unscheduled) parts.push(`${result.unscheduled} déprogrammé${result.unscheduled > 1 ? "s" : ""}`);
   if (result.removed) parts.push(`${result.removed} supprimé${result.removed > 1 ? "s" : ""}`);
+  if (result.unscheduleFailures) parts.push(`${result.unscheduleFailures} échec${result.unscheduleFailures > 1 ? "s" : ""} de déprogrammation`);
   if (result.scheduleFailures) parts.push(`${result.scheduleFailures} échec${result.scheduleFailures > 1 ? "s" : ""} de programmation`);
   return parts.join(" · ");
 }
@@ -27,10 +28,15 @@ export function SyncButton({ variant = "outline", label = "Synchroniser" }: { va
 
   const run = () =>
     startTransition(async () => {
-      const result = await syncNow();
-      if (leaveIfExpired(result)) return;
-      if (result.ok) toast.success("Synchronisation terminée", { description: summarize(result) });
-      else toast.error("Synchronisation impossible", { description: result.error });
+      try {
+        const result = await syncNow();
+        if (leaveIfExpired(result)) return;
+        if (result.skipped) toast.info("Synchronisation non lancée", { description: result.error });
+        else if (result.ok) toast.success("Synchronisation terminée", { description: summarize(result) });
+        else toast.error("Synchronisation incomplète", { description: `${result.error} ${summarize(result)}` });
+      } catch {
+        toast.error("Synchronisation impossible", { description: "La connexion a été interrompue. Consultez le journal avant de réessayer." });
+      }
     });
 
   return (
@@ -57,7 +63,11 @@ export function AutoSync({ lastSyncAt }: { lastSyncAt: string | null }) {
     if (Date.now() - Date.parse(lastSyncAt) < STALE_AFTER_MS) return;
     started.current = true;
     void syncNow().then((result) => {
-      if (result.ok) router.refresh();
+      if (leaveIfExpired(result)) return;
+      router.refresh();
+      if (!result.ok && !result.skipped) toast.error("Synchronisation automatique incomplète", { description: result.error });
+    }).catch(() => {
+      toast.error("Synchronisation automatique impossible", { description: "Vérifiez la connexion et consultez le journal." });
     });
   }, [lastSyncAt, router]);
 

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { authFile, postLink } from "./helpers";
+import { authFile, postLink, syncViaApi } from "./helpers";
 
 test.use({ storageState: authFile("ADMIN") });
 
@@ -20,7 +20,7 @@ test.describe("espace administrateur", () => {
 
   test("un indicateur de la vue d'ensemble ouvre la liste filtrée sur ce statut", async ({ page }) => {
     await page.goto("/admin");
-    await page.getByRole("link", { name: /Erreurs/ }).click();
+    await page.locator('a[href$="statut=error"]').click();
     await expect(page).toHaveURL(/\/admin\/publications\?statut=error$/);
     await expect(page.getByRole("tab", { name: /Erreur/ })).toHaveAttribute("aria-selected", "true");
     await expect(postLink(page, "abonnement-fb")).toBeVisible();
@@ -57,7 +57,7 @@ test.describe("espace administrateur", () => {
     await expect(page.getByRole("button", { name: /Créer une publication|Nouvelle publication/ })).toHaveCount(0);
     await page.goto("/admin/calendrier");
     await expect(page.getByRole("button", { name: /Créer une publication/ })).toHaveCount(0);
-    await expect(page.getByText("Les dates se modifient dans Buffer.")).toBeVisible();
+    await expect(page.getByText("Glissez un brouillon sur un autre jour pour changer sa date.")).toBeVisible();
   });
 
   test("le bouton Synchroniser relit Buffer et l'enregistre au journal", async ({ page }) => {
@@ -150,7 +150,7 @@ test.describe("calendrier", () => {
 });
 
 test.describe("rattachement des canaux", () => {
-  test("un canal détaché n'est plus visible du client, puis le redevient", async ({ page, browser }) => {
+  test("un canal détaché n'est plus visible du client, puis le redevient après la synchronisation", async ({ page, browser, request }) => {
     await page.goto("/admin/clients");
     const row = page.locator('[data-channel="mock-ch-nordwind-facebook"]');
     const select = row.getByRole("combobox");
@@ -169,6 +169,11 @@ test.describe("rattachement des canaux", () => {
     await select.click();
     await page.getByRole("option", { name: "Nordwind Cycles" }).click();
     await expect(page.getByText("Canal rattaché au client.")).toBeVisible();
+    // Le détachement a suspendu la validation en attente (règle d'audit B3) : rien n'est rendu d'office.
+    // La demande de validation revient à la synchronisation suivante, le tag étant toujours posé.
+    await sofiaPage.reload();
+    await expect(postLink(sofiaPage, "temoignage-fb")).toHaveCount(0);
+    await syncViaApi(request);
     await sofiaPage.reload();
     await expect(postLink(sofiaPage, "temoignage-fb")).toBeVisible();
     await sofia.close();

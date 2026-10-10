@@ -187,6 +187,9 @@
     @apply bg-background text-foreground;
     font-feature-settings: "ss01", "cv11";
   }
+  main {
+    overflow-wrap: anywhere;
+  }
   h1,
   h2 {
     text-wrap: balance;

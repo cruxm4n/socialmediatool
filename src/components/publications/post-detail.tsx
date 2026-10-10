@@ -1,14 +1,16 @@
 import Link from "next/link";
-import { ArrowLeft, Ban, CircleCheckBig, CircleDot, Clock, MessageSquareWarning, PenLine, Rocket, Trash2 } from "lucide-react";
+import { ArrowLeft, Ban, PenLine as EditIcon, CircleCheckBig, CircleDot, Clock, ExternalLink, MessageSquareWarning, PenLine, Rocket, Trash2 } from "lucide-react";
 
 import { ActivityTimeline } from "@/components/publications/activity";
 import { CommentThread } from "@/components/publications/comments";
-import { AlertList, Panel, PostContent, StatusBanner } from "@/components/publications/post-panels";
+import { AlertList, Panel, PostContent, StatusBanner, VersionHistory } from "@/components/publications/post-panels";
+import { OwnerAssign } from "@/components/publications/owner-assign";
 import { OrgAvatar } from "@/components/shared/org-avatar";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { formatDateTime } from "@/lib/dates";
+import { bufferUrl } from "@/lib/domain/inbox";
 import { getPostAlerts } from "@/lib/domain/status";
-import type { Comment, PostEvent, Profile } from "@/lib/types";
+import type { Comment, Organization, PostEvent, PostVersion, Profile } from "@/lib/types";
 import type { PostView } from "@/lib/view";
 
 /** Fiche d'une publication côté administrateur : état, contenu, échanges et historique. */
@@ -19,6 +21,9 @@ export function PostDetail({
   profiles,
   now,
   reviewTag,
+  versions = [],
+  studioDraftId = null,
+  organizations = [],
 }: {
   post: PostView;
   comments: Comment[];
@@ -26,11 +31,17 @@ export function PostDetail({
   profiles: Profile[];
   now: string;
   reviewTag: string;
+  versions?: PostVersion[];
+  /** Contenu du Studio dont cette publication est issue, s'il y en a un. */
+  studioDraftId?: string | null;
+  /** Clients actifs : sert à attribuer une publication importée de façon ambiguë. */
+  organizations?: Organization[];
 }) {
   const alerts = getPostAlerts(post, now);
   if (post.channel?.isDisconnected) {
     alerts.unshift({ level: "error", message: "Le canal de cette publication est déconnecté dans Buffer : reconnectez-le, sinon rien ne pourra être publié." });
   }
+  const bufferLink = post.removedAt ? null : bufferUrl(post, post.channel?.bufferChannelId);
   const approver = profiles.find((profile) => profile.id === post.approvedById);
   const lastRequest = [...comments].reverse().find((comment) => comment.kind === "change_request");
   const requester = profiles.find((profile) => profile.id === lastRequest?.authorId);
@@ -57,8 +68,29 @@ export function PostDetail({
           <span>Version {post.version}</span>
         </p>
         <h1 className="mt-2 font-display text-[1.6rem] leading-tight font-medium sm:text-[1.9rem]">{post.title}</h1>
-        <div className="mt-3">
+        <div className="mt-3 flex flex-wrap items-center gap-3">
           <StatusBadge status={post.status} />
+          {studioDraftId && !post.removedAt && post.status !== "published" && (
+            <Link
+              href={`/admin/studio/${studioDraftId}`}
+              data-testid="studio-link"
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-card px-3 text-sm font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <EditIcon className="size-3.5" /> Modifier dans le Studio
+            </Link>
+          )}
+          {bufferLink && (
+            <a
+              href={bufferLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="buffer-link"
+              title="Ouvre le canal de cette publication dans Buffer, sur le bon onglet."
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-card px-3 text-sm font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
+            >
+              <ExternalLink className="size-3.5" /> Ouvrir dans Buffer
+            </a>
+          )}
         </div>
       </div>
 
@@ -69,11 +101,21 @@ export function PostDetail({
         </StatusBanner>
       )}
 
+      {!post.removedAt && post.ownership === "ambiguous" && (
+        <StatusBanner tone="amber" icon={CircleDot} title="Appartenance à confirmer">
+          Cette publication a été importée depuis un canal transféré ou détaché : on ne peut pas savoir à quel client elle appartient. Elle
+          reste visible de vous seul, sans validation possible, tant que vous ne l&apos;avez pas attribuée.
+          <div className="mt-3">
+            <OwnerAssign postId={post.id} organizations={organizations} />
+          </div>
+        </StatusBanner>
+      )}
+
       <AlertList alerts={post.removedAt ? [] : alerts} />
 
       {!post.removedAt && post.status === "draft" && (
         <StatusBanner tone="neutral" icon={PenLine} title="Brouillon non soumis au client">
-          Pour le soumettre à validation, ajoutez le tag « {reviewTag} » à ce brouillon dans Buffer, puis synchronisez.
+          Pour le soumettre à validation, ajoutez le tag « {reviewTag} » à ce brouillon dans Buffer, puis synchronisez — ou préparez vos prochains contenus dans le Studio, qui s&apos;en charge.
           {!post.organization && " Rattachez aussi son canal à un client (page Clients), sinon personne ne pourra le valider."}
         </StatusBanner>
       )}
@@ -92,7 +134,11 @@ export function PostDetail({
               « {lastRequest.body} » — {requester?.fullName ?? "Client"}
             </blockquote>
           )}
-          <p className="mt-2">Modifiez le brouillon dans Buffer : la nouvelle version sera soumise automatiquement à la prochaine synchronisation.</p>
+          <p className="mt-2">
+            {studioDraftId
+              ? "Corrigez le contenu dans le Studio puis renvoyez-le en validation : le client recevra la nouvelle version."
+              : "Modifiez le brouillon dans Buffer : la nouvelle version sera soumise automatiquement à la prochaine synchronisation."}
+          </p>
         </StatusBanner>
       )}
       {!post.removedAt && post.status === "approved" && (
@@ -127,6 +173,11 @@ export function PostDetail({
           <Panel title="Historique">
             <ActivityTimeline events={events} profiles={profiles} timezone={post.timezone} />
           </Panel>
+          {versions.length > 1 && (
+            <Panel title="Versions du contenu">
+              <VersionHistory versions={versions} current={post.version} timezone={post.timezone} />
+            </Panel>
+          )}
         </div>
       </div>
     </div>

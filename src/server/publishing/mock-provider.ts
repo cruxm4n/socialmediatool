@@ -2,6 +2,8 @@ import { addDays, dayKeyOf, zonedToUtcIso } from "@/lib/dates";
 import type { BufferStatus, PostAsset } from "@/lib/types";
 import {
   ProviderError,
+  type DraftContent,
+  type DraftLookup,
   type ProviderChannel,
   type ProviderPost,
   type ProviderSnapshot,
@@ -18,6 +20,14 @@ interface MockState {
   posts: ProviderPost[];
   failNextSchedule: string | null;
   scheduleCalls: number;
+  /** Brouillons créés par le Studio : compteur des identifiants, et nombre d'appels de création. */
+  createCalls: number;
+  failNextCreate: string | null;
+  /** Simule une réponse perdue : l'opération est appliquée chez Buffer, mais l'appelant reçoit un résultat inconnu. */
+  loseNextCreateResponse: boolean;
+  loseNextScheduleResponse: boolean;
+  /** Simule un refus certain du quota (429) lors de la prochaine écriture. */
+  rateLimitNextWrite: number | null;
 }
 
 const PARIS = "Europe/Paris";
@@ -74,6 +84,11 @@ function buildState(runId: string): MockState {
   return {
     failNextSchedule: null,
     scheduleCalls: 0,
+    createCalls: 0,
+    failNextCreate: null,
+    loseNextCreateResponse: false,
+    loseNextScheduleResponse: false,
+    rateLimitNextWrite: null,
     channels: [
       channel("colibri", "linkedin", "Maison Colibri"),
       channel("colibri", "instagram", "maison.colibri"),
@@ -182,15 +197,96 @@ export class MockProvider implements PublishingProvider {
       state.failNextSchedule = null;
       throw new ProviderError(message);
     }
+    this.checkRateLimit();
     const stored = this.find(post.id);
     stored.status = "scheduled";
     stored.updatedAt = new Date().toISOString();
+    if (state.loseNextScheduleResponse) {
+      state.loseNextScheduleResponse = false;
+      throw new ProviderError("Buffer ne répond pas (délai dépassé).", "network", undefined, "unknown");
+    }
     return structuredClone(stored);
+  }
+
+  private checkRateLimit() {
+    const state = this.state;
+    if (state.rateLimitNextWrite !== null) {
+      const seconds = state.rateLimitNextWrite;
+      state.rateLimitNextWrite = null;
+      throw new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", seconds || undefined);
+    }
   }
 
   async unschedulePost(post: ProviderPost): Promise<ProviderPost> {
     const stored = this.find(post.id);
     stored.status = "draft";
+    stored.updatedAt = new Date().toISOString();
+    return structuredClone(stored);
+  }
+
+  async createDraft(content: DraftContent): Promise<ProviderPost> {
+    const state = this.state;
+    if (state.failNextCreate) {
+      const message = state.failNextCreate;
+      state.failNextCreate = null;
+      throw new ProviderError(message);
+    }
+    this.checkRateLimit();
+    if (!state.channels.some((channel) => channel.id === content.channelId)) throw new ProviderError("Canal introuvable dans le Buffer simulé.");
+    state.createCalls += 1;
+    const post: ProviderPost = {
+      id: `mock-${this.runId}-studio-${state.createCalls}`,
+      channelId: content.channelId,
+      service: content.service,
+      status: "draft",
+      text: content.text,
+      dueAt: content.dueAt,
+      sentAt: null,
+      updatedAt: new Date().toISOString(),
+      externalLink: null,
+      error: null,
+      hasReviewTag: true,
+      schedulingType: "automatic",
+      assets: content.assets.map((asset) => ({ type: asset.type, source: asset.url, thumbnail: asset.type === "video" ? "" : asset.url })),
+    };
+    state.posts.push(post);
+    if (state.loseNextCreateResponse) {
+      // Le brouillon existe chez Buffer, mais la réponse n'arrive jamais.
+      state.loseNextCreateResponse = false;
+      throw new ProviderError("Buffer ne répond pas (délai dépassé).", "network", undefined, "unknown");
+    }
+    return structuredClone(post);
+  }
+
+  async findDraftCandidates(lookup: DraftLookup): Promise<{ candidates: ProviderPost[]; possible: ProviderPost[]; complete: boolean }> {
+    const instant = Date.parse(lookup.dueAt);
+    const exact = (post: ProviderPost) =>
+      post.channelId === lookup.channelId && post.text === lookup.text && post.dueAt !== null && Date.parse(post.dueAt) === instant &&
+      (!lookup.assetKinds || (post.assets.length === lookup.assetKinds.length && post.assets.every((asset, index) => asset.type === lookup.assetKinds![index])));
+    const candidates = this.state.posts.filter(exact);
+    const possible = this.state.posts.filter(
+      (post) => !exact(post) && post.channelId === lookup.channelId && (post.text === lookup.text || (post.dueAt !== null && Date.parse(post.dueAt) === instant)),
+    );
+    return { candidates: structuredClone(candidates), possible: structuredClone(possible), complete: true };
+  }
+
+  async updateDraft(postId: string, content: DraftContent): Promise<ProviderPost> {
+    const stored = this.find(postId);
+    if (stored.status === "sent" || stored.status === "sending") throw new ProviderError("Ce post est déjà publié.");
+    Object.assign(stored, {
+      text: content.text,
+      dueAt: content.dueAt,
+      status: "draft",
+      assets: content.assets.map((asset) => ({ type: asset.type, source: asset.url, thumbnail: asset.type === "video" ? "" : asset.url })),
+      updatedAt: new Date().toISOString(),
+    });
+    return structuredClone(stored);
+  }
+
+  async rescheduleDraft(post: ProviderPost, dueAt: string): Promise<ProviderPost> {
+    const stored = this.find(post.id);
+    if (stored.status !== "draft") throw new ProviderError("Seul un brouillon peut changer de date depuis Cadence.");
+    stored.dueAt = dueAt;
     stored.updatedAt = new Date().toISOString();
     return structuredClone(stored);
   }
@@ -218,6 +314,33 @@ export class MockProvider implements PublishingProvider {
 
   failNextSchedule(message: string) {
     this.state.failNextSchedule = message;
+  }
+
+  /** Ajoute un canal rattaché à personne, comme un nouveau compte connecté dans Buffer. */
+  addChannel(key: string, service: string, name: string) {
+    const id = `mock-ch-${key}`;
+    if (this.state.channels.some((channel) => channel.id === id)) return;
+    this.state.channels.push({ id, service, name, displayName: name, avatar: null, isDisconnected: false });
+  }
+
+  failNextCreate(message: string) {
+    this.state.failNextCreate = message;
+  }
+
+  loseNextCreateResponse() {
+    this.state.loseNextCreateResponse = true;
+  }
+
+  loseNextScheduleResponse() {
+    this.state.loseNextScheduleResponse = true;
+  }
+
+  rateLimitNextWrite(retryAfterSeconds = 0) {
+    this.state.rateLimitNextWrite = retryAfterSeconds;
+  }
+
+  get createCalls() {
+    return this.state.createCalls;
   }
 
   get scheduleCalls() {

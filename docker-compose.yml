@@ -1,9 +1,34 @@
-# Déploiement de production — préparé pour la phase 6, NON TESTÉ en phase 1.
-# Ne pas lancer sur le VPS avant la phase 6.
+# Déploiement de production — préparé, NON TESTÉ sur le VPS.
+# Ne rien lancer sur le VPS sans décision explicite (voir docs/PLANIFICATEUR.md).
+# Journaux bornés : sans cela, les journaux Docker grossissent sans limite sur un disque déjà presque plein.
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   web:
-    build: .
+    build:
+      context: .
+      args:
+        GIT_COMMIT: ${GIT_COMMIT:-inconnu}
     restart: unless-stopped
+    logging: *logging
+    # Ressources bornées : l'application ne doit pas affamer n8n, Caddy ni Postgres, qui tournent sur la même machine.
+    mem_limit: 512m
+    cpus: 1.0
+    pids_limit: 200
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     env_file:
       - path: .env.production
         required: false
@@ -11,3 +36,27 @@ services:
       # Écoute uniquement sur la machine elle-même : l'application n'est pas
       # joignable depuis Internet tant qu'un reverse proxy HTTPS n'est pas configuré.
       - "127.0.0.1:3000:3000"
+
+  # Planificateur : demande une synchronisation Buffer toutes les SYNC_INTERVAL_MINUTES (5 par défaut).
+  # Désactivé par défaut. Activation : docker compose --profile scheduler up -d scheduler
+  scheduler:
+    profiles: ["scheduler"]
+    image: curlimages/curl:8.10.1
+    restart: unless-stopped
+    depends_on:
+      web:
+        condition: service_healthy
+    logging: *logging
+    mem_limit: 64m
+    cpus: 0.1
+    env_file:
+      - path: .env.production
+        required: false
+    environment:
+      CADENCE_URL: http://web:3000
+    volumes:
+      - ./scripts/sync-tick.sh:/sync-tick.sh:ro
+      - ./scripts/urgent-tick.sh:/urgent-tick.sh:ro
+    # Deux boucles : lecture générale toutes les SYNC_INTERVAL_MINUTES ; surveillance du traitement URGENT chaque minute
+    # (indépendante de l'intervalle général : une annulation en attente ne doit jamais attendre le prochain poll).
+    entrypoint: ["/bin/sh", "-c", "(while true; do /bin/sh /urgent-tick.sh || true; sleep 60; done) & while true; do /bin/sh /sync-tick.sh || true; sleep $$(( $${SYNC_INTERVAL_MINUTES:-5} * 60 )); done"]

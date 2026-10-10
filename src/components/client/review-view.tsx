@@ -8,7 +8,7 @@ import { toast } from "sonner";
 
 import { ActivityTimeline } from "@/components/publications/activity";
 import { CommentThread } from "@/components/publications/comments";
-import { Panel, PostContent, StatusBanner } from "@/components/publications/post-panels";
+import { Panel, PostContent, StatusBanner, VersionHistory } from "@/components/publications/post-panels";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { formatDateTime } from "@/lib/dates";
 import { NETWORK_LABELS } from "@/lib/domain/networks";
 import { canDecide, CLIENT_EVENT_TYPES, hasUsableDueDate } from "@/lib/domain/status";
-import type { Comment, PostEvent, Profile } from "@/lib/types";
+import type { Comment, PostEvent, PostVersion, Profile } from "@/lib/types";
 import type { PostView } from "@/lib/view";
 import { leaveIfExpired, type ActionResult } from "@/lib/action-result";
 import { approvePost, requestChanges } from "@/server/actions";
@@ -31,6 +31,7 @@ export function ReviewView({
   basePath,
   now,
   nextPendingId,
+  versions = [],
 }: {
   post: PostView;
   comments: Comment[];
@@ -40,6 +41,7 @@ export function ReviewView({
   now: string;
   /** Autre publication en attente, proposée une fois celle-ci traitée. */
   nextPendingId: string | null;
+  versions?: PostVersion[];
 }) {
   const router = useRouter();
   const [dialog, setDialog] = useState<"approve" | "changes" | null>(null);
@@ -63,7 +65,13 @@ export function ReviewView({
 
   // L'empreinte affichée part avec la décision : si le contenu a changé entre-temps, la base refuse.
   const approve = () =>
-    startTransition(async () => finish(await approvePost({ postId: post.id, expectedHash: post.contentHash })));
+    startTransition(async () => {
+      try {
+        finish(await approvePost({ postId: post.id, expectedHash: post.contentHash }));
+      } catch {
+        toast.error("La confirmation n'a pas été reçue. Rechargez la publication pour vérifier son état avant de réessayer.");
+      }
+    });
 
   const sendChanges = () => {
     if (!changeBody.trim()) {
@@ -71,9 +79,13 @@ export function ReviewView({
       return;
     }
     startTransition(async () => {
-      const result = await requestChanges({ postId: post.id, expectedHash: post.contentHash, comment: changeBody });
-      if (result.ok) setChangeBody("");
-      finish(result);
+      try {
+        const result = await requestChanges({ postId: post.id, expectedHash: post.contentHash, comment: changeBody });
+        if (result.ok) setChangeBody("");
+        finish(result);
+      } catch {
+        toast.error("La confirmation n'a pas été reçue. Votre demande est conservée ; vérifiez l'historique avant de réessayer.");
+      }
     });
   };
 
@@ -171,12 +183,17 @@ export function ReviewView({
               vous sera demandée.
             </p>
           </Panel>
+          {versions.length > 1 && (
+            <Panel title="Versions précédentes">
+              <VersionHistory versions={versions} current={post.version} timezone={post.timezone} />
+            </Panel>
+          )}
         </div>
       </div>
 
       {/* Mobile : les deux décisions restent accessibles en bas de l'écran. */}
       {decidable && (
-        <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t bg-background/95 p-3 backdrop-blur-sm sm:hidden">
+        <div className="fixed inset-x-0 bottom-0 z-20 flex gap-2 border-t bg-background/95 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] backdrop-blur-sm sm:hidden">
           <Button variant="outline" size="lg" className="h-11 flex-1" onClick={() => setDialog("changes")}>
             Modifications
           </Button>

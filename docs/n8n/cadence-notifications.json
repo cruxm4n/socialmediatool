@@ -1,0 +1,37 @@
+{
+  "name": "Cadence — envoi des notifications par e-mail",
+  "active": false,
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Message de Cadence",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "parameters": { "httpMethod": "POST", "path": "cadence-notifications", "authentication": "headerAuth", "responseMode": "lastNode" },
+      "notesInFlow": true,
+      "notes": "Identifiant « Header Auth » à créer : nom x-cadence-secret, valeur NOTIFICATIONS_WEBHOOK_SECRET. Sans lui, n'importe qui pourrait faire envoyer des e-mails."
+    },
+    {
+      "id": "email",
+      "name": "Envoyer l'e-mail",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [240, 0],
+      "parameters": {
+        "fromEmail": "cadence@votre-domaine.fr",
+        "toEmail": "={{ $json.body.to }}",
+        "subject": "={{ $json.body.subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.body.text }}",
+        "options": { "appendAttribution": false }
+      },
+      "notesInFlow": true,
+      "notes": "Identifiant SMTP à créer dans n8n (celui de votre messagerie). Corriger l'adresse d'expédition."
+    }
+  ],
+  "connections": {
+    "Message de Cadence": { "main": [[{ "node": "Envoyer l'e-mail", "type": "main", "index": 0 }]] }
+  },
+  "settings": { "executionOrder": "v1" }
+}

@@ -1,6 +1,7 @@
 "use client";
 
-import { LogOut } from "lucide-react";
+import Link from "next/link";
+import { Bell, LogOut } from "lucide-react";
 
 import { PersonAvatar } from "@/components/shared/org-avatar";
 import {
@@ -14,7 +15,7 @@ import {
 import type { Profile } from "@/lib/types";
 import { signOut } from "@/server/actions";
 
-export function UserMenu({ profile }: { profile: Profile }) {
+export function UserMenu({ profile, notificationsHref }: { profile: Profile; notificationsHref?: string }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -31,6 +32,14 @@ export function UserMenu({ profile }: { profile: Profile }) {
           </span>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
+        {notificationsHref && (
+          <DropdownMenuItem asChild>
+            <Link href={notificationsHref}>
+              <Bell className="size-4" />
+              Notifications
+            </Link>
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={() => void signOut()}>
           <LogOut className="size-4" />
           Se déconnecter

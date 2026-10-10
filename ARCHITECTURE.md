@@ -17,8 +17,8 @@ Client ──► Cadence (Next.js) ◄──────────────
 
 - **Buffer** est la source de vérité du contenu : texte, médias, date, statut de publication.
 - **Supabase** est la source de vérité de la validation : qui a approuvé quoi, quand, quelle version.
-- **Cadence** n'édite aucune publication. Il affiche, recueille la décision, et demande à Buffer de programmer.
-- **n8n** n'est pas utilisé aujourd'hui. Voir [docs/N8N.md](docs/N8N.md).
+- **Cadence** prépare les contenus (Studio), recueille la décision du client, et demande à Buffer de programmer. Il ne publie jamais lui-même.
+- **n8n** n'est pas indispensable. Il peut déclencher la synchronisation et sert de passerelle d'envoi des e-mails de notification. Voir [docs/PLANIFICATEUR.md](docs/PLANIFICATEUR.md), [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) et [docs/N8N.md](docs/N8N.md).
 
 ## Organisation du code
 
@@ -42,6 +42,8 @@ src/
     data.ts                Lectures, toujours avec la session de l'utilisateur
     actions.ts             Actions : connexion, décision, commentaire, synchronisation
     sync.ts                COUCHE DE SERVICE : lien entre Buffer et la base
+    automation-rpc.ts      Appel des fonctions SQL protégées par le secret
+    notifications.ts       Remise des notifications (simulation ou webhook)
     publishing/
       provider.ts          Contrat du fournisseur de publication
       buffer-provider.ts   Buffer réel (GraphQL)
@@ -58,7 +60,9 @@ tests/                     unit/ (règles), integration/ (base), e2e/ (parcours)
 2. **Déprogrammer** les posts modifiés après validation (`list_posts_to_unschedule`, `complete_unscheduling`).
 3. **Programmer** les posts approuvés (`claim_posts_for_scheduling`, `complete_scheduling`).
 
-Tant qu'aucun planificateur n'est branché, l'ouverture de l'espace admin déclenche une synchronisation si la dernière date de plus de quinze minutes.
+Avant de commencer, elle demande un **verrou** à la base (`begin_sync_run`) : une seule synchronisation s'exécute à la fois, quel que soit le déclencheur. Elle le rend avec son résultat (`finish_sync_run`), ce qui alimente l'état affiché dans l'administration : dernier succès, dernier échec, anomalies, pause après un quota Buffer atteint. Elle termine en remettant les notifications en attente.
+
+Le planificateur (toutes les 5 minutes) est préparé mais non activé : [docs/PLANIFICATEUR.md](docs/PLANIFICATEUR.md). En attendant, l'ouverture de l'espace admin déclenche une synchronisation si la dernière date de plus de quinze minutes.
 
 L'interface ne lit que la base. Remplacer ce fichier par des workflows n8n qui appellent les mêmes fonctions SQL ne demande aucun changement d'écran.
 
@@ -74,7 +78,11 @@ Un **post** correspond à une publication Buffer sur un canal. Trois états dist
 
 L'écran en déduit un statut unique (`src/lib/domain/status.ts`) : brouillon, à valider, modifications demandées, approuvé, programmé, publié, erreur. Ce que dit Buffer l'emporte, car c'est lui qui publie.
 
-Autres tables : `organizations`, `profiles`, `organization_members`, `channels` (canal Buffer ↔ client), `approval_decisions`, `comments`, `post_events` (historique), `sync_runs` (journal).
+Autres tables : `organizations`, `profiles`, `organization_members`, `channels` (canal Buffer ↔ client), `approval_decisions`, `comments`, `post_events` (historique), `sync_runs` (journal), `sync_state` (verrou et état de la synchronisation, une ligne par mode), `notifications` (file d'attente et historique) et `notification_preferences`.
+
+### Notifications
+
+Un déclencheur sur `post_events` met une notification en file d'attente pour chaque fait qui le mérite ; une clé unique empêche les doublons. Le serveur réserve les notifications (`claim_notifications`), les regroupe en un message par destinataire, puis les marque simulées ou les remet à un webhook. Détail : [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md).
 
 ### Empreinte et versions
 
@@ -97,10 +105,19 @@ Chaque post a une **empreinte** calculée sur son texte, sa date, son canal et s
 | Post supprimé dans Buffer | Marqué supprimé, jamais effacé |
 | Date prévue absente ou dépassée | Approbation refusée (base et interface) ; le client peut demander une modification |
 | Quota Buffer atteint ou Buffer injoignable | Arrêt immédiat des appels, posts repris à la synchronisation suivante |
+| Quota Buffer atteint ou presque épuisé | Exécutions planifiées suspendues un temps ; bouton manuel toujours disponible |
+| Deux synchronisations déclenchées en même temps | Verrou en base : une seule s'exécute, l'autre répond « déjà en cours » |
+| Serveur arrêté en pleine synchronisation | Le verrou expire seul au bout de cinq minutes |
 | Cinq échecs de programmation de suite | Nouvel essai au plus une fois par heure, sans abandon définitif |
 | Session expirée pendant une action | Rien n'est enregistré, renvoi vers la connexion |
 | Canal déconnecté dans Buffer | Alerte sur la fiche de la publication |
 | Canal rattaché à aucun client | Alerte pour l'admin ; personne ne peut valider |
+
+## Content Studio
+
+Les contenus peuvent être préparés dans Cadence : tables `studio_drafts` (un contenu : client, date, hashtags, médias ordonnés) et `studio_variants` (son texte pour un canal, et l'identifiant du brouillon Buffer une fois envoyé), bibliothèque `media_assets` et espace de stockage privé `media`. `post_versions` garde le contenu de chaque version d'une publication.
+
+« Envoyer en validation » (`pushDraftToBuffer`, dans `src/server/studio.ts`) crée un brouillon tagué par canal dans Buffer, puis relit Buffer : la publication entre alors dans le circuit décrit plus haut, inchangé. Le Studio ne programme jamais. Détail, garde-fous et activation : [docs/STUDIO.md](docs/STUDIO.md).
 
 ## Sécurité
 

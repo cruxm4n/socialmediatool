@@ -6,6 +6,7 @@ import { canDecide } from "@/lib/domain/status";
 import { requireClientSpace } from "@/server/auth";
 import { loadClientSpace } from "@/server/client-space";
 import { listComments, listEvents, listProfiles } from "@/server/data";
+import { listPostVersions } from "@/server/studio";
 
 export const metadata: Metadata = { title: "Publication" };
 
@@ -17,7 +18,7 @@ export default async function Page({ params }: PageProps<"/client/[org]/publicat
   const post = posts.find((item) => item.id === id);
   if (!post) notFound();
 
-  const [comments, events, profiles] = await Promise.all([listComments(id), listEvents({ postId: id }), listProfiles()]);
+  const [comments, events, profiles, versions] = await Promise.all([listComments(id), listEvents({ postId: id }), listProfiles(), listPostVersions(id)]);
   const nextPending = posts.find((item) => item.id !== id && canDecide(item));
 
   return (
@@ -29,6 +30,7 @@ export default async function Page({ params }: PageProps<"/client/[org]/publicat
       basePath={`/client/${space.organization.slug}`}
       now={now}
       nextPendingId={nextPending?.id ?? null}
+      versions={versions}
     />
   );
 }

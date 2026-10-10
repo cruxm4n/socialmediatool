@@ -7,6 +7,7 @@ import { OrgAvatar } from "@/components/shared/org-avatar";
 import { Brand } from "@/components/shell/brand";
 import { clientNav, isActive } from "@/components/shell/nav";
 import { UserMenu } from "@/components/shell/user-menu";
+import { formatRelative } from "@/lib/dates";
 import type { Organization, Profile } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -14,11 +15,16 @@ export function ClientShell({
   organization,
   profile,
   pendingCount,
+  freshAt,
+  now,
   children,
 }: {
   organization: Organization;
   profile: Profile;
   pendingCount: number;
+  /** Dernière mise à jour des publications depuis Buffer. null : aucune publication. */
+  freshAt: string | null;
+  now: string;
   children: React.ReactNode;
 }) {
   const pathname = usePathname();
@@ -26,6 +32,9 @@ export function ClientShell({
 
   return (
     <div className="min-h-dvh">
+      <a href="#main-content" className="sr-only z-50 rounded-lg bg-card px-4 py-3 font-semibold shadow-lift focus:not-sr-only focus:fixed focus:top-2 focus:left-2">
+        Aller au contenu
+      </a>
       <header className="sticky top-0 z-20 border-b bg-background/90 backdrop-blur-sm">
         <div className="mx-auto flex h-16 w-full max-w-6xl items-center gap-4 px-4 sm:px-6">
           <Brand href={basePath} />
@@ -35,7 +44,12 @@ export function ClientShell({
             <span className="truncate">{organization.name}</span>
           </span>
           <span className="ml-auto" />
-          <UserMenu profile={profile} />
+          {freshAt && (
+            <span className="hidden text-xs text-muted-foreground sm:block" data-testid="freshness" title="Dernière mise à jour des publications">
+              Mis à jour {formatRelative(freshAt, now)}
+            </span>
+          )}
+          <UserMenu profile={profile} notificationsHref={`${basePath}/notifications`} />
         </div>
         <div className="mx-auto w-full max-w-6xl px-1 sm:px-3">
           <nav aria-label="Navigation de l'espace client" className="-mb-px flex gap-1 overflow-x-auto">
@@ -65,7 +79,7 @@ export function ClientShell({
           </nav>
         </div>
       </header>
-      <main className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8">{children}</main>
+      <main id="main-content" tabIndex={-1} className="mx-auto w-full max-w-6xl px-4 py-6 sm:px-6 lg:py-8">{children}</main>
     </div>
   );
 }

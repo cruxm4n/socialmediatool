@@ -43,6 +43,8 @@ export interface Organization {
   timezone: string;
   initials: string;
   color: string;
+  /** Client archivé : masqué des listes, ses membres n'ont plus accès. null : actif. */
+  archivedAt: string | null;
 }
 
 export interface Profile {
@@ -62,6 +64,10 @@ export interface Channel {
   isDisconnected: boolean;
   /** Client auquel ce canal est rattaché. null : pas encore attribué. */
   organizationId: string | null;
+  /** Dernier client auquel le canal a appartenu, conservé quand il est détaché. */
+  lastOrganizationId: string | null;
+  /** Après un transfert : le client actuel ne voit que les publications apparues depuis cette date. */
+  visibleFrom: string | null;
 }
 
 export interface PostAsset {
@@ -96,6 +102,12 @@ export interface Post {
   scheduleState: ScheduleState;
   scheduleError: string | null;
   scheduleAttempts: number;
+  /**
+   * Appartenance historique (migration 0009) : « assigned » (client propriétaire connu), « unassigned »
+   * (canal jamais attribué) ou « ambiguous » (import à attribuer). Absent d'un schéma plus ancien.
+   */
+  ownership?: "assigned" | "unassigned" | "ambiguous";
+  ownerOrganizationId?: string | null;
   removedAt: string | null;
   syncedAt: string;
   createdAt: string;
@@ -150,5 +162,76 @@ export interface SyncRun {
   removed: number;
   error: string | null;
   rateLimit: Record<string, number> | null;
+  createdAt: string;
+}
+
+export interface NotificationEntry {
+  id: string;
+  kind: "review_requested" | "changes_requested" | "approved" | "schedule_error";
+  recipientId: string;
+  postId: string;
+  organizationId: string | null;
+  detail: string | null;
+  status: "pending" | "sending" | "sent" | "simulated" | "failed" | "cancelled";
+  error: string | null;
+  createdAt: string;
+  sentAt: string | null;
+}
+
+/** Média de la bibliothèque d'un client (Content Studio). */
+export interface MediaAsset {
+  id: string;
+  organizationId: string;
+  fileName: string;
+  kind: "image" | "video";
+  mimeType: string;
+  sizeBytes: number;
+  width: number | null;
+  height: number | null;
+  durationMs: number | null;
+  createdAt: string;
+  archivedAt: string | null;
+  /** Adresse temporaire d'affichage. null : le fichier n'a pas pu être signé. */
+  url: string | null;
+}
+
+/** « unknown » : Buffer n'a pas répondu à la création ; le brouillon existe peut-être (réconciliation requise). */
+export type PushState = "idle" | "pushing" | "pushed" | "failed" | "unknown";
+
+/** Texte d'un contenu pour un canal. */
+export interface StudioVariant {
+  id: string;
+  channelId: string;
+  text: string;
+  /** Brouillon correspondant dans Buffer, une fois le contenu envoyé en validation. */
+  bufferPostId: string | null;
+  pushState: PushState;
+  pushError: string | null;
+  pushedRevision: number | null;
+  /** Début d'un résultat Buffer incertain (état « unknown »). */
+  pushUnknownAt?: string | null;
+}
+
+/** Contenu préparé dans le Studio : un client, une date, des médias, un texte par canal. */
+export interface StudioDraft {
+  id: string;
+  organizationId: string;
+  title: string;
+  dueAt: string | null;
+  hashtags: string[];
+  mediaIds: string[];
+  status: "draft" | "submitted" | "archived";
+  revision: number;
+  createdAt: string;
+  updatedAt: string;
+  submittedAt: string | null;
+  variants: StudioVariant[];
+}
+
+export interface PostVersion {
+  version: number;
+  text: string;
+  dueAt: string | null;
+  assets: PostAsset[];
   createdAt: string;
 }

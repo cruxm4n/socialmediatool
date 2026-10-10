@@ -1,0 +1,8 @@
+081b1cc67d93a0ff459eeddb0984daf2fae3b20b61dcc1aaf6f960abcf9ecd98  tests/sql/audit-independent.test.ts
+9bf5afa2509aee6327b28f338555df3b62ffda839d0d93f618f1ae34015b64c4  tests/sql/audit-independent-quota-transfer.test.ts
+73bb92288f96e440162db35fe43d15a1b465a44e99a0fc39a9239171051b7410  tests/unit/audit-independent-b1.test.ts
+d60734dc2bf29acfc1ae95524af9522ad1582d76401a3168c6c083ae4e8c3483  tests/unit/audit-independent-provider.test.ts
+b4b4019c98e869d6431460ac5e2b0cf3d1153c8ec58da32bd1428dd2906a2237  tests/unit/audit-independent-studio.test.ts
+44564adb630f5532710d4f87f7ff3024e911ad9ebb4c8f982af6841bdc4bf796  tests/unit/audit-independent-sync.test.ts
+d7ef949a90366363047c14ff681a6e62d4e4f8e796ba646843821c4479419196  tests/unit/audit-independent-view.test.ts
+caf28a1e5ad174f4d228023aedf570d5ad296c4db37599989ebe5509c4ac57ae  tests/unit/audit-independent-notifications.test.ts

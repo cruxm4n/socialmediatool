@@ -1,10 +1,12 @@
 import {
+  Bell,
   Building2,
   CalendarDays,
   CircleCheckBig,
   FileText,
   History,
   LayoutDashboard,
+  PenLine,
   RefreshCw,
   Settings,
   type LucideIcon,
@@ -20,10 +22,12 @@ export interface NavItem {
 
 export const ADMIN_NAV: NavItem[] = [
   { label: "Vue d'ensemble", href: "/admin", icon: LayoutDashboard, exact: true },
+  { label: "Studio", href: "/admin/studio", icon: PenLine },
   { label: "Calendrier", href: "/admin/calendrier", icon: CalendarDays },
   { label: "Publications", href: "/admin/publications", icon: FileText },
   { label: "Clients", href: "/admin/clients", icon: Building2 },
   { label: "Synchronisation", href: "/admin/synchronisation", icon: RefreshCw },
+  { label: "Notifications", href: "/admin/notifications", icon: Bell },
   { label: "Paramètres", href: "/admin/parametres", icon: Settings },
 ];
 

@@ -10,7 +10,7 @@ export async function POST(request: Request) {
   if (env.bufferMode !== "mock") return new Response("Not found", { status: 404 });
   if (!hasValidAutomationSecret(request)) return Response.json({ ok: false }, { status: 401 });
 
-  const body = (await request.json()) as { action: string; key?: string; text?: string; status?: string; message?: string; tagged?: boolean };
+  const body = (await request.json()) as { action: string; key?: string; text?: string; status?: string; message?: string; tagged?: boolean; service?: string; name?: string };
   const provider = new MockProvider(env.mockRunId);
   const id = `mock-${env.mockRunId}-${body.key}`;
 
@@ -29,6 +29,9 @@ export async function POST(request: Request) {
       break;
     case "failNextSchedule":
       provider.failNextSchedule(body.message ?? "Échec simulé.");
+      break;
+    case "addChannel":
+      provider.addChannel(body.key ?? "libre", body.service ?? "linkedin", body.name ?? "Canal libre");
       break;
     case "stats":
       return Response.json({ ok: true, scheduleCalls: provider.scheduleCalls, post: await provider.getPost(id) });

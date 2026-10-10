@@ -12,6 +12,8 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // Les compilations de test ne doivent pas remplacer les artefacts du serveur de développement.
+  distDir: process.env.ISOLATED_BUILD === "1" ? ".next-test" : ".next",
   async headers() {
     return [{ source: "/:path*", headers: securityHeaders }];
   },
