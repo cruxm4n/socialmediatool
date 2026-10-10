@@ -50,15 +50,13 @@ Les deux organisations sont fictives. Le canal X de test est rattaché à Maison
 
 Les données simulées et réelles ne s'affichent jamais ensemble.
 
-### Synchroniser sans n8n
+### Synchroniser
 
 - À la main : bouton **Synchroniser** (en-tête de l'espace admin).
 - À l'ouverture de l'espace admin, si la dernière synchronisation date de plus de quinze minutes.
-- Automatiquement, en attendant n8n, avec une tâche planifiée sur la machine qui héberge l'application :
+- Automatiquement, toutes les 5 minutes : planificateur préparé, à activer par une commande — [docs/PLANIFICATEUR.md](docs/PLANIFICATEUR.md).
 
-```bash
-*/15 * * * * curl -s -X POST -H "x-automation-secret: $AUTOMATION_SECRET" http://127.0.0.1:3000/api/automation/sync
-```
+La pastille de l'en-tête et l'écran **Synchronisation** disent si les données sont à jour.
 
 ## Commandes
 
@@ -68,6 +66,7 @@ Les données simulées et réelles ne s'affichent jamais ensemble.
 | `npm run check` | Lint, typage, tests des règles, compilation |
 | `npm run test:db` | Tests de la base Supabase : isolation, validations simultanées, programmation |
 | `npm run test:e2e` | Parcours dans un navigateur, Buffer simulé, port 3100 |
+| `node scripts/setup-test-db.mjs` | Prépare la base de test locale (voir docs/BASE_DE_TEST.md) |
 | `npm run build` puis `npm run start` | Version de production en local |
 
 Première utilisation des parcours : `npx playwright install --only-shell chromium`.
@@ -76,6 +75,12 @@ Première utilisation des parcours : `npx playwright install --only-shell chromi
 
 - [ARCHITECTURE.md](ARCHITECTURE.md) — qui fait quoi, modèle de données, sécurité
 - [docs/BUFFER.md](docs/BUFFER.md) — ce que l'API Buffer permet, résultats des essais réels
+- [docs/PILOTE.md](docs/PILOTE.md) — sauvegarde, migrations, Docker, checklist de l'essai réel sur le canal X
+- [docs/BASE_DE_TEST.md](docs/BASE_DE_TEST.md) — base Supabase locale pour les tests qui écrivent
+- [docs/MISE_EN_SERVICE.md](docs/MISE_EN_SERVICE.md) — **ce qu'il reste à autoriser** : fusion, migrations, planificateur, notifications
+- [docs/STUDIO.md](docs/STUDIO.md) — Content Studio : création, médias, calendrier, garde-fous, activation
+- [docs/PLANIFICATEUR.md](docs/PLANIFICATEUR.md) — synchronisation automatique
+- [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — qui est prévenu de quoi, mode simulation, envoi réel
 - [docs/N8N.md](docs/N8N.md) — brancher n8n
 - [TESTING.md](TESTING.md) — tests et résultats
 - [DECISIONS.md](DECISIONS.md) — décisions et leurs raisons

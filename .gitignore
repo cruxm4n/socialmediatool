@@ -49,3 +49,13 @@ next-env.d.ts
 
 # sessions de test Playwright
 /tests/.auth/
+
+# compilation isolée des tests
+/.next-test/
+/.captures/
+
+# Documents internes conserves hors publication GitHub
+/AUDIT_*.md
+/MISSION_*
+/RAPPORT_*.md
+/CODEX_REPORT.md

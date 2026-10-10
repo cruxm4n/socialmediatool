@@ -7,3 +7,9 @@ test-results
 playwright-report
 tests
 *.md
+.captures
+.next-test
+tests/.auth
+sync.log
+playwright.config.ts
+vitest.config.mts
