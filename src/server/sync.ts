@@ -54,12 +54,19 @@ interface RunNotes {
 async function pull(provider: PublishingProvider, triggeredBy: string, notes: RunNotes): Promise<PullCounts> {
   const snapshot = await provider.fetchSnapshot();
   notes.rateLimit = snapshot.rateLimit ?? notes.rateLimit;
-  if (!snapshot.complete) notes.anomalies.push("Lecture de Buffer incomplète : les publications absentes n'ont pas été marquées comme supprimées.");
+  for (const failure of snapshot.connectionErrors ?? []) {
+    notes.anomalies.push(failure.label ? `Compte « ${failure.label} » non lu : ${failure.message}` : failure.message);
+  }
+  if (!snapshot.complete && !snapshot.scopeConnectionIds) notes.anomalies.push("Lecture de Buffer incomplète : les publications absentes n'ont pas été marquées comme supprimées.");
+  // Relevé de plusieurs comptes : seules les publications des comptes lus EN ENTIER peuvent être déclarées retirées.
+  const scope = snapshot.scopeConnectionIds ? { scopeConnectionIds: snapshot.scopeConnectionIds } : {};
+  const complete = snapshot.scopeConnectionIds ? snapshot.scopeConnectionIds.length > 0 : snapshot.complete;
   const send = (label: string, payload: Record<string, unknown>) =>
-    rpc<PullCounts & { unresolved?: string[] }>("sync_buffer_posts", {
-      p_payload: { mode: provider.mode, triggeredBy: label, rateLimit: snapshot.rateLimit, ...payload },
+    rpc<PullCounts & { unresolved?: string[]; conflicts?: number }>("sync_buffer_posts", {
+      p_payload: { mode: provider.mode, triggeredBy: label, rateLimit: snapshot.rateLimit, ...scope, ...payload },
     });
-  const { unresolved = [], ...counts } = await send(triggeredBy, { complete: snapshot.complete, channels: snapshot.channels, posts: snapshot.posts });
+  const { unresolved = [], conflicts = 0, ...counts } = await send(triggeredBy, { complete, channels: snapshot.channels, posts: snapshot.posts });
+  if (conflicts > 0) notes.anomalies.push(`${conflicts} canal ou publication annoncé(s) par un compte alors qu'ils appartiennent à un autre : ignorés (aucune fusion entre comptes).`);
   if (unresolved.length === 0) return counts;
 
   const found: ProviderPost[] = [];
@@ -166,8 +173,8 @@ export async function scheduleApprovedPosts(postId?: string, options: { ignorePa
       }
     } catch (error) {
       failures += 1;
-      if (error instanceof ProviderError && error.kind !== "api") blocked = describe(error);
-      if (error instanceof ProviderError && error.kind === "rate_limit") rateLimited ??= error;
+      if (error instanceof ProviderError && error.kind !== "api" && !error.connectionId) blocked = describe(error);
+      if (error instanceof ProviderError && error.kind === "rate_limit" && !error.connectionId) rateLimited ??= error;
       // Résultat incertain : Buffer a peut-être programmé. Le message le dit ; la synchronisation constatera l'état réel.
       const uncertain = error instanceof ProviderError && error.outcome === "unknown";
       const message = uncertain ? `Résultat incertain : ${describe(error)} Vérification à la prochaine synchronisation.` : describe(error);

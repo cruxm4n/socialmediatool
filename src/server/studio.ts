@@ -342,8 +342,8 @@ export async function pushDraftToBuffer(draftId: string): Promise<PushResult> {
       if (uncertain) result.unknown += 1;
       else result.failed += 1;
       // Panne ou quota : inutile d'insister sur les canaux suivants.
-      if (error instanceof ProviderError && error.kind !== "api") blocked = describe(error) + retryHint(error);
-      if (error instanceof ProviderError && error.kind === "rate_limit") rateLimited ??= error;
+      if (error instanceof ProviderError && error.kind !== "api" && !error.connectionId) blocked = describe(error) + retryHint(error);
+      if (error instanceof ProviderError && error.kind === "rate_limit" && !error.connectionId) rateLimited ??= error;
       // Un échec de MISE À JOUR garde l'identifiant connu ; une CRÉATION sans identifiant obtenu n'en transmet aucun
       // (l'ancien identifiant, peut-être supprimé dans Buffer, ne dit rien de ce que cette tentative a créé).
       await complete(row.variant_id, false, createdId ?? (creating ? null : row.buffer_post_id), null, describe(error) + (error instanceof ProviderError ? retryHint(error) : ""), uncertain);

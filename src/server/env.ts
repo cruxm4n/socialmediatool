@@ -10,6 +10,18 @@ function required(name: string): string {
 
 export type BufferMode = "real" | "mock";
 
+let warnedAboutDevelopment = false;
+
+/** BUFFER_MODE=real demandé par un serveur de développement sans autorisation explicite. */
+export function realBufferBlockedInDevelopment(): boolean {
+  const blocked = process.env.BUFFER_MODE === "real" && process.env.NODE_ENV === "development" && process.env.CADENCE_ALLOW_REAL_BUFFER_IN_DEV !== "1";
+  if (blocked && !warnedAboutDevelopment) {
+    warnedAboutDevelopment = true;
+    console.warn("[cadence] BUFFER_MODE=real ignoré en développement : le Buffer simulé est utilisé. (CADENCE_ALLOW_REAL_BUFFER_IN_DEV=1 pour l'autoriser explicitement.)");
+  }
+  return blocked;
+}
+
 export const env = {
   get supabaseUrl() {
     return required("NEXT_PUBLIC_SUPABASE_URL");
@@ -20,9 +32,16 @@ export const env = {
   get automationSecret() {
     return required("AUTOMATION_SECRET");
   },
-  /** Par prudence, tout ce qui n'est pas explicitement « real » utilise le Buffer simulé. */
+  /**
+   * Par prudence, tout ce qui n'est pas explicitement « real » utilise le Buffer simulé.
+   * En développement (`next dev`), BUFFER_MODE=real est IGNORÉ sauf autorisation explicite
+   * (CADENCE_ALLOW_REAL_BUFFER_IN_DEV=1) : un `.env.local` copié de la production ne peut plus faire appeler le vrai
+   * Buffer par un serveur de développement.
+   */
   get bufferMode(): BufferMode {
-    return process.env.BUFFER_MODE === "real" ? "real" : "mock";
+    if (process.env.BUFFER_MODE !== "real") return "mock";
+    if (realBufferBlockedInDevelopment()) return "mock";
+    return "real";
   },
   get bufferApiKey() {
     return required("BUFFER_API_KEY");

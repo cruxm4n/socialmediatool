@@ -34,6 +34,9 @@ export async function activeRateLimitPause(mode: PublishingProvider["mode"]): Pr
 
 /** Une pause du quota est enregistrée même hors d'une synchronisation (approbation, envoi du Studio). */
 export async function recordRateLimit(error: ProviderError, mode: PublishingProvider["mode"]): Promise<void> {
+  // Refus propre à UN compte (connexion) : sa pause est déjà enregistrée sur la connexion par le routeur. La pause
+  // globale du mode ne doit pas suspendre les comptes des autres clients.
+  if (error.connectionId) return;
   await rpc("set_sync_backoff", {
     p_mode: mode,
     p_seconds: error.retryAfterSeconds ?? DEFAULT_RATE_LIMIT_PAUSE_SECONDS,

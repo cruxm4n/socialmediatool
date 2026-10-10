@@ -42,6 +42,27 @@ function video(file: string): PostAsset[] {
   return [{ type: "video", source: url, thumbnail: url, mimeType: "video/mp4" }];
 }
 
+/** Compte simulé supplémentaire (connexion d'un client) : identifiants propres, deux canaux, deux brouillons. */
+function buildAccountState(runId: string, account: string): MockState {
+  const today = dayKeyOf(new Date().toISOString(), PARIS);
+  const at = (offset: number, time: string) => zonedToUtcIso(addDays(today, offset), time, PARIS);
+  const channel = (service: string): ProviderChannel => ({
+    id: `mock-ch-${account}-${service}`, service, name: `Compte simulé ${account}`, displayName: `Compte simulé ${account}`, avatar: null, isDisconnected: false,
+  });
+  const post = (key: string, service: string, dueAt: string, text: string): ProviderPost => ({
+    id: `mock-${runId}-${account}-${key}`, channelId: `mock-ch-${account}-${service}`, service, status: "draft", text, dueAt, sentAt: null,
+    updatedAt: at(-1, "10:00"), externalLink: null, error: null, hasReviewTag: true, schedulingType: "automatic", assets: [],
+  });
+  return {
+    failNextSchedule: null, scheduleCalls: 0, createCalls: 0, failNextCreate: null, loseNextCreateResponse: false, loseNextScheduleResponse: false, rateLimitNextWrite: null,
+    channels: [channel("linkedin"), channel("instagram")],
+    posts: [
+      post("bienvenue-li", "linkedin", at(6, "09:00"), `Publication de démonstration du compte simulé ${account} (LinkedIn).`),
+      post("bienvenue-ig", "instagram", at(8, "12:00"), `Publication de démonstration du compte simulé ${account} (Instagram).`),
+    ],
+  };
+}
+
 function buildState(runId: string): MockState {
   const today = dayKeyOf(new Date().toISOString(), PARIS);
   const at = (offset: number, time: string) => zonedToUtcIso(addDays(today, offset), time, PARIS);
@@ -153,19 +174,22 @@ function buildState(runId: string): MockState {
 
 const globalStore = globalThis as unknown as { __cadenceMockBuffer?: Record<string, MockState> };
 
-function getState(runId: string): MockState {
+function getState(runId: string, account?: string): MockState {
   globalStore.__cadenceMockBuffer ??= {};
-  globalStore.__cadenceMockBuffer[runId] ??= buildState(runId);
-  return globalStore.__cadenceMockBuffer[runId];
+  // Chaque compte simulé a son propre état : rien n'est partagé entre deux comptes.
+  const key = account ? `${runId}::${account}` : runId;
+  globalStore.__cadenceMockBuffer[key] ??= account ? buildAccountState(runId, account) : buildState(runId);
+  return globalStore.__cadenceMockBuffer[key];
 }
 
 export class MockProvider implements PublishingProvider {
   readonly mode = "mock" as const;
 
-  constructor(private readonly runId: string) {}
+  /** `account` : compte simulé d'une connexion propre à un client (absent : le compte de démonstration). */
+  constructor(private readonly runId: string, private readonly account?: string) {}
 
   private get state() {
-    return getState(this.runId);
+    return getState(this.runId, this.account);
   }
 
   private find(id: string): ProviderPost {
@@ -235,7 +259,7 @@ export class MockProvider implements PublishingProvider {
     if (!state.channels.some((channel) => channel.id === content.channelId)) throw new ProviderError("Canal introuvable dans le Buffer simulé.");
     state.createCalls += 1;
     const post: ProviderPost = {
-      id: `mock-${this.runId}-studio-${state.createCalls}`,
+      id: `mock-${this.runId}-${this.account ? `${this.account}-` : ""}studio-${state.createCalls}`,
       channelId: content.channelId,
       service: content.service,
       status: "draft",

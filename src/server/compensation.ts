@@ -119,8 +119,8 @@ export async function unscheduleInvalidatedPosts(provider: PublishingProvider, o
       outcome.done += 1;
     } catch (error) {
       outcome.failures += 1;
-      if (error instanceof ProviderError && error.kind !== "api") outcome.blocked = describeError(error);
-      if (error instanceof ProviderError && error.kind === "rate_limit") outcome.rateLimited ??= error;
+      if (error instanceof ProviderError && error.kind !== "api" && !error.connectionId) outcome.blocked = describeError(error);
+      if (error instanceof ProviderError && error.kind === "rate_limit" && !error.connectionId) outcome.rateLimited ??= error;
       await rpc("complete_unscheduling", { p_post_id: post.id, p_ok: false, p_error: describeError(error) });
     }
   }
@@ -197,6 +197,8 @@ export async function reconcileOrphanClaims(
       outcome.reconciled += 1;
     } catch (error) {
       outcome.failures += 1;
+      // Erreur propre à un compte (connexion) : les réservations des autres comptes continuent d'être rapprochées.
+      if (error instanceof ProviderError && error.connectionId) continue;
       if (error instanceof ProviderError && error.kind === "rate_limit") {
         outcome.rateLimited ??= error;
         break;

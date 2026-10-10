@@ -14,6 +14,8 @@ export interface ProviderChannel {
   isDisconnected: boolean;
   /** Rattachement proposé à la création du canal (utilisé par le Buffer simulé uniquement). */
   organizationSlug?: string;
+  /** Connexion fournisseur dont ce canal provient (posée par le routeur de connexions). */
+  connectionId?: string;
 }
 
 export interface ProviderPost {
@@ -31,6 +33,8 @@ export interface ProviderPost {
   /** « automatic » ou « notification » (rappel de publication manuelle). */
   schedulingType: string | null;
   assets: PostAsset[];
+  /** Connexion fournisseur dont cette publication provient (posée par le routeur de connexions). */
+  connectionId?: string;
 }
 
 export type RateLimit = Record<string, number>;
@@ -43,6 +47,13 @@ export interface ProviderSnapshot {
   /** true : plus de posts publiés existent que ceux lus. Sans effet sur « complete » (un post publié n'est jamais marqué retiré). */
   sentTruncated?: boolean;
   rateLimit: RateLimit | null;
+  /**
+   * Relevé issu de plusieurs connexions (routeur) : celles qui ont été lues EN ENTIER. Seules leurs publications
+   * peuvent être déclarées retirées ; une connexion en panne, en pause ou révoquée ne fait rien disparaître.
+   */
+  scopeConnectionIds?: string[];
+  /** Connexions qui n'ont pas pu être lues (panne, quota, secret illisible) : signalées, jamais ignorées en silence. */
+  connectionErrors?: { connectionId: string; label: string; message: string }[];
 }
 
 /** Contenu d'un brouillon préparé dans le Studio de Cadence. */
@@ -106,9 +117,17 @@ export class ProviderError extends Error {
     this.name = "ProviderError";
   }
 
+  /**
+   * Connexion fournisseur concernée (posée par le routeur). Une erreur ainsi marquée ne vaut QUE pour ce compte :
+   * elle ne suspend ni ne bloque les opérations des autres connexions.
+   */
+  connectionId?: string;
+
   /** Même erreur, avec l'identifiant d'un post créé avant l'échec. */
   withCreatedPost(postId: string): ProviderError {
-    return new ProviderError(this.message, this.kind, this.retryAfterSeconds, this.outcome, postId);
+    const copy = new ProviderError(this.message, this.kind, this.retryAfterSeconds, this.outcome, postId);
+    copy.connectionId = this.connectionId;
+    return copy;
   }
 }
 
