@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { canDecide, deriveStatus, getPostAlerts, hasUsableDueDate, postTitle, safeExternalUrl } from "@/lib/domain/status";
+import { buildPostViews, redactPostDiagnostics } from "@/lib/view";
 import type { Post } from "@/lib/types";
 
 const NOW = "2026-10-08T08:00:00.000Z";
@@ -91,5 +92,23 @@ describe("lien vers la publication en ligne", () => {
     expect(safeExternalUrl("data:text/html,<script>alert(1)</script>")).toBeNull();
     expect(safeExternalUrl("pas une adresse")).toBeNull();
     expect(safeExternalUrl(null)).toBeNull();
+  });
+});
+
+
+describe("diagnostics techniques transmis au client", () => {
+  it("conserve le statut d'incident tout en masquant les détails dans les props sérialisées", () => {
+    const raw = {
+      ...of({ bufferStatus: "error", scheduleState: "failed" }),
+      id: "post", channelId: "channel", text: "Proposition",
+      bufferError: "Diagnostic fournisseur privé", scheduleError: "Diagnostic programmation privé",
+    } as Post;
+    const [admin] = buildPostViews([raw], [], []);
+    const client = redactPostDiagnostics(admin);
+    expect(client.status).toBe("error");
+    expect(client.text).toBe("Proposition");
+    expect(JSON.stringify(client)).not.toContain("privé");
+    expect(admin.bufferError).toBe("Diagnostic fournisseur privé");
+    expect(admin.scheduleError).toBe("Diagnostic programmation privé");
   });
 });

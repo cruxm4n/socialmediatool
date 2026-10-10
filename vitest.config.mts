@@ -11,8 +11,8 @@ export default defineConfig({
     },
   },
   test: {
-    // « unit » : règles métier, sans réseau. « integration » : base Supabase de développement.
-    include: [process.env.TEST_SCOPE === "integration" ? "tests/integration/**/*.test.ts" : "tests/unit/**/*.test.ts"],
+    // « unit » et « sql » : règles métier et migrations sur une base locale en mémoire, sans réseau. « integration » : base Supabase de développement.
+    include: process.env.TEST_SCOPE === "integration" ? ["tests/integration/**/*.test.ts"] : ["tests/unit/**/*.test.{ts,tsx}", "tests/sql/**/*.test.ts"],
     testTimeout: 30_000,
     fileParallelism: false,
   },

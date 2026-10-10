@@ -106,7 +106,7 @@ test("une publication modifiée dans Buffer pendant la relecture ne peut pas êt
   await expect(page.getByText("La publication a été modifiée depuis son affichage.")).toBeVisible();
   // La page se met à jour avec la nouvelle version, toujours à valider, et rien n'a été programmé.
   await expect(page.getByTestId("post-text")).toHaveText("Nouveau texte écrit pendant la relecture du client.");
-  await expect(page.getByText("version 2")).toBeVisible();
+  await expect(page.getByText("TikTok · version 2")).toBeVisible();
   expect((await mockBuffer(request, { action: "stats", key: "coulisses-tt" })).post.status).toBe("draft");
   await context.close();
 });

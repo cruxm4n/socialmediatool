@@ -49,6 +49,17 @@ describe("comparaison du contenu validé et du contenu Buffer", () => {
     expect(sameContent(approved, { text: "Bonjour", dueAt: "2026-12-15T10:00:00.000Z", assets: [{ type: "image", source: "a", thumbnail: "autre" }] })).toBe(true);
   });
 
+  it("refuse un changement de secondes ou une date invalide", () => {
+    expect(sameContent(approved, { ...approved, dueAt: "2026-12-15T10:00:30.000Z" })).toBe(false);
+    expect(sameContent({ ...approved, dueAt: "invalide" }, { ...approved, dueAt: "invalide" })).toBe(false);
+  });
+
+  it("ne confond pas des sources contenant des virgules avec plusieurs médias", () => {
+    const one = [{ type: "image" as const, source: "a,image:b", thumbnail: "" }];
+    const two = [{ type: "image" as const, source: "a", thumbnail: "" }, { type: "image" as const, source: "b", thumbnail: "" }];
+    expect(sameContent({ ...approved, assets: one }, { ...approved, assets: two })).toBe(false);
+  });
+
   it("détecte un changement de texte, de date ou de média", () => {
     const live = { text: "Bonjour", dueAt: "2026-12-15T10:00:00.000Z", assets: approved.assets };
     expect(sameContent(approved, { ...live, text: "Bonsoir" })).toBe(false);
@@ -89,6 +100,11 @@ describe("client de l'API Buffer", () => {
     id: "p1", channelId: "c1", service: "twitter", status: "draft", text: "Bonjour", dueAt: "2026-12-15T10:00:00.000Z",
     sentAt: null, updatedAt: null, externalLink: null, error: null, hasReviewTag: true, schedulingType: "automatic", assets: [],
   };
+
+  it("traite un post null comme une publication introuvable", async () => {
+    const { fetchImpl } = fakeBuffer(() => json({ data: { post: null } }));
+    await expect(new BufferProvider("k", "À valider", fetchImpl).getPost("absent")).resolves.toBeNull();
+  });
 
   it("programme un brouillon en renvoyant le texte, la date et le mode", async () => {
     const { fetchImpl, calls } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, status: "scheduled" } } } }));
@@ -195,5 +211,185 @@ describe("Buffer simulé", () => {
     await expect(provider.schedulePost(draft)).rejects.toThrow("Canal déconnecté");
     expect((await provider.schedulePost(draft)).status).toBe("scheduled");
     expect(provider.scheduleCalls).toBe(3);
+  });
+});
+
+describe("brouillons du Studio dans Buffer", () => {
+  const CONTENT = { channelId: "c1", service: "instagram", text: "Le Guji est de retour", dueAt: "2026-12-15T10:00:00.000Z", assets: [{ type: "image" as const, url: "https://stockage/a.jpg" }, { type: "video" as const, url: "https://stockage/b.mp4" }] };
+  const withTag = (write: (query: string, variables: Record<string, unknown>) => Response) =>
+    fakeBuffer((query, variables) => {
+      if (query.includes("channel(input")) return json({ data: { channel: { organizationId: "org1" } } });
+      if (query.includes("tagsV2")) return json({ data: { tagsV2: { edges: [{ node: { id: "tag-autre", name: "Promo" } }, { node: { id: "tag-valider", name: "À valider" } }] } } });
+      return write(query, variables);
+    });
+  const success = (name: string, status = "draft") => json({ data: { [name]: { __typename: "PostActionSuccess", post: { ...RAW_POST, status } } } });
+
+  it("crée toujours un brouillon tagué « à valider », jamais un post programmé", async () => {
+    const { fetchImpl, calls } = withTag(() => success("createPost"));
+    const created = await new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT);
+    expect(created.status).toBe("draft");
+    const input = calls.at(-1)!.variables.input as Record<string, unknown>;
+    expect(input).toMatchObject({
+      channelId: "c1", saveToDraft: true, mode: "customScheduled", schedulingType: "automatic", dueAt: CONTENT.dueAt, text: CONTENT.text, tagIds: ["tag-valider"],
+      assets: [{ image: { url: "https://stockage/a.jpg" } }, { video: { url: "https://stockage/b.mp4" } }],
+      metadata: { instagram: { type: "carousel", shouldShareToFeed: true } },
+    });
+    expect(calls.at(-1)!.query).toContain("createPost");
+  });
+
+  it("refuse d'envoyer si le tag de validation n'existe pas dans Buffer, sans le créer", async () => {
+    const { fetchImpl, calls } = fakeBuffer((query) =>
+      query.includes("channel(input") ? json({ data: { channel: { organizationId: "org1" } } }) : json({ data: { tagsV2: { edges: [] } } }));
+    await expect(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT)).rejects.toThrow("n'existe pas dans Buffer");
+    expect(calls.some((call) => call.query.includes("mutation"))).toBe(false);
+  });
+
+  it("si Buffer programme malgré tout le post créé, il est aussitôt repassé en brouillon", async () => {
+    const mutations: Record<string, unknown>[] = [];
+    const { fetchImpl } = withTag((query, variables) => {
+      mutations.push(variables.input as Record<string, unknown>);
+      return query.includes("createPost") ? success("createPost", "scheduled") : success("editPost", "draft");
+    });
+    expect((await new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT)).status).toBe("draft");
+    expect(mutations).toHaveLength(2);
+    expect(mutations[1]).toMatchObject({ id: "p1", saveToDraft: true });
+  });
+
+  it("met à jour un brouillon existant sans en créer un second, et le laisse en brouillon", async () => {
+    const { fetchImpl, calls } = fakeBuffer(() => success("editPost"));
+    await new BufferProvider("cle", "À valider", fetchImpl).updateDraft("p1", { ...CONTENT, service: "linkedin", assets: [] });
+    expect(calls).toHaveLength(1);
+    expect(calls[0].query).toContain("editPost");
+    expect(calls[0].variables.input).toMatchObject({ id: "p1", saveToDraft: true, text: CONTENT.text, assets: [] });
+    expect(calls[0].variables.input).not.toHaveProperty("metadata");
+  });
+
+  it("déplace un brouillon en renvoyant son texte, et refuse de déplacer un post programmé", async () => {
+    const { fetchImpl, calls } = fakeBuffer(() => success("editPost"));
+    const provider = new BufferProvider("cle", "À valider", fetchImpl);
+    const draft = { id: "p1", channelId: "c1", service: "twitter", status: "draft", text: "Bonjour", dueAt: "2026-12-15T10:00:00.000Z", sentAt: null, updatedAt: null, externalLink: null, error: null, hasReviewTag: true, schedulingType: "automatic", assets: [] } as ProviderPost;
+    await provider.rescheduleDraft(draft, "2026-12-20T10:00:00.000Z");
+    expect(calls[0].variables.input).toEqual({ id: "p1", saveToDraft: true, mode: "customScheduled", schedulingType: "automatic", dueAt: "2026-12-20T10:00:00.000Z", text: "Bonjour" });
+    await expect(provider.rescheduleDraft({ ...draft, status: "scheduled" }, "2026-12-20T10:00:00.000Z")).rejects.toThrow("Seul un brouillon");
+    expect(calls).toHaveLength(1);
+  });
+
+  it("remonte le refus de Buffer à la création", async () => {
+    const { fetchImpl } = withTag(() => json({ data: { createPost: { __typename: "LimitReachedError", message: "Scheduled posts limit reached" } } }));
+    await expect(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT)).rejects.toThrow("Buffer a refusé la création : Scheduled posts limit reached");
+  });
+
+  it("Buffer simulé : crée, met à jour et déplace un brouillon, sans jamais programmer", async () => {
+    const provider = new MockProvider(`studio-${Date.now()}`);
+    const [channel] = (await provider.fetchSnapshot()).channels;
+    const created = await provider.createDraft({ ...CONTENT, channelId: channel.id });
+    expect(created).toMatchObject({ status: "draft", hasReviewTag: true });
+    expect(created.id).toMatch(/^mock-studio-\d+-studio-1$/);
+    expect((await provider.updateDraft(created.id, { ...CONTENT, channelId: channel.id, text: "Corrigé" })).text).toBe("Corrigé");
+    expect((await provider.rescheduleDraft(created, "2027-01-01T10:00:00.000Z")).dueAt).toBe("2027-01-01T10:00:00.000Z");
+    expect(provider.scheduleCalls).toBe(0);
+    provider.failNextCreate("Limite atteinte");
+    await expect(provider.createDraft({ ...CONTENT, channelId: channel.id })).rejects.toThrow("Limite atteinte");
+    await expect(provider.createDraft({ ...CONTENT, channelId: "inconnu" })).rejects.toThrow("Canal introuvable");
+  });
+});
+
+describe("résultat d'une écriture Buffer : certain ou inconnu (audit B6)", () => {
+  const CONTENT = { channelId: "c1", service: "linkedin", text: "Bonjour", dueAt: "2026-12-15T10:00:00.000Z", assets: [] };
+  /** Lectures normales (canal, tag) puis un comportement choisi pour la mutation. */
+  const withWrite = (write: () => Response | Promise<Response>) => {
+    const calls: string[] = [];
+    const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const { query } = JSON.parse(String(init?.body));
+      calls.push(query);
+      if (query.includes("channel(input")) return json({ data: { channel: { organizationId: "org1" } } });
+      if (query.includes("tagsV2")) return json({ data: { tagsV2: { edges: [{ node: { id: "tag", name: "À valider" } }] } } });
+      return write();
+    }) as unknown as typeof fetch;
+    return { fetchImpl, calls };
+  };
+  const failure = async (promise: Promise<unknown>) => {
+    try {
+      await promise;
+    } catch (error) {
+      return error as ProviderError;
+    }
+    throw new Error("aucune erreur levée");
+  };
+
+  it("un délai dépassé pendant une création est un résultat INCONNU et n'est jamais retenté", async () => {
+    const { fetchImpl, calls } = withWrite(() => {
+      throw Object.assign(new Error("timeout"), { name: "TimeoutError" });
+    });
+    const error = await failure(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT));
+    expect(error).toMatchObject({ kind: "network", outcome: "unknown" });
+    expect(calls.filter((query) => query.includes("createPost"))).toHaveLength(1);
+  });
+
+  it("une erreur 5xx pendant une création est inconnue ; une réponse 2xx illisible aussi", async () => {
+    const five = await failure(new BufferProvider("cle", "À valider", withWrite(() => new Response("oups", { status: 502 })).fetchImpl).createDraft(CONTENT));
+    expect(five).toMatchObject({ kind: "network", outcome: "unknown" });
+    const garbled = await failure(new BufferProvider("cle", "À valider", withWrite(() => new Response("<html>", { status: 200 })).fetchImpl).createDraft(CONTENT));
+    expect(garbled).toMatchObject({ outcome: "unknown" });
+  });
+
+  it("un refus applicatif, un quota ou une clé refusée sont des échecs certains, avec le délai de reprise", async () => {
+    const refused = await failure(new BufferProvider("cle", "À valider", withWrite(() => json({ data: { createPost: { __typename: "MutationError", message: "Texte vide" } } })).fetchImpl).createDraft(CONTENT));
+    expect(refused).toMatchObject({ kind: "api", outcome: "failed" });
+    const quota = await failure(new BufferProvider("cle", "À valider", withWrite(() => json({}, { status: 429, headers: { "retry-after": "600" } })).fetchImpl).createDraft(CONTENT));
+    expect(quota).toMatchObject({ kind: "rate_limit", outcome: "failed", retryAfterSeconds: 600 });
+    const key = await failure(new BufferProvider("cle", "À valider", withWrite(() => json({}, { status: 401 })).fetchImpl).createDraft(CONTENT));
+    expect(key).toMatchObject({ outcome: "failed" });
+  });
+
+  it("brouillon créé puis remise en brouillon impossible : l'identifiant du brouillon accompagne l'erreur", async () => {
+    let writes = 0;
+    const { fetchImpl } = withWrite(() => {
+      writes += 1;
+      if (writes === 1) return json({ data: { createPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, id: "cree-9", status: "scheduled" } } } });
+      throw Object.assign(new Error("coupure"), { name: "TimeoutError" });
+    });
+    const error = await failure(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT));
+    expect(error.createdPostId).toBe("cree-9");
+    expect(error.outcome).toBe("unknown");
+  });
+
+  it("la réconciliation lit sans écrire : elle ne retient que le canal, le texte et l'instant exacts", async () => {
+    const queries: string[] = [];
+    const fetchImpl = vi.fn(async (_url: unknown, init?: RequestInit) => {
+      const { query } = JSON.parse(String(init?.body));
+      queries.push(query);
+      if (query.includes("account")) return json({ data: { account: { organizations: [{ id: "org1" }] } } });
+      return json({
+        data: {
+          channels: [{ id: "c1", service: "linkedin", name: "A", displayName: null, avatar: null, isDisconnected: false }],
+          active: {
+            edges: [
+              { node: { ...RAW_POST, id: "bon", channelId: "c1", text: "Bonjour", dueAt: "2026-12-15T10:00:00.000Z" } },
+              { node: { ...RAW_POST, id: "autre-texte", channelId: "c1", text: "Bonsoir" } },
+              { node: { ...RAW_POST, id: "autre-canal", channelId: "c2", text: "Bonjour" } },
+              { node: { ...RAW_POST, id: "autre-date", channelId: "c1", text: "Bonjour", dueAt: "2026-12-16T10:00:00.000Z" } },
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+          sent: { edges: [], pageInfo: { hasNextPage: false, endCursor: null } },
+        },
+      });
+    }) as unknown as typeof fetch;
+    const found = await new BufferProvider("cle", "À valider", fetchImpl).findDraftCandidates({ channelId: "c1", text: "Bonjour", dueAt: "2026-12-15T10:00:00+00:00" });
+    expect(found.candidates.map((post) => post.id)).toEqual(["bon"]);
+    expect(found.complete).toBe(true);
+    expect(queries.some((query) => query.includes("mutation"))).toBe(false);
+  });
+
+  it("le Buffer simulé sait perdre une réponse après avoir créé le brouillon", async () => {
+    const provider = new MockProvider(`perte-${Date.now()}`);
+    const channel = (await provider.fetchSnapshot()).channels[0];
+    provider.loseNextCreateResponse();
+    const error = await failure(provider.createDraft({ ...CONTENT, channelId: channel.id }));
+    expect(error.outcome).toBe("unknown");
+    expect(provider.createCalls).toBe(1);
+    const found = await provider.findDraftCandidates({ channelId: channel.id, text: CONTENT.text, dueAt: CONTENT.dueAt });
+    expect(found.candidates).toHaveLength(1);
   });
 });
