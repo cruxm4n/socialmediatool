@@ -28,8 +28,8 @@ describe("inventaire en lecture seule", () => {
     }
   });
 
-  it("des empreintes attendues existent pour les niveaux 0003, 0008, 0009, 0010 et 0011", () => {
-    expect(readdirSync(expectedDir).sort()).toEqual(["niveau-0003.txt", "niveau-0008.txt", "niveau-0009.txt", "niveau-0010.txt", "niveau-0011.txt"]);
+  it("des empreintes attendues existent pour les niveaux 0003, 0008, 0009, 0010, 0011 et 0012", () => {
+    expect(readdirSync(expectedDir).sort()).toEqual(["niveau-0003.txt", "niveau-0008.txt", "niveau-0009.txt", "niveau-0010.txt", "niveau-0011.txt", "niveau-0012.txt"]);
   });
 });
 
@@ -41,7 +41,7 @@ describe("fraîcheur des empreintes attendues", () => {
       const text = readFileSync(resolve("supabase/migrations", file), "utf8");
       for (const match of text.matchAll(/create (?:or replace )?function ((?:public|private)\.[a-z_0-9]+)\(/gi)) created.add(match[1].toLowerCase());
     }
-    const latest = readFileSync(join(expectedDir, "niveau-0011.txt"), "utf8");
+    const latest = readFileSync(join(expectedDir, "niveau-0012.txt"), "utf8");
     const present = new Set([...latest.matchAll(/^function\|((?:public|private)\.[a-z_0-9]+)\(/gm)].map((match) => match[1]));
     // Fonctions supprimées par une migration plus récente (drop function) : absentes du niveau final.
     const dropped = new Set<string>();

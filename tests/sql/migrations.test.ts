@@ -21,7 +21,7 @@ const events = async (bufferId: string) =>
 
 describe("migrations", () => {
   it("s'appliquent toutes, dans l'ordre, sur une base vide", async () => {
-    expect(migrationFiles()).toEqual(["0001_schema.sql", "0002_fiabilite.sql", "0003_isolation_modes.sql", "0004_fiabilite_statuts.sql", "0005_gestion_clients.sql", "0006_sync_planifiee.sql", "0007_notifications.sql", "0008_studio.sql", "0009_stabilisation.sql", "0010_contre_audit.sql", "0011_correction_v3.sql"]);
+    expect(migrationFiles()).toEqual(["0001_schema.sql", "0002_fiabilite.sql", "0003_isolation_modes.sql", "0004_fiabilite_statuts.sql", "0005_gestion_clients.sql", "0006_sync_planifiee.sql", "0007_notifications.sql", "0008_studio.sql", "0009_stabilisation.sql", "0010_contre_audit.sql", "0011_correction_v3.sql", "0012_connexions_fournisseur.sql"]);
     db = await LocalDb.create();
     const functions = await db.sql<{ proname: string }>("select proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'");
     expect(functions.map((row) => row.proname)).toEqual(expect.arrayContaining(["claim_posts_for_scheduling_in_mode", "list_posts_to_unschedule_in_mode", "sync_buffer_posts"]));

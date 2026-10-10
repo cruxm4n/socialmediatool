@@ -57,6 +57,8 @@ export async function readiness(): Promise<Readiness> {
       checks.push({ name: "base de données joignable, secret d'automatisation accepté", ok: !!status });
       for (const [level, ok] of Object.entries(status?.checks ?? {})) checks.push({ name: `migration ${level} en place`, ok: ok === true });
       if (!status?.checks) checks.push({ name: "migrations requises vérifiables", ok: false });
+      // Cette version route chaque opération par une connexion fournisseur : sans 0012, rien ne peut être envoyé.
+      else if (!("0012" in status.checks)) checks.push({ name: "migration 0012 en place", ok: false });
     } catch (error) {
       checks.push({ name: error instanceof MissingFunctionError ? "migration 0011 absente (schema_status)" : "base de données joignable", ok: false });
     }

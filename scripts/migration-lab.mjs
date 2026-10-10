@@ -154,7 +154,7 @@ try {
   if (option("export-expected")) {
     const out = resolve(option("export-expected"));
     mkdirSync(out, { recursive: true });
-    for (const level of ["0003", "0008", "0009", "0010", "0011"]) {
+    for (const level of ["0003", "0008", "0009", "0010", "0011", "0012"]) {
       const database = newDatabase();
       migrate(database, upTo(level));
       writeFileSync(resolve(out, `niveau-${level}.txt`), `${fingerprint(database).lines.join("\n")}\n`);
@@ -181,7 +181,7 @@ try {
     const outcome = psql(database, text(file), { allowFailure: true });
     const replayable = outcome.failed !== true;
     const same = replayable && fingerprint(database).digest === reference;
-    const required = ["0009", "0010", "0011"].includes(level);
+    const required = ["0009", "0010", "0011", "0012"].includes(level);
     const reason = replayable ? (same ? "" : "empreinte différente") : (String(outcome.message).split("\n").find((line) => /ERROR/.test(line)) ?? "");
     if (required) check(`rejeu de ${file} à son niveau : sans erreur, empreinte inchangée`, same, reason);
     else console.log(`INFO   rejeu de ${file} à son niveau : ${same ? "possible" : `non rejouable (${reason || "empreinte différente"}) — migration historique, jamais réécrite`}`);
@@ -201,7 +201,7 @@ try {
   }
 
   // 4. Montée avec données depuis 0008, 0009 puis 0010
-  for (const level of ["0008", "0009", "0010"]) {
+  for (const level of ["0008", "0009", "0010", "0011"]) {
     const database = newDatabase();
     migrate(database, upTo(level));
     if (level >= "0009") seedFixture(database);
@@ -239,8 +239,8 @@ try {
     const after = fingerprint(database).digest;
     check("0011 sur une base à 0009 : refus explicite du prérequis", failed.failed === true && /migration_0011_requires_0010/.test(failed.message));
     check("échec de prérequis atomique : empreinte de la base inchangée", before === after);
-    migrate(database, ["0010_contre_audit.sql", "0011_correction_v3.sql"]);
-    check("reprise après l'échec : 0010 puis 0011 aboutissent à l'empreinte d'une installation neuve", fingerprint(database).digest === freshPrint.digest);
+    migrate(database, ["0010_contre_audit.sql", "0011_correction_v3.sql", "0012_connexions_fournisseur.sql"]);
+    check("reprise après l'échec : 0010, 0011 puis 0012 aboutissent à l'empreinte d'une installation neuve", fingerprint(database).digest === freshPrint.digest);
     dropDatabase(database);
   }
 
@@ -253,7 +253,7 @@ try {
     const failed = psql(database, broken, { allowFailure: true });
     check("migration interrompue en cours de route : erreur signalée", failed.failed === true && /division by zero/.test(failed.message));
     check("migration interrompue : annulée en entier (aucune table ni fonction à moitié créée)", fingerprint(database).digest === before);
-    migrate(database, ["0011_correction_v3.sql"]);
+    migrate(database, ["0011_correction_v3.sql", "0012_connexions_fournisseur.sql"]);
     check("reprise après interruption : la migration aboutit", fingerprint(database).digest === freshPrint.digest);
     dropDatabase(database);
   }
