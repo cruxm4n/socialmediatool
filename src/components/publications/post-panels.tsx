@@ -6,6 +6,7 @@ import { NetworkIcon } from "@/components/shared/network-icon";
 import { formatDateTime } from "@/lib/dates";
 import { NETWORK_LABELS } from "@/lib/domain/networks";
 import { safeExternalUrl, type PostAlert } from "@/lib/domain/status";
+import type { PostVersion } from "@/lib/types";
 import type { PostView } from "@/lib/view";
 import { cn } from "@/lib/utils";
 
@@ -149,5 +150,28 @@ export function PostContent({ post, showTechnical = false }: { post: PostView; s
         </div>
       </div>
     </section>
+  );
+}
+
+/** Versions successives du contenu : ce que le client a eu sous les yeux à chaque fois. */
+export function VersionHistory({ versions, current, timezone }: { versions: PostVersion[]; current: number; timezone: string }) {
+  return (
+    <ol className="grid gap-3" data-testid="versions">
+      {versions.map((version) => (
+        <li key={version.version}>
+          <details className="group rounded-xl border px-3 py-2" open={version.version === current && versions.length === 1}>
+            <summary className="flex cursor-pointer list-none items-center gap-2 text-sm outline-none focus-visible:ring-3 focus-visible:ring-ring/50">
+              <span className="font-semibold">Version {version.version}</span>
+              {version.version === current && <span className="rounded-full bg-brand-soft px-2 text-[11px] font-medium text-brand">actuelle</span>}
+              <span className="ml-auto text-xs text-muted-foreground tabular-nums">{formatDateTime(version.createdAt, timezone)}</span>
+            </summary>
+            <p className="mt-2 text-xs text-muted-foreground">
+              Prévue le {version.dueAt ? formatDateTime(version.dueAt, timezone) : "— sans date"} · {version.assets.length} média{version.assets.length > 1 ? "s" : ""}
+            </p>
+            <p className="mt-2 rounded-lg bg-muted/60 px-3 py-2 text-sm leading-relaxed whitespace-pre-line">{version.text || "Post sans texte"}</p>
+          </details>
+        </li>
+      ))}
+    </ol>
   );
 }

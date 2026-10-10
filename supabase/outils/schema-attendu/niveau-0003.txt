@@ -1,0 +1,187 @@
+column|private.app_secrets.name|text|NO|
+column|private.app_secrets.secret_hash|text|NO|
+column|public.approval_decisions.comment|text|YES|
+column|public.approval_decisions.content_hash|text|NO|
+column|public.approval_decisions.created_at|timestamp with time zone|NO|now()
+column|public.approval_decisions.decision|text|NO|
+column|public.approval_decisions.id|uuid|NO|gen_random_uuid()
+column|public.approval_decisions.post_id|uuid|NO|
+column|public.approval_decisions.user_id|uuid|NO|
+column|public.approval_decisions.version|integer|NO|
+column|public.channels.avatar_url|text|YES|
+column|public.channels.buffer_channel_id|text|NO|
+column|public.channels.created_at|timestamp with time zone|NO|now()
+column|public.channels.display_name|text|YES|
+column|public.channels.id|uuid|NO|gen_random_uuid()
+column|public.channels.is_disconnected|boolean|NO|false
+column|public.channels.name|text|NO|
+column|public.channels.organization_id|uuid|YES|
+column|public.channels.service|text|NO|
+column|public.channels.updated_at|timestamp with time zone|NO|now()
+column|public.comments.author_id|uuid|NO|
+column|public.comments.body|text|NO|
+column|public.comments.created_at|timestamp with time zone|NO|now()
+column|public.comments.id|uuid|NO|gen_random_uuid()
+column|public.comments.kind|text|NO|'comment'::text
+column|public.comments.post_id|uuid|NO|
+column|public.comments.version|integer|NO|
+column|public.organization_members.created_at|timestamp with time zone|NO|now()
+column|public.organization_members.organization_id|uuid|NO|
+column|public.organization_members.user_id|uuid|NO|
+column|public.organizations.color|text|NO|'#1f4f8f'::text
+column|public.organizations.created_at|timestamp with time zone|NO|now()
+column|public.organizations.id|uuid|NO|gen_random_uuid()
+column|public.organizations.initials|text|NO|
+column|public.organizations.name|text|NO|
+column|public.organizations.sector|text|NO|''::text
+column|public.organizations.slug|text|NO|
+column|public.organizations.timezone|text|NO|'Europe/Paris'::text
+column|public.post_events.actor_id|uuid|YES|
+column|public.post_events.created_at|timestamp with time zone|NO|now()
+column|public.post_events.detail|text|YES|
+column|public.post_events.id|bigint|NO|
+column|public.post_events.post_id|uuid|NO|
+column|public.post_events.type|text|NO|
+column|public.post_events.version|integer|NO|1
+column|public.posts.approval_status|text|NO|'none'::text
+column|public.posts.approved_at|timestamp with time zone|YES|
+column|public.posts.approved_by|uuid|YES|
+column|public.posts.approved_hash|text|YES|
+column|public.posts.approved_version|integer|YES|
+column|public.posts.assets|jsonb|NO|'[]'::jsonb
+column|public.posts.buffer_error|text|YES|
+column|public.posts.buffer_post_id|text|NO|
+column|public.posts.buffer_status|text|NO|
+column|public.posts.buffer_updated_at|timestamp with time zone|YES|
+column|public.posts.channel_id|uuid|NO|
+column|public.posts.content_hash|text|NO|
+column|public.posts.created_at|timestamp with time zone|NO|now()
+column|public.posts.due_at|timestamp with time zone|YES|
+column|public.posts.external_link|text|YES|
+column|public.posts.has_review_tag|boolean|NO|false
+column|public.posts.id|uuid|NO|gen_random_uuid()
+column|public.posts.removed_at|timestamp with time zone|YES|
+column|public.posts.schedule_attempts|integer|NO|0
+column|public.posts.schedule_claimed_at|timestamp with time zone|YES|
+column|public.posts.schedule_error|text|YES|
+column|public.posts.schedule_state|text|NO|'idle'::text
+column|public.posts.sent_at|timestamp with time zone|YES|
+column|public.posts.service|text|NO|
+column|public.posts.submitted_at|timestamp with time zone|YES|
+column|public.posts.synced_at|timestamp with time zone|NO|now()
+column|public.posts.text|text|NO|''::text
+column|public.posts.version|integer|NO|1
+column|public.profiles.created_at|timestamp with time zone|NO|now()
+column|public.profiles.full_name|text|NO|
+column|public.profiles.id|uuid|NO|
+column|public.profiles.job_title|text|NO|''::text
+column|public.profiles.role|text|NO|
+column|public.sync_runs.created_at|timestamp with time zone|NO|now()
+column|public.sync_runs.created|integer|NO|0
+column|public.sync_runs.error|text|YES|
+column|public.sync_runs.fetched|integer|NO|0
+column|public.sync_runs.id|bigint|NO|
+column|public.sync_runs.invalidated|integer|NO|0
+column|public.sync_runs.mode|text|NO|
+column|public.sync_runs.rate_limit|jsonb|YES|
+column|public.sync_runs.removed|integer|NO|0
+column|public.sync_runs.status|text|NO|
+column|public.sync_runs.triggered_by|text|NO|'manual'::text
+column|public.sync_runs.updated|integer|NO|0
+constraint|app_secrets.app_secrets_pkey|PRIMARY KEY (name)
+constraint|approval_decisions.approval_decisions_decision_check|CHECK ((decision = ANY (ARRAY['approved'::text, 'changes_requested'::text])))
+constraint|approval_decisions.approval_decisions_pkey|PRIMARY KEY (id)
+constraint|approval_decisions.approval_decisions_post_id_fkey|FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+constraint|approval_decisions.approval_decisions_user_id_fkey|FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+constraint|channels.channels_buffer_channel_id_key|UNIQUE (buffer_channel_id)
+constraint|channels.channels_organization_id_fkey|FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL
+constraint|channels.channels_pkey|PRIMARY KEY (id)
+constraint|comments.comments_author_id_fkey|FOREIGN KEY (author_id) REFERENCES profiles(id) ON DELETE CASCADE
+constraint|comments.comments_body_check|CHECK ((length(TRIM(BOTH FROM body)) > 0))
+constraint|comments.comments_kind_check|CHECK ((kind = ANY (ARRAY['comment'::text, 'change_request'::text])))
+constraint|comments.comments_pkey|PRIMARY KEY (id)
+constraint|comments.comments_post_id_fkey|FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+constraint|organization_members.organization_members_organization_id_fkey|FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+constraint|organization_members.organization_members_pkey|PRIMARY KEY (organization_id, user_id)
+constraint|organization_members.organization_members_user_id_fkey|FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+constraint|organizations.organizations_pkey|PRIMARY KEY (id)
+constraint|organizations.organizations_slug_key|UNIQUE (slug)
+constraint|post_events.post_events_actor_id_fkey|FOREIGN KEY (actor_id) REFERENCES profiles(id) ON DELETE SET NULL
+constraint|post_events.post_events_pkey|PRIMARY KEY (id)
+constraint|post_events.post_events_post_id_fkey|FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+constraint|posts.posts_approval_status_check|CHECK ((approval_status = ANY (ARRAY['none'::text, 'pending'::text, 'changes_requested'::text, 'approved'::text])))
+constraint|posts.posts_approved_by_fkey|FOREIGN KEY (approved_by) REFERENCES profiles(id) ON DELETE SET NULL
+constraint|posts.posts_buffer_post_id_key|UNIQUE (buffer_post_id)
+constraint|posts.posts_buffer_status_check|CHECK ((buffer_status = ANY (ARRAY['draft'::text, 'needs_approval'::text, 'scheduled'::text, 'sending'::text, 'sent'::text, 'error'::text])))
+constraint|posts.posts_channel_id_fkey|FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+constraint|posts.posts_pkey|PRIMARY KEY (id)
+constraint|posts.posts_schedule_state_check|CHECK ((schedule_state = ANY (ARRAY['idle'::text, 'claimed'::text, 'scheduled'::text, 'failed'::text, 'unschedule_pending'::text])))
+constraint|profiles.profiles_id_fkey|FOREIGN KEY (id) REFERENCES users(id) ON DELETE CASCADE
+constraint|profiles.profiles_pkey|PRIMARY KEY (id)
+constraint|profiles.profiles_role_check|CHECK ((role = ANY (ARRAY['admin'::text, 'client'::text])))
+constraint|sync_runs.sync_runs_pkey|PRIMARY KEY (id)
+constraint|sync_runs.sync_runs_status_check|CHECK ((status = ANY (ARRAY['success'::text, 'error'::text])))
+function|private.add_event(p_post_id uuid, p_type text, p_actor uuid, p_detail text, p_version integer)|f78c715e7c56dec284196ee8081758a6|definer|{"search_path=\"\""}
+function|private.check_secret(p_secret text)|9f54e48dc27c08cc9cdf71bfc42bb328|definer|{"search_path=\"\""}
+function|private.is_admin()|179fa0d8812534e8b511e62c76065d14|definer|{"search_path=\"\""}
+function|private.my_org_ids()|214e43e0c4403660ec112db97f963067|definer|{"search_path=\"\""}
+function|private.post_hash(p_text text, p_due_at timestamp with time zone, p_channel text, p_assets jsonb)|a6acfd1db92d0ac5a76488d39104c611|invoker|{"search_path=\"\""}
+function|public.add_comment(p_post_id uuid, p_body text)|dcc548799849f28053f61d91c1b903de|definer|{"search_path=\"\""}
+function|public.claim_posts_for_scheduling(p_secret text, p_post_id uuid, p_limit integer)|e1ff50fa022e087faf1975ed71ec211b|definer|{"search_path=\"\""}
+function|public.claim_posts_for_scheduling_in_mode(p_secret text, p_mode text, p_post_id uuid, p_limit integer)|c933c376871394a5dadd3c2cc121ae77|definer|{"search_path=\"\""}
+function|public.complete_scheduling(p_secret text, p_post_id uuid, p_ok boolean, p_error text)|4f8ea554c46b694c41cce27461973191|definer|{"search_path=\"\""}
+function|public.complete_unscheduling(p_secret text, p_post_id uuid, p_ok boolean, p_error text)|09f963c0e1ac43f739fe04a71064bb86|definer|{"search_path=\"\""}
+function|public.decide_post(p_post_id uuid, p_decision text, p_expected_hash text, p_comment text)|1e01309239e6970abdada986f7512fd3|definer|{"search_path=\"\""}
+function|public.list_posts_to_unschedule(p_secret text)|d292b51443197bc6fa096f60b1e56055|definer|{"search_path=\"\""}
+function|public.list_posts_to_unschedule_in_mode(p_secret text, p_mode text)|5860ee13e59436a6e0f0c16e39005ba3|definer|{"search_path=\"\""}
+function|public.record_sync_failure(p_secret text, p_mode text, p_error text, p_triggered_by text)|3eea2c290b0f3eaa4a50c42720ed6aef|definer|{"search_path=\"\""}
+function|public.sync_buffer_posts(p_secret text, p_payload jsonb)|29991fcf176d5897c1c8731d440aecf3|definer|{"search_path=\"\""}
+acl|column|public.channels.organization_id|authenticated=w|
+acl|default_acl|public.S.supabase_admin|anon=rwU,authenticated=rwU,service_role=rwU|
+acl|default_acl|public.f.supabase_admin|anon=X,authenticated=X,service_role=X|
+acl|default_acl|public.r.supabase_admin|anon=arwdDxtm,authenticated=arwdDxtm,service_role=arwdDxtm|
+acl|function|auth.uid()|=X,anon=X,authenticated=X,service_role=X|invoker
+acl|function|private.add_event(p_post_id uuid, p_type text, p_actor uuid, p_detail text, p_version integer)||definer
+acl|function|private.check_secret(p_secret text)||definer
+acl|function|private.is_admin()|authenticated=X|definer
+acl|function|private.my_org_ids()|authenticated=X|definer
+acl|function|private.post_hash(p_text text, p_due_at timestamp with time zone, p_channel text, p_assets jsonb)||invoker
+acl|function|public.add_comment(p_post_id uuid, p_body text)|authenticated=X,service_role=X|definer
+acl|function|public.claim_posts_for_scheduling(p_secret text, p_post_id uuid, p_limit integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.claim_posts_for_scheduling_in_mode(p_secret text, p_mode text, p_post_id uuid, p_limit integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.complete_scheduling(p_secret text, p_post_id uuid, p_ok boolean, p_error text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.complete_unscheduling(p_secret text, p_post_id uuid, p_ok boolean, p_error text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.decide_post(p_post_id uuid, p_decision text, p_expected_hash text, p_comment text)|authenticated=X,service_role=X|definer
+acl|function|public.list_posts_to_unschedule(p_secret text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.list_posts_to_unschedule_in_mode(p_secret text, p_mode text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.record_sync_failure(p_secret text, p_mode text, p_error text, p_triggered_by text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.sync_buffer_posts(p_secret text, p_payload jsonb)|anon=X,authenticated=X,service_role=X|definer
+acl|policy|public.approval_decisions.approval_decisions_select||8ca34e8f5e38c3ebd1005e48d4667446
+acl|policy|public.channels.channels_assign||8f507da326303ae5ad3d8d2cb0e62590
+acl|policy|public.channels.channels_select||f8cd71209cd3e80c10e89fa7696367f2
+acl|policy|public.comments.comments_select||8ca34e8f5e38c3ebd1005e48d4667446
+acl|policy|public.organization_members.organization_members_select||f8cd71209cd3e80c10e89fa7696367f2
+acl|policy|public.organizations.organizations_select||ef1c082a599bd3d16eee60050e1ca93c
+acl|policy|public.post_events.post_events_select||98dca71b661537be629b30a303a0f8c3
+acl|policy|public.posts.posts_select||1deae7c2c6c5237b56c04ee56b16cee4
+acl|policy|public.profiles.profiles_select||1d9bdb39ed6a13d9c9349afbfdd96976
+acl|policy|public.sync_runs.sync_runs_select||a05987e6e3cac882b696abfe6981eb08
+acl|schema|auth|anon=U,authenticated=U,service_role=U|
+acl|schema|private|authenticated=U|
+acl|schema|public|=U,anon=U,authenticated=U,service_role=U|
+acl|schema|storage|anon=U,authenticated=U,service_role=U|
+acl|table|auth.users||r:norls
+acl|table|private.app_secrets||r:rls
+acl|table|public.approval_decisions|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.channels|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.comments|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.organization_members|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.organizations|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.post_events_id_seq|anon=rwU,authenticated=rwU,service_role=rwU|S:norls
+acl|table|public.post_events|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.posts|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.profiles|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.sync_runs_id_seq|anon=rwU,authenticated=rwU,service_role=rwU|S:norls
+acl|table|public.sync_runs|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|storage.buckets|anon=arwdDxtm,authenticated=arwdDxtm,service_role=arwdDxtm|r:norls
+acl|table|storage.objects|anon=arwdDxtm,authenticated=arwdDxtm,service_role=arwdDxtm|r:rls

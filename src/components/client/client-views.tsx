@@ -1,9 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { ArrowRight, CircleCheckBig, FileSearch, PartyPopper } from "lucide-react";
 
+import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EditorialCalendar } from "@/components/calendar/editorial-calendar";
 import { ActivityTimeline } from "@/components/publications/activity";
 import { PostCard } from "@/components/publications/post-card";
@@ -15,10 +18,12 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { Button } from "@/components/ui/button";
 import { capitalize, dayKeyOf, formatDateTime, formatDayLong } from "@/lib/dates";
 import { NETWORK_LABELS } from "@/lib/domain/networks";
-import { canDecide, CLIENT_EVENT_TYPES, STATUS_META } from "@/lib/domain/status";
+import { leaveIfExpired } from "@/lib/action-result";
+import { canDecide, CLIENT_EVENT_TYPES, hasUsableDueDate, STATUS_META } from "@/lib/domain/status";
 import type { DisplayStatus, Organization, PostEvent, Profile } from "@/lib/types";
 import type { PostView } from "@/lib/view";
 import { cn } from "@/lib/utils";
+import { approvePosts } from "@/server/actions";
 
 /** Statuts qu'un client peut rencontrer : un brouillon non soumis ne lui est jamais transmis par la base. */
 const CLIENT_STATUSES: DisplayStatus[] = ["pending_approval", "changes_requested", "approved", "scheduled", "published", "error"];
@@ -122,9 +127,34 @@ export function ClientCalendarView({ organization, posts, now }: SpaceProps) {
   );
 }
 
-export function ApprovalsView({ organization, posts }: SpaceProps) {
+export function ApprovalsView({ organization, posts, now }: SpaceProps) {
   const basePath = basePathOf(organization);
+  const router = useRouter();
   const pending = posts.filter(canDecide);
+  // Seules les publications dont la date est encore à venir peuvent être approuvées (même règle que la base).
+  const approvable = pending.filter((post) => hasUsableDueDate(post, now));
+  const [selection, setSelection] = useState<string[]>([]);
+  const [confirming, setConfirming] = useState(false);
+  const [busy, startApproval] = useTransition();
+  const selected = approvable.filter((post) => selection.includes(post.id));
+
+  const toggle = (id: string) => setSelection((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
+
+  const approveSelection = () =>
+    startApproval(async () => {
+      setConfirming(false);
+      try {
+        const result = await approvePosts(selected.map((post) => ({ postId: post.id, expectedHash: post.contentHash })));
+        if (leaveIfExpired(result)) return;
+        if (result.refused.length === 0) toast.success(result.message);
+        else if (result.ok) toast.warning(result.message);
+        else toast.error(result.message);
+      } catch {
+        toast.error("La confirmation n'a pas été reçue. Rechargez la page pour vérifier ce qui a été approuvé avant de réessayer.");
+      }
+      setSelection([]);
+      router.refresh();
+    });
 
   return (
     <div className="grid animate-rise grid-cols-1 gap-6">
@@ -141,37 +171,92 @@ export function ApprovalsView({ organization, posts }: SpaceProps) {
           }
         />
       ) : (
-        <ul className="grid gap-4">
-          {pending.map((post) => (
+        <>
+          {approvable.length > 1 && (
+            <div className="sticky top-28 z-10 flex flex-wrap items-center gap-3 rounded-2xl border bg-card/95 px-4 py-3 shadow-soft backdrop-blur-sm" data-testid="bulk-approval">
+              <label className="flex cursor-pointer items-center gap-2 text-sm font-medium">
+                <input
+                  type="checkbox"
+                  className="size-4 accent-[var(--brand)]"
+                  checked={selected.length === approvable.length}
+                  onChange={(event) => setSelection(event.target.checked ? approvable.map((post) => post.id) : [])}
+                />
+                Tout sélectionner
+              </label>
+              <span className="min-w-0 flex-1 basis-40 text-sm text-muted-foreground">
+                {selected.length === 0 ? "Relisez chaque proposition, puis cochez celles que vous approuvez." : `${selected.length} publication${selected.length > 1 ? "s" : ""} sélectionnée${selected.length > 1 ? "s" : ""}`}
+              </span>
+              <Button size="lg" disabled={selected.length === 0 || busy} onClick={() => setConfirming(true)}>
+                <CircleCheckBig /> Approuver la sélection
+              </Button>
+            </div>
+          )}
+          <ul className="grid gap-4">
+            {pending.map((post) => {
+              const canApprove = approvable.includes(post);
+              return (
+                <li key={post.id} className="flex items-stretch gap-3">
+                  {approvable.length > 1 && (
+                    <label className={cn("flex w-6 shrink-0 items-center justify-center", canApprove ? "cursor-pointer" : "opacity-40")} title={canApprove ? undefined : "Date absente ou dépassée : à corriger par votre agence."}>
+                      <input
+                        type="checkbox"
+                        className="size-4 accent-[var(--brand)]"
+                        aria-label={`Sélectionner : ${post.title}`}
+                        checked={selection.includes(post.id)}
+                        disabled={!canApprove}
+                        onChange={() => toggle(post.id)}
+                      />
+                    </label>
+                  )}
+                  <Link
+                    href={`${basePath}/publications/${post.id}`}
+                    data-post={post.bufferPostId}
+                    className="group flex min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border bg-card outline-none transition-all hover:shadow-lift focus-visible:ring-3 focus-visible:ring-ring/50 sm:flex-row"
+                  >
+                    <MediaThumb asset={post.assets[0]} className="aspect-16/10 w-full shrink-0 sm:aspect-square sm:w-44" />
+                    <div className="flex min-w-0 flex-1 flex-col gap-2 p-4 sm:p-5">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusBadge status={post.status} />
+                        <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <NetworkIcon network={post.network} size="xs" /> {NETWORK_LABELS[post.network]} · version {post.version}
+                        </span>
+                      </div>
+                      <p className="line-clamp-3 leading-relaxed">{post.text || "Post sans texte"}</p>
+                      <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-2">
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {post.dueAt ? `Prévue le ${formatDateTime(post.dueAt, post.timezone)}` : "Date à définir"}
+                        </span>
+                        <span className="flex items-center gap-1 text-sm font-semibold">
+                          Relire et décider <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
+                        </span>
+                      </div>
+                    </div>
+                  </Link>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
+
+      <ConfirmDialog
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`Approuver ${selected.length} publication${selected.length > 1 ? "s" : ""} ?`}
+        confirmLabel="Confirmer l'approbation"
+        pending={busy}
+        onConfirm={approveSelection}
+      >
+        <p>Chacune sera programmée à sa date, telle qu&apos;elle est affichée ici :</p>
+        <ul className="mt-2 grid list-disc gap-1 pl-5">
+          {selected.map((post) => (
             <li key={post.id}>
-              <Link
-                href={`${basePath}/publications/${post.id}`}
-                data-post={post.bufferPostId}
-                className="group flex flex-col overflow-hidden rounded-2xl border bg-card outline-none transition-all hover:shadow-lift focus-visible:ring-3 focus-visible:ring-ring/50 sm:flex-row"
-              >
-                <MediaThumb asset={post.assets[0]} className="aspect-16/10 w-full shrink-0 sm:aspect-square sm:w-44" />
-                <div className="flex min-w-0 flex-1 flex-col gap-2 p-4 sm:p-5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <StatusBadge status={post.status} />
-                    <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <NetworkIcon network={post.network} size="xs" /> {NETWORK_LABELS[post.network]} · version {post.version}
-                    </span>
-                  </div>
-                  <p className="line-clamp-3 leading-relaxed">{post.text || "Post sans texte"}</p>
-                  <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-2">
-                    <span className="text-xs text-muted-foreground tabular-nums">
-                      {post.dueAt ? `Prévue le ${formatDateTime(post.dueAt, post.timezone)}` : "Date à définir"}
-                    </span>
-                    <span className="flex items-center gap-1 text-sm font-semibold">
-                      Relire et décider <ArrowRight className="size-4 transition-transform group-hover:translate-x-0.5" />
-                    </span>
-                  </div>
-                </div>
-              </Link>
+              {NETWORK_LABELS[post.network]} · {post.dueAt ? formatDateTime(post.dueAt, post.timezone) : ""} — {post.title}
             </li>
           ))}
         </ul>
-      )}
+        <p className="mt-2">Si l&apos;une d&apos;elles a été modifiée depuis l&apos;affichage de cette page, elle ne sera pas approuvée et vous sera représentée.</p>
+      </ConfirmDialog>
     </div>
   );
 }

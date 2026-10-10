@@ -2,6 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
+import { redactPostDiagnostics } from "@/lib/view";
 import type { Organization } from "@/lib/types";
 import { loadWorkspace } from "@/server/workspace";
 
@@ -13,7 +14,7 @@ import { loadWorkspace } from "@/server/workspace";
 export const loadClientSpace = cache(async (organization: Organization) => {
   const workspace = await loadWorkspace();
   return {
-    posts: workspace.posts.filter((post) => post.organization?.id === organization.id),
+    posts: workspace.posts.filter((post) => post.organization?.id === organization.id).map(redactPostDiagnostics),
     now: workspace.now,
   };
 });

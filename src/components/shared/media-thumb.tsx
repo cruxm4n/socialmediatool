@@ -15,9 +15,14 @@ export function MediaThumb({ asset, className, alt = "" }: { asset: PostAsset | 
 
   return (
     <div className={cn("relative overflow-hidden bg-muted", className)}>
-      {/* Les médias sont hébergés par Buffer, sur des domaines non connus à l'avance : balise img simple. */}
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img src={asset.thumbnail || asset.source} alt={alt} loading="lazy" className="absolute inset-0 size-full object-cover" />
+      {asset.type === "video" && !asset.thumbnail ? (
+        // Vidéo sans vignette (bibliothèque de Cadence) : le navigateur affiche sa première image.
+        <video src={asset.source} preload="metadata" muted playsInline aria-label={alt} className="absolute inset-0 size-full object-cover" />
+      ) : (
+        // Les médias sont hébergés par Buffer, sur des domaines non connus à l'avance : balise img simple.
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={asset.thumbnail || asset.source} alt={alt} loading="lazy" className="absolute inset-0 size-full object-cover" />
+      )}
       {asset.type === "video" && (
         <span className="absolute inset-0 flex items-center justify-center">
           <span className="flex size-1/3 max-h-10 min-h-4 max-w-10 min-w-4 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm">

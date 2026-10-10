@@ -1,0 +1,478 @@
+column|private.app_secrets.name|text|NO|
+column|private.app_secrets.secret_hash|text|NO|
+column|public.approval_decisions.comment|text|YES|
+column|public.approval_decisions.content_hash|text|NO|
+column|public.approval_decisions.created_at|timestamp with time zone|NO|now()
+column|public.approval_decisions.decision|text|NO|
+column|public.approval_decisions.id|uuid|NO|gen_random_uuid()
+column|public.approval_decisions.organization_id|uuid|YES|
+column|public.approval_decisions.post_id|uuid|NO|
+column|public.approval_decisions.user_id|uuid|NO|
+column|public.approval_decisions.version|integer|NO|
+column|public.channel_owner_history.changed_at|timestamp with time zone|NO|now()
+column|public.channel_owner_history.changed_by|uuid|YES|
+column|public.channel_owner_history.channel_id|uuid|NO|
+column|public.channel_owner_history.existing_posts|integer|NO|0
+column|public.channel_owner_history.from_organization_id|uuid|YES|
+column|public.channel_owner_history.id|bigint|NO|
+column|public.channel_owner_history.kind|text|NO|
+column|public.channel_owner_history.note|text|YES|
+column|public.channel_owner_history.to_organization_id|uuid|YES|
+column|public.channels.avatar_url|text|YES|
+column|public.channels.buffer_channel_id|text|NO|
+column|public.channels.created_at|timestamp with time zone|NO|now()
+column|public.channels.display_name|text|YES|
+column|public.channels.id|uuid|NO|gen_random_uuid()
+column|public.channels.is_disconnected|boolean|NO|false
+column|public.channels.last_organization_id|uuid|YES|
+column|public.channels.name|text|NO|
+column|public.channels.organization_id|uuid|YES|
+column|public.channels.service|text|NO|
+column|public.channels.updated_at|timestamp with time zone|NO|now()
+column|public.channels.visible_from|timestamp with time zone|YES|
+column|public.comments.author_id|uuid|NO|
+column|public.comments.body|text|NO|
+column|public.comments.created_at|timestamp with time zone|NO|now()
+column|public.comments.id|uuid|NO|gen_random_uuid()
+column|public.comments.kind|text|NO|'comment'::text
+column|public.comments.post_id|uuid|NO|
+column|public.comments.version|integer|NO|
+column|public.media_assets.archived_at|timestamp with time zone|YES|
+column|public.media_assets.created_at|timestamp with time zone|NO|now()
+column|public.media_assets.created_by|uuid|YES|
+column|public.media_assets.duration_ms|integer|YES|
+column|public.media_assets.file_name|text|NO|
+column|public.media_assets.height|integer|YES|
+column|public.media_assets.id|uuid|NO|gen_random_uuid()
+column|public.media_assets.kind|text|NO|
+column|public.media_assets.mime_type|text|NO|
+column|public.media_assets.organization_id|uuid|NO|
+column|public.media_assets.size_bytes|bigint|NO|
+column|public.media_assets.storage_path|text|NO|
+column|public.media_assets.width|integer|YES|
+column|public.notification_preferences.approved|boolean|NO|false
+column|public.notification_preferences.changes_requested|boolean|NO|true
+column|public.notification_preferences.review_requested|boolean|NO|true
+column|public.notification_preferences.schedule_error|boolean|NO|true
+column|public.notification_preferences.updated_at|timestamp with time zone|NO|now()
+column|public.notification_preferences.user_id|uuid|NO|
+column|public.notifications.attempts|integer|NO|0
+column|public.notifications.claimed_at|timestamp with time zone|YES|
+column|public.notifications.created_at|timestamp with time zone|NO|now()
+column|public.notifications.dedupe_key|text|NO|
+column|public.notifications.detail|text|YES|
+column|public.notifications.error|text|YES|
+column|public.notifications.id|uuid|NO|gen_random_uuid()
+column|public.notifications.kind|text|NO|
+column|public.notifications.mode|text|NO|
+column|public.notifications.organization_id|uuid|YES|
+column|public.notifications.post_id|uuid|NO|
+column|public.notifications.post_version|integer|NO|
+column|public.notifications.recipient_id|uuid|NO|
+column|public.notifications.sent_at|timestamp with time zone|YES|
+column|public.notifications.status|text|NO|'pending'::text
+column|public.organization_members.created_at|timestamp with time zone|NO|now()
+column|public.organization_members.organization_id|uuid|NO|
+column|public.organization_members.user_id|uuid|NO|
+column|public.organizations.archived_at|timestamp with time zone|YES|
+column|public.organizations.color|text|NO|'#1f4f8f'::text
+column|public.organizations.created_at|timestamp with time zone|NO|now()
+column|public.organizations.id|uuid|NO|gen_random_uuid()
+column|public.organizations.initials|text|NO|
+column|public.organizations.name|text|NO|
+column|public.organizations.sector|text|NO|''::text
+column|public.organizations.slug|text|NO|
+column|public.organizations.timezone|text|NO|'Europe/Paris'::text
+column|public.post_events.actor_id|uuid|YES|
+column|public.post_events.created_at|timestamp with time zone|NO|now()
+column|public.post_events.detail|text|YES|
+column|public.post_events.id|bigint|NO|
+column|public.post_events.post_id|uuid|NO|
+column|public.post_events.type|text|NO|
+column|public.post_events.version|integer|NO|1
+column|public.post_versions.assets|jsonb|NO|'[]'::jsonb
+column|public.post_versions.content_hash|text|NO|
+column|public.post_versions.created_at|timestamp with time zone|NO|now()
+column|public.post_versions.due_at|timestamp with time zone|YES|
+column|public.post_versions.post_id|uuid|NO|
+column|public.post_versions.text|text|NO|
+column|public.post_versions.version|integer|NO|
+column|public.posts.approval_status|text|NO|'none'::text
+column|public.posts.approved_at|timestamp with time zone|YES|
+column|public.posts.approved_by|uuid|YES|
+column|public.posts.approved_hash|text|YES|
+column|public.posts.approved_organization_id|uuid|YES|
+column|public.posts.approved_version|integer|YES|
+column|public.posts.assets|jsonb|NO|'[]'::jsonb
+column|public.posts.buffer_error|text|YES|
+column|public.posts.buffer_post_id|text|NO|
+column|public.posts.buffer_status|text|NO|
+column|public.posts.buffer_updated_at|timestamp with time zone|YES|
+column|public.posts.channel_id|uuid|NO|
+column|public.posts.content_hash|text|NO|
+column|public.posts.created_at|timestamp with time zone|NO|now()
+column|public.posts.due_at|timestamp with time zone|YES|
+column|public.posts.external_link|text|YES|
+column|public.posts.has_review_tag|boolean|NO|false
+column|public.posts.id|uuid|NO|gen_random_uuid()
+column|public.posts.owner_organization_id|uuid|YES|
+column|public.posts.ownership|text|NO|'unassigned'::text
+column|public.posts.removed_at|timestamp with time zone|YES|
+column|public.posts.schedule_attempts|integer|NO|0
+column|public.posts.schedule_claimed_at|timestamp with time zone|YES|
+column|public.posts.schedule_claimed_hash|text|YES|
+column|public.posts.schedule_claimed_version|integer|YES|
+column|public.posts.schedule_error|text|YES|
+column|public.posts.schedule_state|text|NO|'idle'::text
+column|public.posts.schedule_token|uuid|YES|
+column|public.posts.sent_at|timestamp with time zone|YES|
+column|public.posts.service|text|NO|
+column|public.posts.submitted_at|timestamp with time zone|YES|
+column|public.posts.synced_at|timestamp with time zone|NO|now()
+column|public.posts.text|text|NO|''::text
+column|public.posts.unschedule_attempted_at|timestamp with time zone|YES|
+column|public.posts.unschedule_attempts|integer|NO|0
+column|public.posts.unschedule_since|timestamp with time zone|YES|
+column|public.posts.version|integer|NO|1
+column|public.profiles.created_at|timestamp with time zone|NO|now()
+column|public.profiles.full_name|text|NO|
+column|public.profiles.id|uuid|NO|
+column|public.profiles.job_title|text|NO|''::text
+column|public.profiles.role|text|NO|
+column|public.studio_drafts.created_at|timestamp with time zone|NO|now()
+column|public.studio_drafts.created_by|uuid|YES|
+column|public.studio_drafts.due_at|timestamp with time zone|YES|
+column|public.studio_drafts.hashtags|ARRAY|NO|'{}'::text[]
+column|public.studio_drafts.id|uuid|NO|gen_random_uuid()
+column|public.studio_drafts.media_ids|ARRAY|NO|'{}'::uuid[]
+column|public.studio_drafts.organization_id|uuid|NO|
+column|public.studio_drafts.revision|integer|NO|1
+column|public.studio_drafts.status|text|NO|'draft'::text
+column|public.studio_drafts.submitted_at|timestamp with time zone|YES|
+column|public.studio_drafts.title|text|NO|''::text
+column|public.studio_drafts.updated_at|timestamp with time zone|NO|now()
+column|public.studio_push_events.attempt_id|uuid|YES|
+column|public.studio_push_events.buffer_post_id|text|YES|
+column|public.studio_push_events.created_at|timestamp with time zone|NO|now()
+column|public.studio_push_events.error|text|YES|
+column|public.studio_push_events.id|bigint|NO|
+column|public.studio_push_events.ok|boolean|NO|
+column|public.studio_push_events.outcome|text|NO|
+column|public.studio_push_events.revision|integer|YES|
+column|public.studio_push_events.uncertain|boolean|NO|false
+column|public.studio_push_events.variant_id|uuid|NO|
+column|public.studio_variants.buffer_post_id|text|YES|
+column|public.studio_variants.channel_id|uuid|NO|
+column|public.studio_variants.created_at|timestamp with time zone|NO|now()
+column|public.studio_variants.draft_id|uuid|NO|
+column|public.studio_variants.id|uuid|NO|gen_random_uuid()
+column|public.studio_variants.push_attempt_id|uuid|YES|
+column|public.studio_variants.push_attempt|jsonb|YES|
+column|public.studio_variants.push_claimed_at|timestamp with time zone|YES|
+column|public.studio_variants.push_error|text|YES|
+column|public.studio_variants.push_orphans|jsonb|NO|'[]'::jsonb
+column|public.studio_variants.push_state|text|NO|'idle'::text
+column|public.studio_variants.push_unknown_at|timestamp with time zone|YES|
+column|public.studio_variants.pushed_at|timestamp with time zone|YES|
+column|public.studio_variants.pushed_revision|integer|YES|
+column|public.studio_variants.removed_at|timestamp with time zone|YES|
+column|public.studio_variants.text|text|NO|''::text
+column|public.studio_variants.updated_at|timestamp with time zone|NO|now()
+column|public.sync_runs.created_at|timestamp with time zone|NO|now()
+column|public.sync_runs.created|integer|NO|0
+column|public.sync_runs.error|text|YES|
+column|public.sync_runs.fetched|integer|NO|0
+column|public.sync_runs.id|bigint|NO|
+column|public.sync_runs.invalidated|integer|NO|0
+column|public.sync_runs.mode|text|NO|
+column|public.sync_runs.rate_limit|jsonb|YES|
+column|public.sync_runs.removed|integer|NO|0
+column|public.sync_runs.status|text|NO|
+column|public.sync_runs.triggered_by|text|NO|'manual'::text
+column|public.sync_runs.updated|integer|NO|0
+column|public.sync_state.anomalies|jsonb|NO|'[]'::jsonb
+column|public.sync_state.backoff_hard|boolean|NO|false
+column|public.sync_state.backoff_reason|text|YES|
+column|public.sync_state.backoff_set_at|timestamp with time zone|YES|
+column|public.sync_state.backoff_until|timestamp with time zone|YES|
+column|public.sync_state.consecutive_failures|integer|NO|0
+column|public.sync_state.last_error|text|YES|
+column|public.sync_state.last_failure_at|timestamp with time zone|YES|
+column|public.sync_state.last_finished_at|timestamp with time zone|YES|
+column|public.sync_state.last_scheduled_at|timestamp with time zone|YES|
+column|public.sync_state.last_started_at|timestamp with time zone|YES|
+column|public.sync_state.last_success_at|timestamp with time zone|YES|
+column|public.sync_state.lock_token|uuid|YES|
+column|public.sync_state.lock_triggered_by|text|YES|
+column|public.sync_state.locked_until|timestamp with time zone|YES|
+column|public.sync_state.mode|text|NO|
+column|public.sync_state.updated_at|timestamp with time zone|NO|now()
+column|public.sync_state.urgent_last_done|integer|NO|0
+column|public.sync_state.urgent_last_error|text|YES|
+column|public.sync_state.urgent_last_ok|boolean|YES|
+column|public.sync_state.urgent_last_run_at|timestamp with time zone|YES|
+column|public.sync_state.urgent_token|uuid|YES|
+column|public.sync_state.urgent_until|timestamp with time zone|YES|
+constraint|app_secrets.app_secrets_pkey|PRIMARY KEY (name)
+constraint|approval_decisions.approval_decisions_decision_check|CHECK ((decision = ANY (ARRAY['approved'::text, 'changes_requested'::text])))
+constraint|approval_decisions.approval_decisions_organization_id_fkey|FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL
+constraint|approval_decisions.approval_decisions_pkey|PRIMARY KEY (id)
+constraint|approval_decisions.approval_decisions_post_id_fkey|FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+constraint|approval_decisions.approval_decisions_user_id_fkey|FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+constraint|channel_owner_history.channel_owner_history_channel_id_fkey|FOREIGN KEY (channel_id) REFERENCES channels(id)
+constraint|channel_owner_history.channel_owner_history_from_organization_id_fkey|FOREIGN KEY (from_organization_id) REFERENCES organizations(id)
+constraint|channel_owner_history.channel_owner_history_kind_check|CHECK ((kind = ANY (ARRAY['first_assignment'::text, 'transfer'::text, 'detach'::text, 'reattach'::text, 'backfill'::text])))
+constraint|channel_owner_history.channel_owner_history_pkey|PRIMARY KEY (id)
+constraint|channel_owner_history.channel_owner_history_to_organization_id_fkey|FOREIGN KEY (to_organization_id) REFERENCES organizations(id)
+constraint|channels.channels_buffer_channel_id_key|UNIQUE (buffer_channel_id)
+constraint|channels.channels_last_organization_id_fkey|FOREIGN KEY (last_organization_id) REFERENCES organizations(id) ON DELETE SET NULL
+constraint|channels.channels_organization_id_fkey|FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL
+constraint|channels.channels_pkey|PRIMARY KEY (id)
+constraint|comments.comments_author_id_fkey|FOREIGN KEY (author_id) REFERENCES profiles(id) ON DELETE CASCADE
+constraint|comments.comments_body_check|CHECK ((length(TRIM(BOTH FROM body)) > 0))
+constraint|comments.comments_kind_check|CHECK ((kind = ANY (ARRAY['comment'::text, 'change_request'::text])))
+constraint|comments.comments_pkey|PRIMARY KEY (id)
+constraint|comments.comments_post_id_fkey|FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+constraint|media_assets.media_assets_created_by_fkey|FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL
+constraint|media_assets.media_assets_kind_check|CHECK ((kind = ANY (ARRAY['image'::text, 'video'::text])))
+constraint|media_assets.media_assets_organization_id_fkey|FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+constraint|media_assets.media_assets_pkey|PRIMARY KEY (id)
+constraint|media_assets.media_assets_size_bytes_check|CHECK ((size_bytes > 0))
+constraint|media_assets.media_assets_storage_path_key|UNIQUE (storage_path)
+constraint|notification_preferences.notification_preferences_pkey|PRIMARY KEY (user_id)
+constraint|notification_preferences.notification_preferences_user_id_fkey|FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+constraint|notifications.notifications_dedupe_key_key|UNIQUE (dedupe_key)
+constraint|notifications.notifications_kind_check|CHECK ((kind = ANY (ARRAY['review_requested'::text, 'changes_requested'::text, 'approved'::text, 'schedule_error'::text])))
+constraint|notifications.notifications_mode_check|CHECK ((mode = ANY (ARRAY['real'::text, 'mock'::text])))
+constraint|notifications.notifications_organization_id_fkey|FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE SET NULL
+constraint|notifications.notifications_pkey|PRIMARY KEY (id)
+constraint|notifications.notifications_post_id_fkey|FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+constraint|notifications.notifications_recipient_id_fkey|FOREIGN KEY (recipient_id) REFERENCES profiles(id) ON DELETE CASCADE
+constraint|notifications.notifications_status_check|CHECK ((status = ANY (ARRAY['pending'::text, 'sending'::text, 'sent'::text, 'simulated'::text, 'failed'::text, 'cancelled'::text])))
+constraint|organization_members.organization_members_organization_id_fkey|FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+constraint|organization_members.organization_members_pkey|PRIMARY KEY (organization_id, user_id)
+constraint|organization_members.organization_members_user_id_fkey|FOREIGN KEY (user_id) REFERENCES profiles(id) ON DELETE CASCADE
+constraint|organizations.organizations_pkey|PRIMARY KEY (id)
+constraint|organizations.organizations_slug_key|UNIQUE (slug)
+constraint|post_events.post_events_actor_id_fkey|FOREIGN KEY (actor_id) REFERENCES profiles(id) ON DELETE SET NULL
+constraint|post_events.post_events_pkey|PRIMARY KEY (id)
+constraint|post_events.post_events_post_id_fkey|FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+constraint|post_versions.post_versions_pkey|PRIMARY KEY (post_id, version)
+constraint|post_versions.post_versions_post_id_fkey|FOREIGN KEY (post_id) REFERENCES posts(id) ON DELETE CASCADE
+constraint|posts.posts_approval_status_check|CHECK ((approval_status = ANY (ARRAY['none'::text, 'pending'::text, 'changes_requested'::text, 'approved'::text])))
+constraint|posts.posts_approved_by_fkey|FOREIGN KEY (approved_by) REFERENCES profiles(id) ON DELETE SET NULL
+constraint|posts.posts_approved_organization_id_fkey|FOREIGN KEY (approved_organization_id) REFERENCES organizations(id) ON DELETE SET NULL
+constraint|posts.posts_buffer_post_id_key|UNIQUE (buffer_post_id)
+constraint|posts.posts_buffer_status_check|CHECK ((buffer_status = ANY (ARRAY['draft'::text, 'needs_approval'::text, 'scheduled'::text, 'sending'::text, 'sent'::text, 'error'::text])))
+constraint|posts.posts_channel_id_fkey|FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+constraint|posts.posts_owner_organization_id_fkey|FOREIGN KEY (owner_organization_id) REFERENCES organizations(id) ON DELETE SET NULL
+constraint|posts.posts_ownership_check|CHECK ((ownership = ANY (ARRAY['assigned'::text, 'unassigned'::text, 'ambiguous'::text])))
+constraint|posts.posts_pkey|PRIMARY KEY (id)
+constraint|posts.posts_schedule_state_check|CHECK ((schedule_state = ANY (ARRAY['idle'::text, 'claimed'::text, 'scheduled'::text, 'failed'::text, 'unschedule_pending'::text])))
+constraint|profiles.profiles_id_fkey|FOREIGN KEY (id) REFERENCES users(id) ON DELETE CASCADE
+constraint|profiles.profiles_pkey|PRIMARY KEY (id)
+constraint|profiles.profiles_role_check|CHECK ((role = ANY (ARRAY['admin'::text, 'client'::text])))
+constraint|studio_drafts.studio_drafts_created_by_fkey|FOREIGN KEY (created_by) REFERENCES profiles(id) ON DELETE SET NULL
+constraint|studio_drafts.studio_drafts_organization_id_fkey|FOREIGN KEY (organization_id) REFERENCES organizations(id) ON DELETE CASCADE
+constraint|studio_drafts.studio_drafts_pkey|PRIMARY KEY (id)
+constraint|studio_drafts.studio_drafts_status_check|CHECK ((status = ANY (ARRAY['draft'::text, 'submitted'::text, 'archived'::text])))
+constraint|studio_push_events.studio_push_events_outcome_check|CHECK ((outcome = ANY (ARRAY['applied'::text, 'late_applied'::text, 'orphan'::text, 'ignored'::text])))
+constraint|studio_push_events.studio_push_events_pkey|PRIMARY KEY (id)
+constraint|studio_push_events.studio_push_events_variant_id_fkey|FOREIGN KEY (variant_id) REFERENCES studio_variants(id)
+constraint|studio_variants.studio_variants_buffer_post_id_key|UNIQUE (buffer_post_id)
+constraint|studio_variants.studio_variants_channel_id_fkey|FOREIGN KEY (channel_id) REFERENCES channels(id) ON DELETE CASCADE
+constraint|studio_variants.studio_variants_draft_id_channel_id_key|UNIQUE (draft_id, channel_id)
+constraint|studio_variants.studio_variants_draft_id_fkey|FOREIGN KEY (draft_id) REFERENCES studio_drafts(id) ON DELETE CASCADE
+constraint|studio_variants.studio_variants_pkey|PRIMARY KEY (id)
+constraint|studio_variants.studio_variants_push_state_check|CHECK ((push_state = ANY (ARRAY['idle'::text, 'pushing'::text, 'pushed'::text, 'failed'::text, 'unknown'::text])))
+constraint|sync_runs.sync_runs_pkey|PRIMARY KEY (id)
+constraint|sync_runs.sync_runs_status_check|CHECK ((status = ANY (ARRAY['success'::text, 'error'::text])))
+constraint|sync_state.sync_state_mode_check|CHECK ((mode = ANY (ARRAY['real'::text, 'mock'::text])))
+constraint|sync_state.sync_state_pkey|PRIMARY KEY (mode)
+function|private.add_event(p_post_id uuid, p_type text, p_actor uuid, p_detail text, p_version integer)|f78c715e7c56dec284196ee8081758a6|definer|{"search_path=\"\""}
+function|private.add_studio_note(p_variant_id uuid)|3a6afa90597152e37c7bf7e1d6e061d9|definer|{"search_path=\"\""}
+function|private.approver_is_valid(p_user_id uuid, p_organization_id uuid)|f72d2b2db9b707ded48e112727acd91d|definer|{"search_path=\"\""}
+function|private.can_decide_post(p_owner uuid, p_ownership text, p_channel_id uuid)|dd7a80828cbe20e4e902c2bcea9ffa8e|definer|{"search_path=\"\""}
+function|private.can_review_post(p_channel_id uuid, p_created_at timestamp with time zone)|d04f5e8f523ad0e7028d5da07ae83dc8|definer|{"search_path=\"\""}
+function|private.channel_owner_guard()|31cc08a8fe2d2f4d1f25565c0780950d|definer|{"search_path=\"\""}
+function|private.check_secret(p_secret text)|9f54e48dc27c08cc9cdf71bfc42bb328|definer|{"search_path=\"\""}
+function|private.enqueue_notifications()|e6ae17717a62d4a4d75f9ca9c2c42cb2|definer|{"search_path=\"\""}
+function|private.is_admin()|179fa0d8812534e8b511e62c76065d14|definer|{"search_path=\"\""}
+function|private.is_post_reviewable(p_owner uuid, p_ownership text, p_channel_id uuid)|8d3bb669e1fe3e0144624d1bed434dd5|definer|{"search_path=\"\""}
+function|private.my_org_ids()|4936567979af07beda38501affcf5680|definer|{"search_path=\"\""}
+function|private.notification_is_eligible(p_id uuid)|faa28f5207e46fd1fa1a19b140d29a8a|definer|{"search_path=\"\""}
+function|private.on_member_removed()|a1715d154df24bc920c9830b698d5486|definer|{"search_path=\"\""}
+function|private.on_profile_role_changed()|f564a2661b024e0c82edc75345271d75|definer|{"search_path=\"\""}
+function|private.post_hash(p_text text, p_due_at timestamp with time zone, p_channel text, p_assets jsonb)|a6acfd1db92d0ac5a76488d39104c611|invoker|{"search_path=\"\""}
+function|private.post_versions_immutable()|878a9ab052d10a4698c38c9547403e0b|definer|{"search_path=\"\""}
+function|private.record_post_version()|f31ba7c5f546d7a0d07b6e3ce2cd64f1|definer|{"search_path=\"\""}
+function|private.require_admin()|d11455663ab16f67b33f1ceedba34c66|definer|{"search_path=\"\""}
+function|private.resolve_post_owner(p_channel_id uuid, p_buffer_post_id text)|0ebf105298b735ef2913df632ad1cae5|definer|{"search_path=\"\""}
+function|private.revoke_member_approvals(p_user_id uuid, p_organization_id uuid, p_reason text)|3471a4941244c7060ab4944c0b517b66|definer|{"search_path=\"\""}
+function|private.suspend_posts(p_channel_id uuid, p_organization_id uuid, p_reason text, p_post_ids uuid[])|94a8e87a5a0c0c66e4cdd5f71286bc5e|definer|{"search_path=\"\""}
+function|private.track_unschedule()|89f5d3c4361e841a3b39445156502070|definer|{"search_path=\"\""}
+function|public.add_comment(p_post_id uuid, p_body text)|5f93b35bad422fac401cfafdbf7f4c39|definer|{"search_path=\"\""}
+function|public.admin_add_user(p_organization_id uuid, p_email text, p_full_name text, p_job_title text)|093d3a7b4461ce1320912f6d09ae4671|definer|{"search_path=\"\""}
+function|public.admin_assign_channel(p_channel_id uuid, p_organization_id uuid, p_confirm_transfer boolean)|640abf97667f8cdafd8e87563a244602|definer|{"search_path=\"\""}
+function|public.admin_list_user_emails()|27f12b35a921aa6cf2bec1ceb4dfea7d|definer|{"search_path=\"\""}
+function|public.admin_save_organization(p_id uuid, p_name text, p_slug text, p_sector text, p_timezone text, p_initials text, p_color text)|baaf10a37dc0bae0fa9e1fce5144d6aa|definer|{"search_path=\"\""}
+function|public.admin_set_member(p_organization_id uuid, p_user_id uuid, p_member boolean)|0f15d2ed139ae9eb054177b9bbea7ac4|definer|{"search_path=\"\""}
+function|public.admin_set_organization_archived(p_id uuid, p_archived boolean)|35679cabde34e5312441980bff77a305|definer|{"search_path=\"\""}
+function|public.admin_set_post_owner(p_post_ids uuid[], p_organization_id uuid)|b2e4abd68f65c0829abf1aeb79bfbd51|definer|{"search_path=\"\""}
+function|public.begin_sync_run(p_secret text, p_mode text, p_triggered_by text, p_scheduled boolean, p_ttl_seconds integer)|21b0e38ea82113c96515caa6bbd1a5f8|definer|{"search_path=\"\""}
+function|public.begin_urgent_run(p_secret text, p_mode text, p_ttl_seconds integer)|262dd555f9f696682fb3f93ea50f18ca|definer|{"search_path=\"\""}
+function|public.claim_notifications(p_secret text, p_mode text, p_limit integer)|6b2674f5da4f010bbb3d57f0894d5b62|definer|{"search_path=\"\""}
+function|public.claim_posts_for_scheduling(p_secret text, p_post_id uuid, p_limit integer)|e1ff50fa022e087faf1975ed71ec211b|definer|{"search_path=\"\""}
+function|public.claim_posts_for_scheduling_in_mode(p_secret text, p_mode text, p_post_id uuid, p_limit integer)|0215c15b90a69fa852e8f20de5cf7ea5|definer|{"search_path=\"\""}
+function|public.complete_notifications(p_secret text, p_ids uuid[], p_status text, p_error text)|d1032409dcb9b6ebf5d8c9f12865c54e|definer|{"search_path=\"\""}
+function|public.complete_scheduling(p_secret text, p_post_id uuid, p_ok boolean, p_error text, p_token uuid, p_uncertain boolean)|13efe393bb8168dff41fd773a6a17da8|definer|{"search_path=\"\""}
+function|public.complete_unscheduling(p_secret text, p_post_id uuid, p_ok boolean, p_error text, p_observed_status text)|ee781becb1c16a30316877a02380cfcb|definer|{"search_path=\"\""}
+function|public.decide_post(p_post_id uuid, p_decision text, p_expected_hash text, p_comment text)|ec2e9f38ede048fb89c022999bbafedc|definer|{"search_path=\"\""}
+function|public.finish_sync_run(p_secret text, p_mode text, p_token uuid, p_ok boolean, p_error text, p_backoff_seconds integer, p_backoff_reason text, p_anomalies jsonb, p_backoff_hard boolean)|ccbe2b7a1eb356b319feed65f99fb7ee|definer|{"search_path=\"\""}
+function|public.finish_urgent_run(p_secret text, p_mode text, p_token uuid, p_ok boolean, p_error text, p_done integer)|d5580c213a45aa93e622abe9eb224efb|definer|{"search_path=\"\""}
+function|public.get_sync_pause(p_secret text, p_mode text)|1c528698c430101f647103412590149e|definer|{"search_path=\"\""}
+function|public.list_orphan_claims_in_mode(p_secret text, p_mode text, p_grace_seconds integer)|9114775e1808583fa58cbb88ce1e11aa|definer|{"search_path=\"\""}
+function|public.list_posts_to_unschedule(p_secret text)|d292b51443197bc6fa096f60b1e56055|definer|{"search_path=\"\""}
+function|public.list_posts_to_unschedule_in_mode(p_secret text, p_mode text)|cd3f3b41b78f6204af6c4d297e95b099|definer|{"search_path=\"\""}
+function|public.mark_unschedule_needed(p_secret text, p_post_id uuid, p_reason text)|b678b812a587269169ce2b125f15aceb|definer|{"search_path=\"\""}
+function|public.record_sync_failure(p_secret text, p_mode text, p_error text, p_triggered_by text)|3eea2c290b0f3eaa4a50c42720ed6aef|definer|{"search_path=\"\""}
+function|public.renew_sync_run(p_secret text, p_mode text, p_token uuid, p_ttl_seconds integer)|b64ea47d60fbf3034959ff948fa0c66c|definer|{"search_path=\"\""}
+function|public.renew_urgent_run(p_secret text, p_mode text, p_token uuid, p_ttl_seconds integer)|8a7ecd42b20c82fa778044d137921aaf|definer|{"search_path=\"\""}
+function|public.schema_status(p_secret text)|f5e6ea87f8481cc76eac7ed4525f025b|definer|{"search_path=\"\""}
+function|public.set_notification_preferences(p_review_requested boolean, p_changes_requested boolean, p_approved boolean, p_schedule_error boolean)|4f9f476fad540c103829acc7816991ca|definer|{"search_path=\"\""}
+function|public.set_sync_backoff(p_secret text, p_mode text, p_seconds integer, p_reason text)|80008ce34c4478da06295081fa56bea8|definer|{"search_path=\"\""}
+function|public.studio_claim_push(p_draft_id uuid, p_force boolean)|a9c9c40f8b6297456a3b632c15797ea1|definer|{"search_path=\"\""}
+function|public.studio_complete_push(p_variant_id uuid, p_ok boolean, p_buffer_post_id text, p_error text, p_revision integer, p_uncertain boolean, p_attempt_id uuid)|e31809928b416a76475472ca0009580a|definer|{"search_path=\"\""}
+function|public.studio_expire_abandoned(p_draft_id uuid)|27bb19f392bee4baf28ead3c1ed655a4|definer|{"search_path=\"\""}
+function|public.studio_register_media(p_organization_id uuid, p_path text, p_file_name text, p_mime_type text, p_size_bytes bigint, p_width integer, p_height integer, p_duration_ms integer)|aeaccd439ac3f5adbed92e07b4e834ba|definer|{"search_path=\"\""}
+function|public.studio_reschedule_draft(p_id uuid, p_expected_revision integer, p_due_at timestamp with time zone)|228a176d08b612be95380d1a5cd1934d|definer|{"search_path=\"\""}
+function|public.studio_resolve_unknown(p_variant_id uuid, p_buffer_post_id text, p_confirmed_absent boolean, p_operator_confirmed boolean, p_evidence text)|c1787dedc15a2a996ae907c72b474de8|definer|{"search_path=\"\""}
+function|public.studio_save_draft(p_id uuid, p_expected_revision integer, p_payload jsonb)|f11ee98c505ef927fb0ae52ab168e594|definer|{"search_path=\"\""}
+function|public.studio_set_draft_archived(p_id uuid, p_archived boolean)|a8d0b9eef3bb6b60bf7c1c4c792e6eaf|definer|{"search_path=\"\""}
+function|public.studio_set_media_archived(p_id uuid, p_archived boolean)|7629123da3454cfb527c21708cc9b113|definer|{"search_path=\"\""}
+function|public.sync_buffer_posts(p_secret text, p_payload jsonb)|599c77ca5b8fd36a6333bc7ff373d94d|definer|{"search_path=\"\""}
+function|public.urgent_work_summary(p_secret text, p_mode text, p_orphan_grace_seconds integer)|8bdb86f631fe78eecd76592cbb915fea|definer|{"search_path=\"\""}
+trigger|channels.channels_owner_guard
+trigger|organization_members.organization_members_revoke_approvals
+trigger|post_events.post_events_notify
+trigger|post_versions.post_versions_immutable
+trigger|posts.posts_record_version
+trigger|posts.posts_track_unschedule
+trigger|profiles.profiles_revoke_approvals
+acl|default_acl|public.S.supabase_admin|anon=rwU,authenticated=rwU,service_role=rwU|
+acl|default_acl|public.f.supabase_admin|anon=X,authenticated=X,service_role=X|
+acl|default_acl|public.r.supabase_admin|anon=arwdDxtm,authenticated=arwdDxtm,service_role=arwdDxtm|
+acl|function|auth.uid()|=X,anon=X,authenticated=X,service_role=X|invoker
+acl|function|private.add_event(p_post_id uuid, p_type text, p_actor uuid, p_detail text, p_version integer)||definer
+acl|function|private.add_studio_note(p_variant_id uuid)||definer
+acl|function|private.approver_is_valid(p_user_id uuid, p_organization_id uuid)||definer
+acl|function|private.can_decide_post(p_owner uuid, p_ownership text, p_channel_id uuid)||definer
+acl|function|private.can_review_post(p_channel_id uuid, p_created_at timestamp with time zone)|authenticated=X|definer
+acl|function|private.channel_owner_guard()||definer
+acl|function|private.check_secret(p_secret text)||definer
+acl|function|private.enqueue_notifications()||definer
+acl|function|private.is_admin()|authenticated=X|definer
+acl|function|private.is_post_reviewable(p_owner uuid, p_ownership text, p_channel_id uuid)||definer
+acl|function|private.my_org_ids()|authenticated=X|definer
+acl|function|private.notification_is_eligible(p_id uuid)||definer
+acl|function|private.on_member_removed()||definer
+acl|function|private.on_profile_role_changed()||definer
+acl|function|private.post_hash(p_text text, p_due_at timestamp with time zone, p_channel text, p_assets jsonb)||invoker
+acl|function|private.post_versions_immutable()||definer
+acl|function|private.record_post_version()||definer
+acl|function|private.require_admin()||definer
+acl|function|private.resolve_post_owner(p_channel_id uuid, p_buffer_post_id text)||definer
+acl|function|private.revoke_member_approvals(p_user_id uuid, p_organization_id uuid, p_reason text)||definer
+acl|function|private.suspend_posts(p_channel_id uuid, p_organization_id uuid, p_reason text, p_post_ids uuid[])||definer
+acl|function|private.track_unschedule()||definer
+acl|function|public.add_comment(p_post_id uuid, p_body text)|authenticated=X,service_role=X|definer
+acl|function|public.admin_add_user(p_organization_id uuid, p_email text, p_full_name text, p_job_title text)|authenticated=X,service_role=X|definer
+acl|function|public.admin_assign_channel(p_channel_id uuid, p_organization_id uuid, p_confirm_transfer boolean)|authenticated=X,service_role=X|definer
+acl|function|public.admin_list_user_emails()|authenticated=X,service_role=X|definer
+acl|function|public.admin_save_organization(p_id uuid, p_name text, p_slug text, p_sector text, p_timezone text, p_initials text, p_color text)|authenticated=X,service_role=X|definer
+acl|function|public.admin_set_member(p_organization_id uuid, p_user_id uuid, p_member boolean)|authenticated=X,service_role=X|definer
+acl|function|public.admin_set_organization_archived(p_id uuid, p_archived boolean)|authenticated=X,service_role=X|definer
+acl|function|public.admin_set_post_owner(p_post_ids uuid[], p_organization_id uuid)|authenticated=X,service_role=X|definer
+acl|function|public.begin_sync_run(p_secret text, p_mode text, p_triggered_by text, p_scheduled boolean, p_ttl_seconds integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.begin_urgent_run(p_secret text, p_mode text, p_ttl_seconds integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.claim_notifications(p_secret text, p_mode text, p_limit integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.claim_posts_for_scheduling(p_secret text, p_post_id uuid, p_limit integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.claim_posts_for_scheduling_in_mode(p_secret text, p_mode text, p_post_id uuid, p_limit integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.complete_notifications(p_secret text, p_ids uuid[], p_status text, p_error text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.complete_scheduling(p_secret text, p_post_id uuid, p_ok boolean, p_error text, p_token uuid, p_uncertain boolean)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.complete_unscheduling(p_secret text, p_post_id uuid, p_ok boolean, p_error text, p_observed_status text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.decide_post(p_post_id uuid, p_decision text, p_expected_hash text, p_comment text)|authenticated=X,service_role=X|definer
+acl|function|public.finish_sync_run(p_secret text, p_mode text, p_token uuid, p_ok boolean, p_error text, p_backoff_seconds integer, p_backoff_reason text, p_anomalies jsonb, p_backoff_hard boolean)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.finish_urgent_run(p_secret text, p_mode text, p_token uuid, p_ok boolean, p_error text, p_done integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.get_sync_pause(p_secret text, p_mode text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.list_orphan_claims_in_mode(p_secret text, p_mode text, p_grace_seconds integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.list_posts_to_unschedule(p_secret text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.list_posts_to_unschedule_in_mode(p_secret text, p_mode text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.mark_unschedule_needed(p_secret text, p_post_id uuid, p_reason text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.record_sync_failure(p_secret text, p_mode text, p_error text, p_triggered_by text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.renew_sync_run(p_secret text, p_mode text, p_token uuid, p_ttl_seconds integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.renew_urgent_run(p_secret text, p_mode text, p_token uuid, p_ttl_seconds integer)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.schema_status(p_secret text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.set_notification_preferences(p_review_requested boolean, p_changes_requested boolean, p_approved boolean, p_schedule_error boolean)|authenticated=X,service_role=X|definer
+acl|function|public.set_sync_backoff(p_secret text, p_mode text, p_seconds integer, p_reason text)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.studio_claim_push(p_draft_id uuid, p_force boolean)|authenticated=X,service_role=X|definer
+acl|function|public.studio_complete_push(p_variant_id uuid, p_ok boolean, p_buffer_post_id text, p_error text, p_revision integer, p_uncertain boolean, p_attempt_id uuid)|authenticated=X,service_role=X|definer
+acl|function|public.studio_expire_abandoned(p_draft_id uuid)|authenticated=X,service_role=X|definer
+acl|function|public.studio_register_media(p_organization_id uuid, p_path text, p_file_name text, p_mime_type text, p_size_bytes bigint, p_width integer, p_height integer, p_duration_ms integer)|authenticated=X,service_role=X|definer
+acl|function|public.studio_reschedule_draft(p_id uuid, p_expected_revision integer, p_due_at timestamp with time zone)|authenticated=X,service_role=X|definer
+acl|function|public.studio_resolve_unknown(p_variant_id uuid, p_buffer_post_id text, p_confirmed_absent boolean, p_operator_confirmed boolean, p_evidence text)|authenticated=X,service_role=X|definer
+acl|function|public.studio_save_draft(p_id uuid, p_expected_revision integer, p_payload jsonb)|authenticated=X,service_role=X|definer
+acl|function|public.studio_set_draft_archived(p_id uuid, p_archived boolean)|authenticated=X,service_role=X|definer
+acl|function|public.studio_set_media_archived(p_id uuid, p_archived boolean)|authenticated=X,service_role=X|definer
+acl|function|public.sync_buffer_posts(p_secret text, p_payload jsonb)|anon=X,authenticated=X,service_role=X|definer
+acl|function|public.urgent_work_summary(p_secret text, p_mode text, p_orphan_grace_seconds integer)|anon=X,authenticated=X,service_role=X|definer
+acl|policy|public.approval_decisions.approval_decisions_select||8ca34e8f5e38c3ebd1005e48d4667446
+acl|policy|public.channel_owner_history.channel_owner_history_select||a05987e6e3cac882b696abfe6981eb08
+acl|policy|public.channels.channels_select||f8cd71209cd3e80c10e89fa7696367f2
+acl|policy|public.comments.comments_select||8ca34e8f5e38c3ebd1005e48d4667446
+acl|policy|public.media_assets.media_assets_select||a05987e6e3cac882b696abfe6981eb08
+acl|policy|public.notification_preferences.notification_preferences_select||05fee731762b37c3d30a073cac793a6f
+acl|policy|public.notifications.notifications_select||fa264aea3bc037c5760b03aebffa6862
+acl|policy|public.organization_members.organization_members_select||f8cd71209cd3e80c10e89fa7696367f2
+acl|policy|public.organizations.organizations_select||ef1c082a599bd3d16eee60050e1ca93c
+acl|policy|public.post_events.post_events_select||98dca71b661537be629b30a303a0f8c3
+acl|policy|public.post_versions.post_versions_select||8ca34e8f5e38c3ebd1005e48d4667446
+acl|policy|public.posts.posts_select||fa9319ebb4205db5b1c40a15bd4ca31e
+acl|policy|public.profiles.profiles_select||1d9bdb39ed6a13d9c9349afbfdd96976
+acl|policy|public.studio_drafts.studio_drafts_select||a05987e6e3cac882b696abfe6981eb08
+acl|policy|public.studio_push_events.studio_push_events_select||a05987e6e3cac882b696abfe6981eb08
+acl|policy|public.studio_variants.studio_variants_select||a05987e6e3cac882b696abfe6981eb08
+acl|policy|public.sync_runs.sync_runs_select||a05987e6e3cac882b696abfe6981eb08
+acl|policy|public.sync_state.sync_state_select||a05987e6e3cac882b696abfe6981eb08
+acl|policy|storage.objects.cadence_media_insert||d8b07f492d69313b73378ce47cd93ea6
+acl|policy|storage.objects.cadence_media_select||d35efd81090040ce43da5aec58f6361b
+acl|schema|auth|anon=U,authenticated=U,service_role=U|
+acl|schema|private|authenticated=U|
+acl|schema|public|=U,anon=U,authenticated=U,service_role=U|
+acl|schema|storage|anon=U,authenticated=U,service_role=U|
+acl|table|auth.users||r:norls
+acl|table|private.app_secrets||r:rls
+acl|table|public.approval_decisions|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.channel_owner_history_id_seq|anon=rwU,authenticated=rwU,service_role=rwU|S:norls
+acl|table|public.channel_owner_history|authenticated=r,service_role=arwdDxtm|r:rls
+acl|table|public.channels|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.comments|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.media_assets|authenticated=r,service_role=arwdDxtm|r:rls
+acl|table|public.notification_preferences|authenticated=r,service_role=arwdDxtm|r:rls
+acl|table|public.notifications|authenticated=r,service_role=arwdDxtm|r:rls
+acl|table|public.organization_members|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.organizations|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.post_events_id_seq|anon=rwU,authenticated=rwU,service_role=rwU|S:norls
+acl|table|public.post_events|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.post_versions|authenticated=r,service_role=arwdDxtm|r:rls
+acl|table|public.posts|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.profiles|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.studio_drafts|authenticated=r,service_role=arwdDxtm|r:rls
+acl|table|public.studio_push_events_id_seq|anon=rwU,authenticated=rwU,service_role=rwU|S:norls
+acl|table|public.studio_push_events|authenticated=r,service_role=arwdDxtm|r:rls
+acl|table|public.studio_variants|authenticated=r,service_role=arwdDxtm|r:rls
+acl|table|public.sync_runs_id_seq|anon=rwU,authenticated=rwU,service_role=rwU|S:norls
+acl|table|public.sync_runs|authenticated=rxtm,service_role=arwdDxtm|r:rls
+acl|table|public.sync_state|authenticated=r,service_role=arwdDxtm|r:rls
+acl|table|storage.buckets|anon=arwdDxtm,authenticated=arwdDxtm,service_role=arwdDxtm|r:norls
+acl|table|storage.objects|anon=arwdDxtm,authenticated=arwdDxtm,service_role=arwdDxtm|r:rls

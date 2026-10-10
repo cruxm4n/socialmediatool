@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { createContext, useContext, useMemo, useState } from "react";
 import Link from "next/link";
 import { CalendarX2, Check, ChevronLeft, ChevronRight, TriangleAlert } from "lucide-react";
 
@@ -44,9 +44,63 @@ interface CalendarEvent {
 
 const MAX_CHIPS = 3;
 
+/** Déplacement d'une publication par glisser-déposer (espace administrateur uniquement). */
+export interface CalendarMove {
+  /** Cette publication peut-elle changer de jour ? */
+  canMove: (post: PostView) => boolean;
+  /** Appelé au dépôt sur un autre jour. L'heure est conservée par l'appelant. */
+  onMove: (post: PostView, day: DayKey) => void;
+}
+
+const MoveContext = createContext<{ move: CalendarMove; posts: PostView[]; overDay: DayKey | null; setOverDay: (day: DayKey | null) => void } | null>(null);
+const DRAG_TYPE = "application/x-cadence-post";
+
+/** Rend une pastille déplaçable si la publication le permet. */
+function useDraggable(post: PostView) {
+  const context = useContext(MoveContext);
+  if (!context?.move.canMove(post)) return {};
+  return {
+    draggable: true,
+    "data-movable": "true",
+    onDragStart: (event: React.DragEvent) => {
+      event.dataTransfer.setData(DRAG_TYPE, post.id);
+      event.dataTransfer.effectAllowed = "move";
+    },
+  };
+}
+
+/** Rend un jour capable de recevoir une publication déplacée. */
+function useDropTarget(day: DayKey) {
+  const context = useContext(MoveContext);
+  if (!context) return { over: false, handlers: {} };
+  const accepts = (event: React.DragEvent) => event.dataTransfer.types.includes(DRAG_TYPE);
+  return {
+    over: context.overDay === day,
+    handlers: {
+      onDragOver: (event: React.DragEvent) => {
+        if (!accepts(event)) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        if (context.overDay !== day) context.setOverDay(day);
+      },
+      onDragLeave: (event: React.DragEvent) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null) && context.overDay === day) context.setOverDay(null);
+      },
+      onDrop: (event: React.DragEvent) => {
+        if (!accepts(event)) return;
+        event.preventDefault();
+        context.setOverDay(null);
+        const post = context.posts.find((item) => item.id === event.dataTransfer.getData(DRAG_TYPE));
+        if (post && post.dueAt && dayKeyOf(post.dueAt, post.timezone) !== day) context.move.onMove(post, day);
+      },
+    },
+  };
+}
+
 /**
- * Calendrier des publications, en lecture seule : les dates se modifient dans Buffer.
- * Interactif par ses vues (mois, semaine), ses filtres et l'ouverture des fiches.
+ * Calendrier des publications. Interactif par ses vues (mois, semaine), ses filtres et l'ouverture
+ * des fiches. Avec `reschedule` (espace administrateur), les brouillons se déplacent par glisser-déposer ;
+ * sans lui, il est en lecture seule.
  */
 export function EditorialCalendar({
   posts,
@@ -54,6 +108,7 @@ export function EditorialCalendar({
   hrefFor,
   statuses,
   showOrg = false,
+  reschedule,
 }: {
   posts: PostView[];
   now: string;
@@ -61,7 +116,9 @@ export function EditorialCalendar({
   /** Statuts proposés dans le filtre et la légende. */
   statuses: readonly DisplayStatus[];
   showOrg?: boolean;
+  reschedule?: CalendarMove;
 }) {
+  const [overDay, setOverDay] = useState<DayKey | null>(null);
   const today = dayKeyOf(now, DEFAULT_TIMEZONE);
   const availableNetworks = useMemo(() => [...new Set(posts.map((post) => post.network))], [posts]);
 
@@ -102,7 +159,7 @@ export function EditorialCalendar({
 
   const visibleDays = view === "month" ? monthGrid(cursor).flat() : weekDays(cursor);
   const visibleCount = visibleDays.reduce((total, day) => total + (eventsByDay.get(day)?.length ?? 0), 0);
-  const undated = posts.filter((post) => !post.dueAt).length;
+  const undated = posts.filter((post) => !post.dueAt && !hiddenNetworks.includes(post.network) && (status === "all" || post.status === status)).length;
 
   return (
     <div className="grid gap-4">
@@ -193,9 +250,10 @@ export function EditorialCalendar({
             {STATUS_META[option].label}
           </span>
         ))}
-        <span className="ml-auto">Les dates se modifient dans Buffer.</span>
+        <span className="ml-auto">{reschedule ? "Glissez un brouillon sur un autre jour pour changer sa date." : "Les dates se modifient dans Buffer."}</span>
       </div>
 
+      <MoveContext.Provider value={reschedule ? { move: reschedule, posts, overDay, setOverDay } : null}>
       {view === "month" ? (
         <>
           <div className="overflow-hidden rounded-2xl border bg-card">
@@ -241,11 +299,7 @@ export function EditorialCalendar({
       ) : (
         <div className="grid gap-3 md:grid-cols-7 md:gap-2">
           {weekDays(cursor).map((day) => (
-            <div
-              key={day}
-              data-day={day}
-              className={cn("flex min-h-24 flex-col gap-2 rounded-2xl border bg-card p-2 md:min-h-[28rem]", day < today && "bg-muted/30")}
-            >
+            <WeekColumn key={day} day={day} past={day < today}>
               <div className="flex items-center gap-2 px-1 pt-0.5 md:flex-col md:items-start md:gap-0.5">
                 <span className="text-xs font-medium text-muted-foreground capitalize">{weekdayLabel(day)}</span>
                 <span
@@ -260,10 +314,11 @@ export function EditorialCalendar({
               {(eventsByDay.get(day) ?? []).map((event) => (
                 <EventCard key={event.post.id} event={event} showOrg={showOrg} />
               ))}
-            </div>
+            </WeekColumn>
           ))}
         </div>
       )}
+      </MoveContext.Provider>
 
       {visibleCount === 0 && (
         <p className="flex items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-5 text-sm text-muted-foreground">
@@ -276,6 +331,19 @@ export function EditorialCalendar({
           {undated} publication{undated > 1 ? "s" : ""} sans date prévue dans Buffer n&apos;apparaî{undated > 1 ? "ssent" : "t"} pas dans le calendrier.
         </p>
       )}
+    </div>
+  );
+}
+
+function WeekColumn({ day, past, children }: { day: DayKey; past: boolean; children: React.ReactNode }) {
+  const drop = useDropTarget(day);
+  return (
+    <div
+      data-day={day}
+      {...drop.handlers}
+      className={cn("flex min-h-24 flex-col gap-2 rounded-2xl border bg-card p-2 md:min-h-[28rem]", past && "bg-muted/30", drop.over && "ring-2 ring-brand")}
+    >
+      {children}
     </div>
   );
 }
@@ -299,27 +367,36 @@ function MonthCell({
 }) {
   const past = day < today;
   const hidden = events.length - MAX_CHIPS;
+  const drop = useDropTarget(day);
 
   return (
     <div
       data-day={day}
-      onClick={onSelect}
+      {...drop.handlers}
       className={cn(
+        drop.over && "ring-2 ring-brand ring-inset",
         "relative min-h-16 border-r border-b p-1 nth-[7n]:border-r-0 md:min-h-36 md:p-1.5",
         outside && "bg-muted/40",
         past && !outside && "bg-muted/20",
         selected && "max-md:bg-brand-soft/60",
       )}
     >
-      <span
-        className={cn(
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-pressed={selected}
+        aria-current={day === today ? "date" : undefined}
+        aria-label={`${formatDayLong(day)} ${day.slice(0, 4)} · ${events.length} publication${events.length > 1 ? "s" : ""}`}
+        className="rounded-md outline-none focus-visible:ring-3 focus-visible:ring-ring/50 max-md:absolute max-md:inset-0 max-md:flex max-md:items-start max-md:p-1"
+      >
+        <span className={cn(
           "flex size-6 items-center justify-center rounded-full text-xs font-medium tabular-nums",
           day === today ? "bg-brand font-semibold text-brand-foreground" : outside || past ? "text-muted-foreground/70" : "text-foreground",
         )}
-        aria-label={formatDayLong(day)}
-      >
-        {dayNumber(day)}
-      </span>
+        >
+          {dayNumber(day)}
+        </span>
+      </button>
 
       {/* Mobile : de simples pastilles par réseau. */}
       <div className="mt-1 flex flex-wrap gap-0.5 md:hidden" aria-hidden="true">
@@ -364,9 +441,11 @@ function StateMark({ status }: { status: DisplayStatus }) {
 /** Ligne compacte d'une publication (vue mensuelle). */
 function EventChip({ event, showOrg }: { event: CalendarEvent; showOrg: boolean }) {
   const { post } = event;
+  const drag = useDraggable(post);
   return (
     <Link
       href={event.href}
+      {...drag}
       data-post={post.bufferPostId}
       onClick={(clickEvent) => clickEvent.stopPropagation()}
       title={`${event.time} · ${NETWORK_LABELS[post.network]} · ${STATUS_META[post.status].label} · ${post.title}`}
@@ -392,9 +471,11 @@ function EventChip({ event, showOrg }: { event: CalendarEvent; showOrg: boolean 
 /** Carte détaillée d'une publication (vue hebdomadaire et liste mobile). */
 function EventCard({ event, showOrg, compact = false }: { event: CalendarEvent; showOrg: boolean; compact?: boolean }) {
   const { post } = event;
+  const drag = useDraggable(post);
   return (
     <Link
       href={event.href}
+      {...drag}
       data-post={post.bufferPostId}
       className={cn(
         "group relative flex gap-2.5 overflow-hidden rounded-xl border bg-card p-2 pl-3 outline-none transition-shadow hover:shadow-soft focus-visible:ring-3 focus-visible:ring-ring/50",

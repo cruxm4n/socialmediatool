@@ -31,13 +31,17 @@ export function CommentThread({
     event.preventDefault();
     if (!body.trim()) return;
     startTransition(async () => {
-      const result = await addComment({ postId, body });
-      if (leaveIfExpired(result)) return;
-      if (result.ok) {
-        setBody("");
-        toast.success(result.message);
-      } else {
-        toast.error(result.message);
+      try {
+        const result = await addComment({ postId, body });
+        if (leaveIfExpired(result)) return;
+        if (result.ok) {
+          setBody("");
+          toast.success(result.message);
+        } else {
+          toast.error(result.message);
+        }
+      } catch {
+        toast.error("La confirmation n'a pas été reçue. Votre texte est conservé ; vérifiez les commentaires avant de réessayer.");
       }
     });
   };

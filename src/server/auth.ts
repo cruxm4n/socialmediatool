@@ -8,7 +8,7 @@ import { createSessionClient } from "@/server/supabase/clients";
 
 export interface Session {
   profile: Profile;
-  /** Organisations visibles : toutes pour un admin, les siennes pour un client. */
+  /** Organisations visibles : toutes pour un admin (archivées comprises), les siennes pour un client. */
   organizations: Organization[];
 }
 
@@ -20,7 +20,8 @@ export const getSession = cache(async (): Promise<Session | null> => {
 
   const [profileResult, organizationsResult] = await Promise.all([
     supabase.from("profiles").select("id, full_name, job_title, role").eq("id", data.user.id).maybeSingle(),
-    supabase.from("organizations").select("id, slug, name, sector, timezone, initials, color").order("name"),
+    // « * » : la colonne archived_at n'existe qu'après la migration 0005, l'application doit fonctionner sans.
+    supabase.from("organizations").select("*").order("name"),
   ]);
   if (!profileResult.data) return null;
 
@@ -31,7 +32,16 @@ export const getSession = cache(async (): Promise<Session | null> => {
       jobTitle: profileResult.data.job_title,
       role: profileResult.data.role,
     },
-    organizations: organizationsResult.data ?? [],
+    organizations: (organizationsResult.data ?? []).map((row) => ({
+      id: row.id,
+      slug: row.slug,
+      name: row.name,
+      sector: row.sector,
+      timezone: row.timezone,
+      initials: row.initials,
+      color: row.color,
+      archivedAt: row.archived_at ?? null,
+    })),
   };
 });
 

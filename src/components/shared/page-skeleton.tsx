@@ -3,8 +3,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 /** État de chargement générique d'une page (titre, puis grille de cartes). */
 export function PageSkeleton() {
   return (
-    <div className="grid gap-6" aria-busy="true" aria-label="Chargement">
-      <div className="grid gap-2">
+    <div className="grid grid-cols-1 gap-6" aria-busy="true" aria-label="Chargement">
+      <div className="grid grid-cols-1 gap-2">
         <Skeleton className="h-9 w-64" />
         <Skeleton className="h-4 w-80 max-w-full" />
       </div>
@@ -19,14 +19,14 @@ export function PageSkeleton() {
 
 export function DetailSkeleton() {
   return (
-    <div className="grid gap-6" aria-busy="true" aria-label="Chargement">
-      <div className="grid gap-3">
+    <div className="grid grid-cols-1 gap-6" aria-busy="true" aria-label="Chargement">
+      <div className="grid grid-cols-1 gap-3">
         <Skeleton className="h-4 w-28" />
         <Skeleton className="h-10 w-96 max-w-full" />
         <Skeleton className="h-6 w-40 rounded-full" />
       </div>
       <Skeleton className="h-20 rounded-2xl" />
-      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
+      <div className="grid grid-cols-1 gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
         <Skeleton className="h-[32rem] rounded-2xl" />
         <Skeleton className="h-80 rounded-2xl" />
       </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { FileSearch, Search } from "lucide-react";
+import { FileSearch, Search, X } from "lucide-react";
 
 import { MediaThumb } from "@/components/shared/media-thumb";
 import { NetworkIcon } from "@/components/shared/network-icon";
@@ -12,20 +12,43 @@ import { StatusBadge } from "@/components/shared/status-badge";
 import { matchesOrgFilter, useAdmin } from "@/components/shell/admin-context";
 import { Button } from "@/components/ui/button";
 import { formatDateTime } from "@/lib/dates";
+import { INBOX_META, inboxKeyOf, type InboxKey } from "@/lib/domain/inbox";
 import { NETWORK_LABELS } from "@/lib/domain/networks";
 import { STATUS_META } from "@/lib/domain/status";
-import { DISPLAY_STATUSES, type DisplayStatus } from "@/lib/types";
+import { DISPLAY_STATUSES, toNetwork, type Channel, type DisplayStatus } from "@/lib/types";
 import type { PostView } from "@/lib/view";
 import { cn } from "@/lib/utils";
 
 const normalize = (value: string) => value.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
-export function PostsView({ posts, initialStatus = "all" }: { posts: PostView[]; initialStatus?: DisplayStatus | "all" }) {
+export function PostsView({
+  posts,
+  channels,
+  now,
+  initialStatus = "all",
+  initialAttention = null,
+}: {
+  posts: PostView[];
+  channels: Channel[];
+  now: string;
+  initialStatus?: DisplayStatus | "all";
+  initialAttention?: InboxKey | null;
+}) {
   const { orgFilter, organizations } = useAdmin();
   const [status, setStatus] = useState<DisplayStatus | "all">(initialStatus);
+  const [attention, setAttention] = useState<InboxKey | null>(initialAttention);
+  const [channelId, setChannelId] = useState("all");
   const [query, setQuery] = useState("");
 
-  const scoped = posts.filter((post) => matchesOrgFilter(orgFilter, post.organization?.id));
+  // Canaux du client sélectionné dans l'en-tête ; un canal d'un autre client ne filtre plus rien.
+  const scopedChannels = channels.filter((channel) => matchesOrgFilter(orgFilter, channel.organizationId));
+  const channel = scopedChannels.some((item) => item.id === channelId) ? channelId : "all";
+  const scoped = posts.filter(
+    (post) =>
+      matchesOrgFilter(orgFilter, post.organization?.id) &&
+      (channel === "all" || post.channelId === channel) &&
+      (attention === null || inboxKeyOf(post, now) === attention),
+  );
   const needle = normalize(query.trim());
   const filtered = scoped.filter(
     (post) =>
@@ -54,6 +77,21 @@ export function PostsView({ posts, initialStatus = "all" }: { posts: PostView[];
         }
       />
 
+      {attention && (
+        <p className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl bg-muted px-4 py-3 text-sm" data-testid="attention-filter">
+          <span className="min-w-0 flex-1 basis-64">
+            <span className="font-semibold">{INBOX_META[attention].label}.</span> <span className="text-muted-foreground">{INBOX_META[attention].hint}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => setAttention(null)}
+            className="inline-flex items-center gap-1 rounded-md font-medium underline-offset-2 outline-none hover:underline focus-visible:ring-3 focus-visible:ring-ring/50"
+          >
+            <X className="size-3.5" /> Voir toutes les publications
+          </button>
+        </p>
+      )}
+
       <div className="flex flex-wrap items-center gap-3">
         <div className="-mx-4 flex flex-1 gap-1.5 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0" role="tablist" aria-label="Filtrer par statut">
           {tabs.map((tab) => (
@@ -75,6 +113,21 @@ export function PostsView({ posts, initialStatus = "all" }: { posts: PostView[];
             </button>
           ))}
         </div>
+        {scopedChannels.length > 1 && (
+          <select
+            aria-label="Filtrer par canal"
+            value={channel}
+            onChange={(event) => setChannelId(event.target.value)}
+            className="h-9 w-full rounded-lg border bg-card px-3 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30 sm:w-56"
+          >
+            <option value="all">Tous les canaux</option>
+            {scopedChannels.map((item) => (
+              <option key={item.id} value={item.id}>
+                {NETWORK_LABELS[toNetwork(item.service)]} · {item.displayName ?? item.name}
+              </option>
+            ))}
+          </select>
+        )}
         <div className="relative w-full sm:w-64">
           <Search className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -98,13 +151,15 @@ export function PostsView({ posts, initialStatus = "all" }: { posts: PostView[];
               : "Aucune publication ne correspond à ces filtres."
           }
           action={
-            (status !== "all" || query) && (
+            (status !== "all" || query || attention || channel !== "all") && (
               <Button
                 variant="outline"
                 size="lg"
                 onClick={() => {
                   setStatus("all");
                   setQuery("");
+                  setAttention(null);
+                  setChannelId("all");
                 }}
               >
                 Effacer les filtres

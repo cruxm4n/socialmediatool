@@ -40,7 +40,20 @@ export interface ProviderSnapshot {
   posts: ProviderPost[];
   /** false si la liste des posts est tronquée : on ne peut alors rien conclure sur les posts absents. */
   complete: boolean;
+  /** true : plus de posts publiés existent que ceux lus. Sans effet sur « complete » (un post publié n'est jamais marqué retiré). */
+  sentTruncated?: boolean;
   rateLimit: RateLimit | null;
+}
+
+/** Contenu d'un brouillon préparé dans le Studio de Cadence. */
+export interface DraftContent {
+  channelId: string;
+  service: string;
+  text: string;
+  /** Date de publication prévue (UTC, ISO 8601). Le brouillon n'est pas programmé pour autant. */
+  dueAt: string;
+  /** Médias désignés par une adresse que le fournisseur peut télécharger. */
+  assets: { type: "image" | "video"; url: string }[];
 }
 
 export interface PublishingProvider {
@@ -52,17 +65,60 @@ export interface PublishingProvider {
   schedulePost(post: ProviderPost): Promise<ProviderPost>;
   /** Repasse un post programmé en brouillon. */
   unschedulePost(post: ProviderPost): Promise<ProviderPost>;
+  /**
+   * Crée un BROUILLON portant le tag de validation. Ne programme et ne publie jamais :
+   * la programmation reste réservée à schedulePost, après l'accord du client.
+   */
+  createDraft(content: DraftContent): Promise<ProviderPost>;
+  /** Remplace le contenu d'un post et le laisse (ou le repasse) en brouillon. */
+  updateDraft(postId: string, content: DraftContent): Promise<ProviderPost>;
+  /** Change la date prévue d'un brouillon, sans toucher à son contenu. */
+  rescheduleDraft(post: ProviderPost, dueAt: string): Promise<ProviderPost>;
+  /**
+   * Réconciliation après une création au résultat inconnu : interroge le fournisseur (lecture seule).
+   * - candidates : correspondance exacte (canal, texte, date, nature des médias), tous statuts confondus ;
+   * - possible : ressemblances (même canal, texte ou date identique) qu'une personne doit trancher ;
+   * - complete : la lecture a couvert tout ce qu'on pouvait lire. Ne prouve JAMAIS l'absence d'un post :
+   *   un texte modifié dans le fournisseur, une pagination limitée ou un média différent échappent à la recherche.
+   * Ne crée ni ne modifie rien. Aucune garantie d'idempotence n'est supposée de la part du fournisseur.
+   */
+  findDraftCandidates(lookup: DraftLookup): Promise<{ candidates: ProviderPost[]; possible?: ProviderPost[]; complete: boolean }>;
 }
 
+/**
+ * Erreur du fournisseur.
+ * - `kind` : « api » (refus ou erreur applicative), « rate_limit » (quota), « network » (panne, délai).
+ * - `outcome` : ce que l'on sait de l'effet de l'opération chez le fournisseur.
+ *   « failed » : il n'a rien fait (refus, quota, clé refusée) — réessayer est sûr.
+ *   « unknown » : la réponse a été perdue (délai, coupure, 5xx, réponse illisible) — il a peut-être agi.
+ *   Pour une CRÉATION, un résultat « unknown » ne doit jamais déclencher une nouvelle création sans réconciliation.
+ * - `createdPostId` : la création a réussi mais une étape suivante a échoué ; l'identifiant ne doit pas être perdu.
+ */
 export class ProviderError extends Error {
   constructor(
     message: string,
     readonly kind: "api" | "rate_limit" | "network" = "api",
     readonly retryAfterSeconds?: number,
+    readonly outcome: "failed" | "unknown" = "failed",
+    readonly createdPostId?: string,
   ) {
     super(message);
     this.name = "ProviderError";
   }
+
+  /** Même erreur, avec l'identifiant d'un post créé avant l'échec. */
+  withCreatedPost(postId: string): ProviderError {
+    return new ProviderError(this.message, this.kind, this.retryAfterSeconds, this.outcome, postId);
+  }
+}
+
+/** Critères pour retrouver, après un résultat incertain, un brouillon que Cadence a peut-être créé. */
+export interface DraftLookup {
+  channelId: string;
+  text: string;
+  dueAt: string;
+  /** Nature des médias envoyés, dans l'ordre (« image » / « video »). Absent : non vérifié. */
+  assetKinds?: string[];
 }
 
 /** Le contenu validé par le client est-il encore celui présent chez le fournisseur ? */
@@ -70,11 +126,13 @@ export function sameContent(
   approved: { text: string; dueAt: string | null; assets: PostAsset[] },
   live: Pick<ProviderPost, "text" | "dueAt" | "assets">,
 ): boolean {
-  const minute = (iso: string | null) => (iso ? new Date(iso).toISOString().slice(0, 16) : "");
-  const sources = (assets: PostAsset[]) => assets.map((asset) => `${asset.type}:${asset.source}`).join(",");
+  const instant = (iso: string | null) => iso === null ? null : Date.parse(iso);
+  const approvedDate = instant(approved.dueAt);
+  const liveDate = instant(live.dueAt);
   return (
     approved.text === live.text &&
-    minute(approved.dueAt) === minute(live.dueAt) &&
-    sources(approved.assets) === sources(live.assets)
+    approvedDate === liveDate &&
+    approved.assets.length === live.assets.length &&
+    approved.assets.every((asset, index) => asset.type === live.assets[index].type && asset.source === live.assets[index].source)
   );
 }
