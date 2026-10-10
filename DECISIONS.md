@@ -239,3 +239,15 @@ Avec un planificateur, un bouton et bientôt n8n, deux synchronisations peuvent 
 ## D39 — Un compte Buffer pour le pilote ; la liveness n'est pas la préparation
 
 **Décision.** Le pilote utilise un seul compte et une clé, figés tant qu'une tentative est non résolue (C14). `/api/health` dit que le processus tourne ; `/api/ready` (secret) dit que la configuration, la base et les migrations requises sont en place, sans appeler Buffer. Les cookies de session sont `Secure` derrière HTTPS.
+
+## D40 — Un compte Buffer par connexion, routé par le canal (10 octobre 2026)
+
+Une clé Buffer globale ne permet pas plusieurs clients à comptes indépendants. Chaque canal reçoit sa connexion d'origine (`channels.provider_connection_id`), posée une fois et immuable ; le routeur envoie chaque opération au compte du canal. Il n'existe aucun repli : sans route active, l'opération est refusée. La clé du serveur ne sert qu'à la connexion « historique » qui la déclare. Alternatives écartées : une colonne « clé » par client (secret en clair, pas d'historique) ; un fournisseur choisi par le client actuel du canal (un transfert de canal aurait changé de compte en silence).
+
+## D41 — Secrets chiffrés par le serveur, schéma privé (10 octobre 2026)
+
+Les clés sont chiffrées en AES-256-GCM avant d'atteindre la base, liées à leur connexion, stockées dans `private.provider_credentials` (hors API). La clé de chiffrement vit hors base. La RLS seule ne suffit pas : le serveur lit les secrets avec le secret d'automatisation, donc un vol de la base sans la clé de chiffrement ne livre aucune clé Buffer.
+
+## D42 — Panne et quota par compte (10 octobre 2026)
+
+Une erreur du fournisseur porte sa connexion. Elle n'interrompt que les opérations de ce compte pendant le passage, et un 429 ne met en pause que lui. La lecture d'un compte ne peut déclarer retirées que ses propres publications. Conséquence acceptée : la pause préventive de quota n'est plus appliquée lorsqu'il y a plusieurs comptes.

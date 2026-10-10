@@ -42,6 +42,10 @@
 - **Une tentative d'envoi Studio a une identité** (D35) : toute confirmation représente `push_attempt_id` ; une réponse d'une autre tentative devient un brouillon orphelin consigné, jamais appliquée.
 - **Profil pilote** : `CADENCE_PROFILE=pilot` impose notifications simulées et minimales, échéances ≥ 24 h à chaque programmation ; `/api/ready` (secret) ≠ `/api/health` (liveness).
 - **Contexte de test propre** : lancer les suites depuis une copie sans `.env*`, avec `CADENCE_NO_LOCAL_ENV=1` ; piles de test : `scripts/test-stack.mjs` (secrets générés, 127.0.0.1 seulement).
+- **Un compte Buffer par connexion, jamais de clé globale par défaut** (D40) : tout appel passe par le routeur (`src/server/publishing/router.ts`), qui envoie l'opération au compte du canal. Pas de route, connexion révoquée ou secret illisible → refus, jamais de repli. Un canal ne change jamais de connexion. Voir docs/CONNEXIONS_FOURNISSEUR.md.
+- **Les secrets des connexions sont chiffrés avant la base** (D41) : `src/server/credentials.ts`, clé `CADENCE_CREDENTIALS_KEY` hors base ; jamais renvoyés au navigateur, jamais journalisés, jamais réaffichés.
+- **Une erreur de fournisseur marquée d'une connexion ne vaut que pour elle** (D42) : elle ne bloque ni ne met en pause les autres comptes (`ProviderError.connectionId`).
+- **`npm run dev` n'utilise jamais le vrai Buffer** : `BUFFER_MODE=real` est ignoré en développement sans `CADENCE_ALLOW_REAL_BUFFER_IN_DEV=1`.
 - **Notifications : jamais d'envoi réel en développement.** Le mode par défaut est `simulate` ; ne pas renseigner `NOTIFICATIONS_MODE=webhook` dans `.env.local`.
 - Tout appel à Buffer passe par `PublishingProvider`. Les tests utilisent `MockProvider`, jamais l'API réelle.
 - Essais sur le vrai Buffer : uniquement sur le canal de test, posts datés loin dans le futur, supprimés ensuite, contrôle final « zéro post restant ». Jamais sur les pages Synology.
