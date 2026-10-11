@@ -94,9 +94,12 @@ describe("cas ajoutés par la stabilisation", () => {
     expect(inboxKeyOf({ ...base, ownership: "assigned" }, NOW)).toBeNull();
   });
 
-  it("un post approuvé mais trop proche pour être programmé est signalé en retard avant d'être dépassé", () => {
-    const soon = "2030-01-15T09:01:00.000Z";
-    expect(inboxKeyOf({ ...base, approvalStatus: "approved", dueAt: soon }, NOW)).toBe("late");
-    expect(inboxKeyOf({ ...base, approvalStatus: "approved" }, NOW)).toBeNull();
+  it("un brouillon approuvé est « prêt à publier » : il reste à le programmer dans Buffer ; date dépassée, il est en retard", () => {
+    expect(inboxKeyOf({ ...base, approvalStatus: "approved" }, NOW)).toBe("ready");
+    expect(inboxKeyOf({ ...base, approvalStatus: "approved", dueAt: null }, NOW)).toBe("ready");
+    expect(inboxKeyOf({ ...base, approvalStatus: "approved", dueAt: "2030-01-15T09:01:00.000Z" }, NOW)).toBe("ready");
+    expect(inboxKeyOf({ ...base, approvalStatus: "approved", dueAt: "2030-01-15T08:00:00.000Z" }, NOW)).toBe("late");
+    // Une fois programmé dans Buffer, il n'y a plus rien à faire.
+    expect(inboxKeyOf({ ...base, approvalStatus: "approved", bufferStatus: "scheduled" }, NOW)).toBeNull();
   });
 });

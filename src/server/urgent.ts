@@ -12,13 +12,11 @@ import type { ProviderError, PublishingProvider } from "@/server/publishing/prov
  *
  * Il ne dépend NI du poll général (30 minutes) NI de la réussite d'un instantané de Buffer : il lit d'abord l'état
  * local (une requête SQL, aucun appel Buffer), n'appelle Buffer que s'il y a du travail, et respecte tout refus de
- * quota. Il est déclenché (1) par la boucle du serveur (urgent-loop.ts, toutes les 30 s, et au démarrage), (2) par la
- * synchronisation générale, (3) par POST /api/automation/urgent (surveillance externe).
+ * quota. Il est déclenché (1) par la synchronisation générale, (2) par POST /api/automation/urgent (surveillance
+ * externe). Aucune boucle de fond ne tourne dans le serveur : Cadence ne fait que lire Buffer.
  *
- * Budget de reprise (validation locale, fournisseur disponible) : une tentative au plus tard 60 s après le démarrage
- * du serveur (premier passage à +5 s) ou après la reprise du traitement urgent (période de 30 s), hors durée réseau
- * (15 s par appel Buffer, 20 s par appel à la base). Le bail du traitement dure 120 s et est renouvelé avant chaque
- * appel Buffer : un détenteur dont le bail a expiré s'arrête.
+ * Le bail du traitement dure 120 s et est renouvelé avant chaque appel Buffer : un détenteur dont le bail a expiré
+ * s'arrête.
  */
 
 /** Durée du bail du traitement urgent (secondes). Renouvelé avant chaque appel Buffer. */

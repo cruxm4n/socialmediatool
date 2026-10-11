@@ -101,24 +101,6 @@ const channelUuid = async (key: string) => {
 const state = () => readState(FILE);
 const calls = (name: string) => state().calls[name] ?? 0;
 
-/** Contenu du Studio d'un canal de test, prêt à être envoyé. */
-async function newDraft(key: string, text: string, extra: Record<string, unknown> = {}) {
-  const { data, error } = await admin.rpc("studio_save_draft", {
-    p_id: null, p_expected_revision: null,
-    p_payload: { organizationId: colibri, title: `V3 ${key}`, dueAt: FUTURE, variants: [{ channelId: await channelUuid("studio"), text }], ...extra },
-  });
-  if (error) throw new Error(error.message);
-  return (data as { id: string; revision: number }).id;
-}
-
-const variantOf = async (draftId: string) => {
-  const { data } = await admin.from("studio_variants").select("*").eq("draft_id", draftId).is("removed_at", null).single();
-  return data as Record<string, unknown>;
-};
-
-let push: (draftId: string) => Promise<{ ok: boolean; created: number; updated: number; failed: number; unknown?: number; code?: string; message: string }>;
-let reconcile: (draftId: string) => Promise<{ ok: boolean; unknown?: number; code?: string; message: string }>;
-let confirmAbsent: (draftId: string, evidence: string) => Promise<{ ok: boolean; message: string }>;
 let runUrgent: () => Promise<{ ok: boolean; skipped?: string; compensated: number; compensationFailures: number; reconciled: number }>;
 let runUrgentCycle: typeof import("@/server/urgent").runUrgentCycle;
 
@@ -132,10 +114,6 @@ beforeAll(async () => {
   nordwind = orgs.data!.find((org) => org.slug === "nordwind-cycles")!.id;
   inesId = (await ines.auth.getUser()).data.user!.id;
 
-  const studio = await import("@/server/studio");
-  push = studio.pushDraftToBuffer;
-  reconcile = studio.reconcileDraftPush;
-  confirmAbsent = studio.confirmDraftAbsent;
   const urgent = await import("@/server/urgent");
   runUrgent = urgent.runUrgent;
   runUrgentCycle = urgent.runUrgentCycle;
@@ -269,146 +247,6 @@ describe("T01 — isolation entre clients, avec les vrais JWT (HTTP/PostgREST)",
     }
     const read = await admin.storage.from("media").download(path);
     expect(Buffer.from(await read.data!.arrayBuffer()).equals(png)).toBe(true);
-  });
-});
-
-describe("T02 — créations Buffer incertaines (faux Buffer persistant qui compte ses créations)", () => {
-  it("réponse perdue après la création : le renvoi (normal, double clic) ne crée rien de plus", async () => {
-    const draft = await newDraft("lost", "Texte perdu");
-    const s = state();
-    s.faults = ["createDraft:lose"];
-    writeState(FILE, s);
-    const first = await push(draft);
-    expect(first).toMatchObject({ ok: false, unknown: 1, code: "push_unknown" });
-    expect(calls("createDraft")).toBe(1);
-    expect((await variantOf(draft)).push_state).toBe("unknown");
-
-    const [again, double] = await Promise.all([push(draft), push(draft)]);
-    expect(again.code).toBe("push_unknown");
-    expect(double.code).toBe("push_unknown");
-    expect(calls("createDraft")).toBe(1);
-  });
-
-  it("deux envois simultanés d'un contenu neuf : une seule création", async () => {
-    const draft = await newDraft("parallel", "Texte parallèle");
-    const results = await Promise.all([push(draft), push(draft)]);
-    expect(calls("createDraft")).toBe(1);
-    expect(results.filter((result) => result.created === 1)).toHaveLength(1);
-  });
-
-  it("exception inattendue après l'effet (pas une erreur de fournisseur) : inconnu, pas un échec certain", async () => {
-    const draft = await newDraft("crash-inproc", "Texte exception");
-    const s = state();
-    s.faults = ["createDraft:crash"];
-    writeState(FILE, s);
-    const result = await push(draft);
-    expect(result).toMatchObject({ unknown: 1, code: "push_unknown" });
-    expect(calls("createDraft")).toBe(1);
-    expect((await push(draft)).code).toBe("push_unknown");
-    expect(calls("createDraft")).toBe(1);
-  });
-
-  it("processus ARRÊTÉ (SIGKILL) après l'effet et avant l'enregistrement : aucun renvoi, normal ou après vieillissement, ne crée ; la réconciliation adopte", async () => {
-    const draft = await newDraft("sigkill", "Texte du crash");
-    const worker = spawnSync(process.execPath, [resolve("tests/support/crash-worker.mjs"), JSON.stringify({
-      action: "studio-create-then-die", run: RUN, url: URL, anon: ANON, file: FILE, draftId: draft,
-      email: requireEnv("DEMO_ADMIN_EMAIL"), password: requireEnv("DEMO_ADMIN_PASSWORD"),
-    })], { encoding: "utf8" });
-    expect(worker.signal).toBe("SIGKILL");
-    expect(calls("createDraft")).toBe(1);
-    expect((await variantOf(draft)).push_state).toBe("pushing");
-
-    // Nouveau processus : l'envoi est « en cours » (moins de cinq minutes).
-    expect((await push(draft)).code).toBe("push_in_progress");
-    owner("update public.studio_variants set push_claimed_at = now() - interval '6 minutes' where push_state = 'pushing'");
-    // Plus de cinq minutes : abandonné = inconnu, jamais un échec certain, jamais forçable.
-    expect((await push(draft)).code).toBe("push_unknown");
-    expect(calls("createDraft")).toBe(1);
-
-    const found = await reconcile(draft);
-    expect(found, found.message).toMatchObject({ ok: true });
-    const adopted = await variantOf(draft);
-    expect(adopted.buffer_post_id).toMatch(new RegExp(`^mock-${RUN}-crash-`));
-    const sent = await push(draft);
-    expect(sent.created).toBe(0);
-    expect(calls("createDraft")).toBe(1);
-    expect(calls("updateDraft")).toBe(1);
-  });
-
-  it("ancien identifiant supprimé dans Buffer, recréation, réponse perdue : inconnu malgré l'ancien identifiant", async () => {
-    const draft = await newDraft("recreate", "Texte recréé");
-    const first = await push(draft);
-    expect(first, first.message).toMatchObject({ created: 1 });
-    const oldId = (await variantOf(draft)).buffer_post_id as string;
-    const s = state();
-    delete s.posts[oldId];
-    s.faults = ["createDraft:lose"];
-    writeState(FILE, s);
-    // Une nouvelle révision à envoyer (texte modifié).
-    const saved = await admin.rpc("studio_save_draft", {
-      p_id: draft, p_expected_revision: 1,
-      p_payload: { organizationId: colibri, title: "V3 recreate", dueAt: FUTURE, variants: [{ channelId: await channelUuid("studio"), text: "Texte recréé v2" }] },
-    });
-    expect(saved.error).toBeNull();
-    const second = await push(draft);
-    expect(second).toMatchObject({ unknown: 1, code: "push_unknown" });
-    expect(calls("createDraft")).toBe(2);
-    expect((await variantOf(draft)).push_state).toBe("unknown");
-    expect((await push(draft)).code).toBe("push_unknown");
-    expect(calls("createDraft")).toBe(2);
-  });
-
-  it("réconciliation prudente : un candidat « error » ou « sent » n'est pas adopté, une lecture incomplète ne prouve pas l'absence", async () => {
-    const draft = await newDraft("reconcile", "Texte à retrouver");
-    const s = state();
-    s.faults = ["createDraft:lose"];
-    writeState(FILE, s);
-    await push(draft);
-    // Le brouillon créé est passé en erreur dans Buffer.
-    const created = state();
-    const [id] = Object.keys(created.posts);
-    created.posts[id].status = "error";
-    writeState(FILE, created);
-    owner("update public.studio_variants set push_unknown_at = now() - interval '11 minutes' where push_state = 'unknown'");
-    const result = await reconcile(draft);
-    expect(result.ok).toBe(false);
-    expect((await variantOf(draft)).push_state).toBe("unknown");
-    expect((await variantOf(draft)).buffer_post_id).toBeNull();
-
-    // Rien de retrouvé + lecture incomplète : « absence non prouvée », toujours inconnu.
-    const empty = state();
-    empty.posts = {};
-    empty.snapshotComplete = false;
-    writeState(FILE, empty);
-    const absent = await reconcile(draft);
-    expect(absent).toMatchObject({ ok: false, code: "push_absent_unproven" });
-    expect((await variantOf(draft)).push_state).toBe("unknown");
-    expect(calls("createDraft")).toBe(1);
-  });
-
-  it("l'absence confirmée est une dérogation : preuve exigée, délai exigé, tentative consignée, puis un renvoi crée (risque assumé et tracé)", async () => {
-    const draft = await newDraft("absent", "Texte absent");
-    const s = state();
-    s.faults = ["createDraft:lose"];
-    writeState(FILE, s);
-    await push(draft);
-    const cleared = state();
-    cleared.posts = {};
-    writeState(FILE, cleared);
-
-    const tooSoon = await confirmAbsent(draft, "Brouillons du canal relus dans Buffer : aucun.");
-    expect(tooSoon.ok).toBe(false);
-    owner("update public.studio_variants set push_unknown_at = now() - interval '11 minutes' where push_state = 'unknown'");
-    const noProof = await confirmAbsent(draft, "ok");
-    expect(noProof.ok).toBe(false);
-    const confirmed = await confirmAbsent(draft, "Brouillons du canal relus dans Buffer à 14 h : aucun à ce texte.");
-    expect(confirmed.ok).toBe(true);
-    const attempt = (await variantOf(draft)).push_attempt as Record<string, unknown>;
-    expect(attempt).toMatchObject({ absenceEvidence: expect.stringContaining("relus dans Buffer"), attemptId: expect.any(String) });
-    expect(attempt.absenceConfirmedBy).toBeTruthy();
-    const resent = await push(draft);
-    expect(resent.created).toBe(1);
-    expect(calls("createDraft")).toBe(2);
   });
 });
 

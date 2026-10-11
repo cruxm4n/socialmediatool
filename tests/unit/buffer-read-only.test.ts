@@ -268,13 +268,10 @@ describe("code source : aucun chemin d'écriture vers Buffer", () => {
     expect(code).not.toMatch(/saveToDraft/);
   });
 
-  it("seuls le contrat, ses implémentations et l'ancien moteur du Studio nomment une opération d'écriture", () => {
+  it("seuls le contrat et ses implémentations nomment une opération d'écriture", () => {
     const allowed = new Set([
       "server/publishing/provider.ts", "server/publishing/buffer-provider.ts", "server/publishing/mock-provider.ts",
       "server/publishing/router.ts",
-      // Ancien moteur du Studio : importé par aucun écran ni aucune route (voir le test suivant) et refusé par le
-      // client du vrai Buffer. Conservé le temps de décider du sort de ses tables.
-      "server/studio.ts", "server/studio-actions.ts",
     ]);
     const offenders = sources
       .filter((file) => !allowed.has(file.path))
@@ -283,10 +280,10 @@ describe("code source : aucun chemin d'écriture vers Buffer", () => {
     expect(offenders).toEqual([]);
   });
 
-  it("l'ancien moteur du Studio n'est importé par aucun écran, aucune route ni aucun autre module", () => {
+  it("l'ancien moteur du Studio n'existe plus : ni module, ni import, ni page", () => {
+    expect(sources.filter((file) => /(^|\/)studio/.test(file.path)).map((file) => file.path)).toEqual([]);
     const importers = sources
-      .filter((file) => !["server/studio.ts", "server/studio-actions.ts"].includes(file.path))
-      .filter((file) => /from\s+["']@\/server\/studio(-actions)?["']|import\(\s*["']@\/server\/studio(-actions)?["']\s*\)/.test(file.text))
+      .filter((file) => /from\s+["']@\/(server|lib\/domain)\/studio(-actions)?["']|import\(\s*["']@\/server\/studio(-actions)?["']\s*\)/.test(file.text))
       .map((file) => file.path);
     expect(importers).toEqual([]);
   });
@@ -303,9 +300,10 @@ describe("code source : aucun chemin d'écriture vers Buffer", () => {
   });
 
   it("les validations, la synchronisation et le démarrage n'importent aucune programmation", () => {
-    for (const path of ["server/actions.ts", "server/sync.ts", "instrumentation.ts"]) {
-      const text = sources.find((file) => file.path === path)!.text;
-      expect(text, path).not.toMatch(/scheduleApprovedPosts|compensatePendingUnschedules|startUrgentLoop/);
+    for (const file of sources) {
+      expect(file.text, file.path).not.toMatch(/scheduleApprovedPosts|compensatePendingUnschedules|startUrgentLoop/);
     }
+    // Aucune tâche de fond au démarrage : le serveur ne lit Buffer que sur demande ou par le planificateur.
+    expect(sources.some((file) => file.path === "instrumentation.ts")).toBe(false);
   });
 });

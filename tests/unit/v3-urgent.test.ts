@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProviderError, type ProviderPost, type PublishingProvider } from "@/server/publishing/provider";
 
@@ -51,7 +51,6 @@ vi.mock("@/server/notifications", () => ({ dispatchNotifications }));
 
 const { runUrgent, runUrgentCycle } = await import("@/server/urgent");
 const { runSync } = await import("@/server/sync");
-const { startUrgentLoop } = await import("@/server/urgent-loop");
 const { STILL_SCHEDULED } = await import("@/server/compensation");
 
 const DUE = "2030-01-15T09:00:00.000Z";
@@ -278,76 +277,6 @@ describe("réservations abandonnées (crash entre l'acceptation par Buffer et la
     expect(of("complete_scheduling")).toEqual([]);
     expect(of("mark_unschedule_needed")).toEqual([]);
     expect(result.ok).toBe(false);
-  });
-});
-
-describe("boucle de réveil, horloge contrôlée", () => {
-  beforeEach(() => vi.useFakeTimers());
-  afterEach(() => vi.useRealTimers());
-
-  it("premier passage 5 s après le démarrage, puis toutes les 30 s ; une erreur n'arrête rien", async () => {
-    const work = vi.fn().mockRejectedValueOnce(new Error("panne")).mockResolvedValue(null);
-    const onError = vi.fn();
-    const loop = startUrgentLoop(work, { onError });
-    await vi.advanceTimersByTimeAsync(4_999);
-    expect(work).not.toHaveBeenCalled();
-    await vi.advanceTimersByTimeAsync(1);
-    expect(work).toHaveBeenCalledTimes(1);
-    expect(onError).toHaveBeenCalledTimes(1);
-    await vi.advanceTimersByTimeAsync(30_000);
-    await vi.advanceTimersByTimeAsync(30_000);
-    expect(work).toHaveBeenCalledTimes(3);
-    loop.stop();
-    await vi.advanceTimersByTimeAsync(120_000);
-    expect(work).toHaveBeenCalledTimes(3);
-  });
-
-  it("jamais deux passages en même temps", async () => {
-    let active = 0;
-    let max = 0;
-    const work = vi.fn(async () => {
-      active += 1;
-      max = Math.max(max, active);
-      await new Promise((resolve) => setTimeout(resolve, 70_000));
-      active -= 1;
-    });
-    const loop = startUrgentLoop(work);
-    await vi.advanceTimersByTimeAsync(400_000);
-    loop.stop();
-    expect(max).toBe(1);
-  });
-
-  it("chronologie : une annulation apparue à T+10 s est constatée avant T+60 s, très en deçà du poll de 30 minutes et d'une échéance à T+11 min — lecture seule", async () => {
-    summary = { pending_unschedule: 0, orphan_claims: 0 };
-    let checkedAtMs: number | null = null;
-    const start = Date.now();
-    provider.getPost.mockImplementation(async () => {
-      checkedAtMs = Date.now() - start;
-      return live({ status: "scheduled" });
-    });
-    const loop = startUrgentLoop(() => runUrgent());
-    // Invalidation locale à T+10 s (par exemple un accord retiré) ; le serveur redémarre à T+0 et son poll est à T+30 min.
-    await vi.advanceTimersByTimeAsync(10_000);
-    summary = { pending_unschedule: 1, orphan_claims: 0 };
-    toUnschedule = [pending()];
-    await vi.advanceTimersByTimeAsync(60_000);
-    loop.stop();
-    expect(checkedAtMs).not.toBeNull();
-    expect(checkedAtMs!).toBeLessThanOrEqual(10_000 + 60_000);
-    expect(checkedAtMs!).toBeLessThan(11 * 60_000);
-    expect(provider.fetchSnapshot).not.toHaveBeenCalled();
-    expect(provider.unschedulePost).not.toHaveBeenCalled();
-  });
-});
-
-describe("profil pilote : échéance d'au moins 24 h, vérifiée à chaque programmation (mission V3)", () => {
-  it("la règle pure : plus de 24 h → acceptée ; moins → refusée ; sans date → refusée", async () => {
-    const { pilotLeadSatisfied, PILOT_MIN_LEAD_MS } = await import("@/lib/domain/schedule-margins");
-    const now = Date.parse("2030-01-01T00:00:00Z");
-    expect(pilotLeadSatisfied("2030-01-02T00:00:01Z", now)).toBe(true);
-    expect(pilotLeadSatisfied(new Date(now + PILOT_MIN_LEAD_MS).toISOString(), now)).toBe(true);
-    expect(pilotLeadSatisfied("2030-01-01T23:59:59Z", now)).toBe(false);
-    expect(pilotLeadSatisfied(null, now)).toBe(false);
   });
 });
 

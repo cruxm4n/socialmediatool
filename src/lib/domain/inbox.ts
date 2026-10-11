@@ -1,4 +1,3 @@
-import { SCHEDULING_MIN_LEAD_MS } from "@/lib/domain/schedule-margins";
 import type { Tone } from "@/lib/domain/status";
 import type { Post } from "@/lib/types";
 
@@ -7,7 +6,7 @@ import type { Post } from "@/lib/types";
  * Règles pures. Une publication n'apparaît que dans une catégorie, la plus grave.
  */
 
-export const INBOX_KEYS = ["errors", "unvalidated", "late", "attribution", "changes", "pending"] as const;
+export const INBOX_KEYS = ["errors", "unvalidated", "late", "attribution", "ready", "changes", "pending"] as const;
 export type InboxKey = (typeof INBOX_KEYS)[number];
 
 export const INBOX_META: Record<InboxKey, { label: string; hint: string; tone: Tone }> = {
@@ -15,6 +14,7 @@ export const INBOX_META: Record<InboxKey, { label: string; hint: string; tone: T
   unvalidated: { label: "Programmées sans validation", hint: "Programmées à la main dans Buffer, sans accord du client.", tone: "red" },
   late: { label: "En retard", hint: "La date prévue est passée et rien n'a été publié.", tone: "amber" },
   attribution: { label: "À attribuer à un client", hint: "Importées depuis un canal transféré ou détaché : visibles de vous seul tant qu'elles ne sont pas attribuées.", tone: "amber" },
+  ready: { label: "Prêtes à publier", hint: "Validées par le client : il reste à les programmer dans Buffer.", tone: "green" },
   changes: { label: "Modifications demandées", hint: "Le client attend une nouvelle version.", tone: "rose" },
   pending: { label: "Validations en attente", hint: "Soumises au client, sans réponse pour l'instant.", tone: "amber" },
 };
@@ -23,8 +23,6 @@ type InboxPost = Pick<Post, "id" | "bufferStatus" | "approvalStatus" | "schedule
 
 /** Une publication programmée n'est « en retard » qu'après ce délai : Buffer publie rarement à la seconde. */
 const SENDING_GRACE_MS = 15 * 60_000;
-/** Une validation approuvée doit être programmable : en dessous de ce délai la réservation la refuse. */
-const SCHEDULING_LEAD_MS = SCHEDULING_MIN_LEAD_MS;
 /** Une validation en attente devient urgente quand la date prévue approche. */
 const URGENT_WITHIN_MS = 48 * 60 * 60_000;
 
@@ -37,12 +35,12 @@ export function inboxKeyOf(post: InboxPost, now: string): InboxKey | null {
   if (post.bufferStatus === "error" || post.scheduleState === "failed") return "errors";
   if (programmed && post.approvalStatus !== "approved") return "unvalidated";
   if (programmed) return due !== null && due + SENDING_GRACE_MS < current ? "late" : null;
-  // Approuvé mais plus programmable (échéance trop proche) : il ne partira pas sans intervention.
-  if (post.approvalStatus === "approved" && due !== null && due <= current + SCHEDULING_LEAD_MS) return "late";
   // Import dont l'appartenance est ambiguë : l'administrateur doit l'attribuer.
   if (post.ownership === "ambiguous") return "attribution";
-  // Brouillon dans le circuit de validation dont la date est passée : il ne pourra plus être programmé tel quel.
+  // Brouillon dans le circuit de validation dont la date est passée : il ne pourra plus être publié tel quel.
   if (post.approvalStatus !== "none" && due !== null && due <= current) return "late";
+  // Accord du client obtenu : il reste à programmer la publication dans Buffer.
+  if (post.approvalStatus === "approved") return "ready";
   if (post.approvalStatus === "changes_requested") return "changes";
   if (post.approvalStatus === "pending") return "pending";
   return null;

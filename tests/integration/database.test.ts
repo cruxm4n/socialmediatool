@@ -228,10 +228,11 @@ describe("décision du client", () => {
 });
 
 describe("garde-fous ajoutés après audit", () => {
-  it("refuse d'approuver une publication dont la date est passée ou absente, mais accepte une demande de modifications", async () => {
+  it("refuse d'approuver une publication dont la date est passée (sans date : acceptée depuis 0014), mais accepte une demande de modifications", async () => {
     await sync([{ key: "date-passee", dueAt: "2020-01-01T09:00:00.000Z" }, { key: "date-absente", dueAt: null }]);
     expect((await decide(ines, "date-passee", "approved")).error?.message).toBe("date_invalid");
-    expect((await decide(ines, "date-absente", "approved")).error?.message).toBe("date_invalid");
+    // 0014 : un brouillon sans date est approuvable (la date sera fixée par l'agence dans Buffer).
+    expect((await decide(ines, "date-absente", "approved")).error).toBeNull();
     expect((await row("date-passee")).approval_status).toBe("pending");
     expect((await decide(ines, "date-passee", "changes_requested", "Merci de reprogrammer")).error).toBeNull();
   });
@@ -476,9 +477,9 @@ describe("stabilisation (0009)", () => {
     expect(await row("tok-1")).toMatchObject({ buffer_status: "sent", schedule_state: "idle" });
   });
 
-  it("approbation : une date trop proche est refusée avec un code explicite", async () => {
+  it("approbation : une date proche mais à venir est acceptée depuis 0014", async () => {
     await sync([{ key: "proche", dueAt: new Date(Date.now() + 5 * 60_000).toISOString() }]);
-    expect((await decide(ines, "proche", "approved")).error?.message).toBe("date_too_close");
+    expect((await decide(ines, "proche", "approved")).error).toBeNull();
   });
 
   it("notifications : un membre retiré avant la remise ne reçoit rien, puis l'accès rétabli n'envoie pas l'ancien message", async () => {

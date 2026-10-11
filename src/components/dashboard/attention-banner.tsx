@@ -19,7 +19,7 @@ export function AttentionBanner({ groups }: { groups: InboxGroup<{ id: string }>
           <span id="attention-title" className="font-semibold">
             Rien à traiter.
           </span>{" "}
-          <span className="text-muted-foreground">Aucune erreur, aucun retard, aucune validation en attente.</span>
+          <span className="text-muted-foreground">Aucune erreur, aucun retard, aucune validation en attente, rien à programmer.</span>
         </p>
       </section>
     );

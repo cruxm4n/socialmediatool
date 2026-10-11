@@ -16,7 +16,7 @@ import { emptyState, FileProvider, readState, writeState } from "../support/file
 
 /*
  * Multi-comptes sur PostgreSQL NATIF (pile isolée de scripts/test-stack.mjs) : HTTP/PostgREST réel, vrais JWT
- * (administrateur, client A, client B, anonyme), vrais services `studio`, `sync`, `urgent` et vrai routeur de
+ * (administrateur, client A, client B, anonyme), vrais services `sync`, `urgent` et vrai routeur de
  * connexions. Seuls les fournisseurs sont remplacés, par deux faux comptes PERSISTANTS et distincts (un fichier
  * d'état chacun, qui compte chaque appel). Aucun appel à Buffer, aucun e-mail, aucune base d'application.
  *
@@ -88,7 +88,6 @@ const router = (scheduled = false) => new ConnectionRouter({
 vi.mock("@/server/supabase/clients", () => ({ createSessionClient: async () => admin, getAutomationClient: () => automation }));
 vi.mock("@/server/publishing", () => ({ getProvider: (options: { scheduled?: boolean } = {}) => router(options.scheduled === true), emissionProblem: async () => null }));
 vi.mock("@/server/notifications", () => ({ dispatchNotifications: async () => ({}) }));
-const { pushDraftToBuffer, reconcileDraftPush } = await import("@/server/studio");
 const { runSync } = await import("@/server/sync");
 const { runUrgentCycle } = await import("@/server/urgent");
 
@@ -101,11 +100,6 @@ async function snapshot(posts: ProviderPost[] = []) {
     { id: chB, service: "linkedin", name: "B indépendant", organizationSlug: "nordwind-cycles", connectionId: B },
   ];
   return auto("sync_buffer_posts", { p_payload: { mode: "mock", complete: false, scopeConnectionIds: [A, B], channels, posts: posts.map((p) => ({ ...p, connectionId: p.channelId === chA ? A : B })) } });
-}
-async function draft(which: "A" | "B") {
-  const { data } = await admin.from("channels").select("id").eq("buffer_channel_id", which === "A" ? chA : chB).single();
-  const result = await rpc(admin, "studio_save_draft", { p_id: null, p_expected_revision: null, p_payload: { organizationId: which === "A" ? orgA : orgB, title: "Audit indépendant", dueAt: DUE, variants: [{ channelId: data!.id, text: "Texte indépendant" }] } });
-  return result.id as string;
 }
 async function row(id: string) {
   const { data, error } = await admin.from("posts").select("*").eq("buffer_post_id", id).single();
@@ -194,45 +188,6 @@ describe("contrôle indépendant multi-comptes — PostgreSQL natif et deux faux
       ["server_record_provider_verification", { p_actor: adminId, p_connection_id: A, p_ok: true, p_external_account_id: "x" }],
     ];
     for (const [name, args] of calls) expect((await automation.rpc(name, { p_secret: "incorrect", ...args })).error).not.toBeNull();
-  });
-
-  it("N03 — envois simultanés A/B et deux workers sur A : une seule création par contenu", async () => {
-    const da = await draft("A"), db = await draft("B");
-    await Promise.all([pushDraftToBuffer(da), pushDraftToBuffer(da), pushDraftToBuffer(db)]);
-    expect(providerA.calls("createDraft")).toBe(1);
-    expect(providerB.calls("createDraft")).toBe(1);
-    expect(Object.values(readState(fileA).posts).every((p) => p.channelId === chA)).toBe(true);
-    expect(Object.values(readState(fileB).posts).every((p) => p.channelId === chB)).toBe(true);
-  });
-
-  it("N04 — réponse de création A perdue : inconnu durable, reprise sans doublon, B indépendant", async () => {
-    const da = await draft("A"), db = await draft("B");
-    const state = readState(fileA);
-    state.faults.push("createDraft:lose");
-    writeState(fileA, state);
-    expect(await pushDraftToBuffer(da)).toMatchObject({ unknown: 1 });
-    await pushDraftToBuffer(da);
-    expect(providerA.calls("createDraft")).toBe(1);
-    await pushDraftToBuffer(db);
-    expect(providerB.calls("createDraft")).toBe(1);
-    await reconcileDraftPush(da);
-    await pushDraftToBuffer(da);
-    expect(providerA.calls("createDraft")).toBe(1);
-    expect(providerB.calls("createDraft")).toBe(1);
-  });
-
-  it("N05 — SIGKILL après création A, nouveau processus fournisseur et rapprochement : aucun doublon ni effet A sur B", async () => {
-    const da = await draft("A"), db = await draft("B");
-    const result = spawnSync(process.execPath, [resolve("tests/support/crash-worker.mjs"), JSON.stringify({ action: "studio-create-then-die", url: URL, anon: ANON, secret: SECRET, email: requireEnv("DEMO_ADMIN_EMAIL"), password: requireEnv("DEMO_ADMIN_PASSWORD"), draftId: da, file: fileA, run: A })], { stdio: "pipe" });
-    expect(result.signal).toBe("SIGKILL");
-    expect(providerA.calls("createDraft")).toBe(1);
-    owner(`update public.studio_variants set push_claimed_at=now()-interval '6 minutes' where draft_id='${da}'`);
-    providerA = new FileProvider(fileA, `mock-${A}`);
-    await pushDraftToBuffer(db);
-    await reconcileDraftPush(da);
-    await pushDraftToBuffer(da);
-    expect(providerA.calls("createDraft")).toBe(1);
-    expect(providerB.calls("createDraft")).toBe(1);
   });
 
   it("N06 — deux workers de synchronisation sur deux comptes, publications programmées à la main dans Buffer : Cadence n'écrit rien, chaque constat reste dans son compte — lecture seule", async () => {
@@ -508,9 +463,6 @@ describe("variantes ajoutées après correction (N19 et suivants)", () => {
     await runSync("independent-b-during-revocation");
     expect(await row(pb.id)).toMatchObject({ buffer_status: "scheduled", schedule_state: "idle" });
     expect(writeCalls(providerB)).toBe(0);
-    const da = await draft("A");
-    await pushDraftToBuffer(da);
-    expect(providerA.calls("createDraft")).toBe(0);
     await expect(router().createDraft(content(chA))).rejects.toThrow(/Révocation demandée/);
 
     // Constatation de l'effet engagé : l'agence repasse la publication en brouillon à la main ; le constat part par le compte A, qui a toujours sa clé.

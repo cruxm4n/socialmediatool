@@ -266,11 +266,6 @@ cadence.test:${caddyPort} {
     check("cookies de session : SameSite défini, chemin racine, domaine limité à l'application", auth.every((cookie) => ["Lax", "Strict"].includes(cookie.sameSite) && cookie.path === "/" && cookie.domain.replace(/^\./, "") === "cadence.test"),
       JSON.stringify(auth.map((cookie) => ({ n: cookie.name.slice(0, 12), s: cookie.secure, h: cookie.httpOnly, ss: cookie.sameSite }))));
     check("cookies de session : attribut Secure (transmis seulement en HTTPS)", auth.every((cookie) => cookie.secure === true));
-    await admin.goto("/admin/studio/medias");
-    await admin.getByRole("button", { name: "Maison Colibri" }).click();
-    await admin.locator('img[src*="/storage/v1/object/sign/"]').first().waitFor({ timeout: 20_000 }).catch(() => undefined);
-    const mediaCount = await admin.locator('img[src*="/storage/v1/object/sign/"]').count();
-    check("administrateur : bibliothèque de médias affichée avec ses images signées", mediaCount > 0 && admin.url().includes("/admin/studio"), `${mediaCount} image(s)`);
 
     // Deux clients
     const pages = {};

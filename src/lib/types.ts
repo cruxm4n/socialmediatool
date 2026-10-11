@@ -132,6 +132,7 @@ export type PostEventType =
   | "changes_requested"
   | "commented"
   | "approval_invalidated"
+  | "date_set"
   | "unscheduled_in_buffer"
   | "scheduled"
   | "schedule_failed"
@@ -176,56 +177,6 @@ export interface NotificationEntry {
   error: string | null;
   createdAt: string;
   sentAt: string | null;
-}
-
-/** Média de la bibliothèque d'un client (Content Studio). */
-export interface MediaAsset {
-  id: string;
-  organizationId: string;
-  fileName: string;
-  kind: "image" | "video";
-  mimeType: string;
-  sizeBytes: number;
-  width: number | null;
-  height: number | null;
-  durationMs: number | null;
-  createdAt: string;
-  archivedAt: string | null;
-  /** Adresse temporaire d'affichage. null : le fichier n'a pas pu être signé. */
-  url: string | null;
-}
-
-/** « unknown » : Buffer n'a pas répondu à la création ; le brouillon existe peut-être (réconciliation requise). */
-export type PushState = "idle" | "pushing" | "pushed" | "failed" | "unknown";
-
-/** Texte d'un contenu pour un canal. */
-export interface StudioVariant {
-  id: string;
-  channelId: string;
-  text: string;
-  /** Brouillon correspondant dans Buffer, une fois le contenu envoyé en validation. */
-  bufferPostId: string | null;
-  pushState: PushState;
-  pushError: string | null;
-  pushedRevision: number | null;
-  /** Début d'un résultat Buffer incertain (état « unknown »). */
-  pushUnknownAt?: string | null;
-}
-
-/** Contenu préparé dans le Studio : un client, une date, des médias, un texte par canal. */
-export interface StudioDraft {
-  id: string;
-  organizationId: string;
-  title: string;
-  dueAt: string | null;
-  hashtags: string[];
-  mediaIds: string[];
-  status: "draft" | "submitted" | "archived";
-  revision: number;
-  createdAt: string;
-  updatedAt: string;
-  submittedAt: string | null;
-  variants: StudioVariant[];
 }
 
 export interface PostVersion {
