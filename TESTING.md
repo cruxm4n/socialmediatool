@@ -291,7 +291,7 @@ Six tests périmés ou fragiles ont aussi été corrigés (sélecteurs devenus a
 | Quoi | Commande | Ce que ça prouve |
 | --- | --- | --- |
 | Règles, service, outils (mémoire) | `npm test` | dont `tests/unit/v3-*.test.ts`, `lock-test-ports`, `schema-tools`, `secure-cookies`, `tests/sql/v3-correction.test.ts` |
-| Contre-tests indépendants (gelés, 25 scénarios) | `npx vitest run tests/sql/audit-independent*.test.ts tests/unit/audit-independent*.test.ts` | empreintes SHA-256 inchangées (`sha256sum` avant/après) |
+| Contre-tests indépendants (assertions gelées, 25 scénarios) | `npx vitest run tests/sql/audit-independent*.test.ts tests/unit/audit-independent*.test.ts` | manifeste SHA-256 courant conforme ; pilote Studio adapté après `54cda08`, scénarios/assertions inchangés |
 | Intégration native, vrais JWT, faux Buffer persistant, processus SIGKILL | `node scripts/test-stack.mjs up --fixture` puis `CADENCE_NO_LOCAL_ENV=1 npm run test:db` | `tests/integration/v3-correction.test.ts` : isolation HTTP, transferts concurrents, créations incertaines, reprise urgente, deux workers, 429 |
 | Migrations natives | `node scripts/migration-lab.mjs --template-prefix <pile>` | montées, fixture 307 publications, prérequis, atomicité, rejeu |
 | Sauvegarde / restauration | `backup.mjs`, `restore-check.mjs`, `restore-drill.mjs`, `restore-negatives.mjs` | voir `docs/SAUVEGARDE.md` |

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProviderError, type DraftContent, type ProviderPost } from "@/server/publishing/provider";
 
@@ -57,7 +57,14 @@ function table(name: string) {
   return query;
 }
 
+let connectionStatus: "active" | "revoking" | "revoked" | "missing" = "active";
 vi.mock("@/server/supabase/clients", () => ({
+  // Le vrai contrôle emissionProblem lit des routes et états cohérents, sans base externe.
+  getAutomationClient: () => ({ rpc: async (name: string) => {
+    if (name === "provider_routes") return { data: { channels: connectionStatus === "missing" ? {} : { "buf-li": "unit-connection", "buf-ig": "unit-connection" } }, error: null };
+    if (name === "provider_connection_states") return { data: { "unit-connection": { status: connectionStatus } }, error: null };
+    throw new Error(`RPC d'automatisation inattendue : ${name}`);
+  } }),
   createSessionClient: async () => ({
     from: table,
     rpc: async (name: string, params: Record<string, unknown>) => {
@@ -107,7 +114,10 @@ const provider = {
   fetchSnapshot: vi.fn(),
   findDraftCandidates: vi.fn(),
 };
-vi.mock("@/server/publishing", () => ({ getProvider: () => provider }));
+vi.mock("@/server/publishing", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/server/publishing")>(),
+  getProvider: () => provider,
+}));
 
 const { confirmDraftAbsent, pushDraftToBuffer, reconcileDraftPush } = await import("@/server/studio");
 
@@ -123,6 +133,8 @@ const claimOf = (channel: "li" | "ig", text: string, bufferPostId: string | null
 });
 
 beforeEach(() => {
+  vi.stubEnv("AUTOMATION_SECRET", "secret-studio-unit-test");
+  connectionStatus = "active";
   rpcCalls.length = 0;
   signedFor.length = 0;
   claimError = null;
@@ -140,6 +152,18 @@ beforeEach(() => {
   provider.getPost.mockResolvedValue(null);
   provider.createDraft.mockImplementation(async (content: DraftContent) => live({ id: `nouveau-${content.channelId}`, channelId: content.channelId }));
   provider.updateDraft.mockImplementation(async (id: string) => live({ id }));
+});
+
+afterEach(() => vi.unstubAllEnvs());
+
+describe("contrôle réel des connexions avant envoi", () => {
+  it.each(["revoking", "revoked", "missing"] as const)("refuse une connexion %s avant toute réservation ou création", async (status) => {
+    connectionStatus = status;
+    expect(await pushDraftToBuffer(DRAFT)).toMatchObject({ ok: false, code: "connection_unavailable" });
+    expect(rpcCalls.some((call) => call.name === "studio_claim_push")).toBe(false);
+    expect(provider.createDraft).not.toHaveBeenCalled();
+    expect(provider.updateDraft).not.toHaveBeenCalled();
+  });
 });
 
 describe("envoi en validation", () => {

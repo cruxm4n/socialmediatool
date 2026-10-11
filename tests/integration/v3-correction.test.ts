@@ -43,7 +43,11 @@ vi.mock("@/server/supabase/clients", () => ({
   createSessionClient: async () => admin,
   getAutomationClient: () => automation,
 }));
-vi.mock("@/server/publishing", () => ({ getProvider: () => provider }));
+// Seul le fournisseur externe est remplacé : emissionProblem utilise les vraies RPC de la pile isolée.
+vi.mock("@/server/publishing", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/server/publishing")>(),
+  getProvider: () => provider,
+}));
 
 const client = (): SupabaseClient =>
   createClient(URL, ANON, { auth: { persistSession: false, autoRefreshToken: false }, realtime: { transport: WebSocket as unknown as typeof globalThis.WebSocket } });

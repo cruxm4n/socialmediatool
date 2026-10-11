@@ -124,7 +124,7 @@ describe("séparation des données réelles et simulées (0003)", () => {
   it("un post simulé n'est jamais réservé en mode réel, ni par l'ancienne fonction", async () => {
     db = await LocalDb.create();
     const { ines } = await db.seed();
-    await db.sync([{ id: "mock-a" }], { mode: "mock" });
+    await db.sync([{ id: "mock-a" }], { mode: "mock", channelPrefix: "mock-" });
     await db.sync([{ id: "reel-a" }]);
     await db.decide(ines, "mock-a", "approved");
     await db.decide(ines, "reel-a", "approved");

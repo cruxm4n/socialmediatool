@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { ProviderError, type DraftContent, type ProviderPost } from "@/server/publishing/provider";
 
@@ -47,6 +47,12 @@ function table(name: string) {
 }
 
 vi.mock("@/server/supabase/clients", () => ({
+  // Fixture de connexion active ; emissionProblem et les assertions restent réels.
+  getAutomationClient: () => ({ rpc: async (name: string) => {
+    if (name === "provider_routes") return { data: { channels: { "buf-li": "audit-connection", "buf-ig": "audit-connection" } }, error: null };
+    if (name === "provider_connection_states") return { data: { "audit-connection": { status: "active" } }, error: null };
+    throw new Error(`RPC d'automatisation inattendue : ${name}`);
+  } }),
   createSessionClient: async () => ({
     from: table,
     rpc: async (name: string, params: Record<string, unknown>) => {
@@ -89,7 +95,10 @@ const provider = {
   fetchSnapshot: vi.fn(),
   findDraftCandidates: vi.fn(),
 };
-vi.mock("@/server/publishing", () => ({ getProvider: () => provider }));
+vi.mock("@/server/publishing", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/server/publishing")>(),
+  getProvider: () => provider,
+}));
 
 const { pushDraftToBuffer, reconcileDraftPush } = await import("@/server/studio");
 
@@ -100,6 +109,7 @@ const claimOf = (channel: "li" | "ig", text: string, bufferPostId: string | null
 });
 
 beforeEach(() => {
+  vi.stubEnv("AUTOMATION_SECRET", "secret-studio-audit-test");
   rpcCalls.length = 0;
   signedFor.length = 0;
   claimError = null;
@@ -115,6 +125,8 @@ beforeEach(() => {
   provider.createDraft.mockImplementation(async (content: DraftContent) => live({ id: `nouveau-${content.channelId}`, channelId: content.channelId }));
   provider.updateDraft.mockImplementation(async (id: string) => live({ id }));
 });
+
+afterEach(() => vi.unstubAllEnvs());
 
 describe("Contre-audit indépendant Studio",()=>{
  it("une recréation avec ancienne identité supprimée doit rester incertaine après réponse perdue",async()=>{

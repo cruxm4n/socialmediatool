@@ -47,7 +47,7 @@ CADENCE_NO_LOCAL_ENV=1 ISOLATED_BUILD=1 BUFFER_MODE=mock CADENCE_ALLOW_SIMULATED
 npm run test:ui
 ```
 
-Les suites d'intégration et E2E écrivent : utiliser exclusivement des identifiants `TEST_*` d'une pile indépendante, sans clé Buffer réelle. Les commandes et limites sont dans [PROJECT_STATUS.md](PROJECT_STATUS.md) et [TESTING.md](TESTING.md). Les suites complètes ont des échecs hérités ; ne pas interpréter le build réussi comme une certification du produit. Le script historique `test-stack.mjs down` supprime des volumes : **ne pas l'utiliser dans le cadre de cette récupération** ; les piles créées pour la mission seront simplement arrêtées et conservées.
+Les suites d'intégration et E2E écrivent : utiliser exclusivement des identifiants `TEST_*` d'une pile indépendante, sans clé Buffer réelle. Les commandes et limites sont dans [PROJECT_STATUS.md](PROJECT_STATUS.md) et [TESTING.md](TESTING.md). Les suites locales passent après adaptation des mocks et fixtures hérités (670 unitaires/SQL, 83 intégrations, 62 E2E) ; ces succès avec Buffer simulé ne certifient pas l’intégration réelle ni la mise en production. Le script historique `test-stack.mjs down` supprime des volumes : **ne pas l'utiliser dans le cadre de cette récupération** ; les piles créées pour la mission seront simplement arrêtées et conservées.
 
 ## Documentation de référence
 

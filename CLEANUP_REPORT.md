@@ -338,3 +338,22 @@ Les logs/JSON et runners privés sont sous `/home/ubuntu/cadence-recovery-backup
 **GO pour utiliser le dépôt canonique consolidé ; NOT READY pour la production.** Aucun invariant critique n’est déclaré validé par simple simulation. Le flux manuel reste partiellement couplé à la programmation, les suites héritées ne sont pas vertes, l’intégration réelle et la restauration actuelle ne sont pas qualifiées. Il n’y a pas de nouvelle fonctionnalité ni de régression applicative introduite : l’arbre src/tests/migrations/lockfile est identique à `c0af3a0`.
 
 Prochaines actions : (1) réparer les pilotes/mocks et fixtures sans affaiblir les assertions ; (2) terminer la validation locale sans écriture Buffer et la règle des dates ; (3) qualifier les lectures réelles des deux comptes dans un cadre autorisé ; (4) préparer la compatibilité schéma/image et une restauration isolée ; (5) décider séparément de l’archivage des deux dossiers sans usage actif, puis seulement des dossiers encore dépendants.
+
+## Correction des 35 échecs et préparation de publication
+
+Correction minimale depuis `54cda08`, sur `chore/cadence-consolidation-2026-10-11`. Aucun fichier src, migration, script d’exploitation ou dépendance modifié. Aucun Studio réintroduit.
+
+| Cause racine | Échecs avant correction | Correction |
+| --- | ---: | --- |
+| Mocks publishing remplaçant aussi le nouvel export emissionProblem | 23 unitaires + 7 natifs | Mocks partiels conservant le vrai contrôle ; routes et états actifs explicites dans les fixtures unitaires ; vraies RPC dans l’intégration |
+| Mock de configuration sync incomplet | 2 unitaires | Conservation des exports du vrai module, état de barrière explicite dans le pilote ; nouveau test de refus avant réservation |
+| Même canal utilisé en réel et simulé | 2 SQL | Identités de canaux préfixées explicitement dans les deux fixtures mixtes ; identités historiques conservées dans le test de montée de version ; aucune modification du garde-fou channel_connection_mode_mismatch |
+| Ancien message de clé globale attendu | 1 unitaire | Vérification exacte du message par compte, du type ProviderError, du kind api, de l’outcome failed et de l’absence de retry |
+
+Le premier passage complet a donné 669/670 : le préfixage automatique ajoutait quatre canaux à une fixture de montée de version. Il a été remplacé par une option explicite dans les seules deux fixtures mixtes. L’assertion sur les cinq canaux historiques reste intacte, puis les tests ciblés et l’ensemble U/SQL sont relancés. Aucun test natif/E2E ne dépend de LocalDb. Aucune assertion de sécurité supprimée ou assouplie, aucun test ignoré. Quatre scénarios unitaires ajoutés. Le bloc complet des deux contre-tests Studio indépendants est byte-identique à celui de `54cda08`. Une seule empreinte de leur manifeste change, car la fixture et les imports sont adaptés pour exécuter le vrai contrôle de connexion. L’ancien fichier reste récupérable dans Git et dans `before-fixes.bundle`.
+
+Résultats finaux : ciblés 151/151 et V3 19/19, unitaires 460/460, SQL/RLS 210/210, intégration 83/83 dont multi-comptes 26/26, E2E 62/62 ; lint, TypeScript, build et calendrier navigateur réussis. Les résultats antérieurs en échec restent historiques. Les nouvelles preuves sont sous `/home/ubuntu/cadence-recovery-backups/test-fixes-20261011T105608Z/validation`.
+
+Sauvegarde avant correction : `/home/ubuntu/cadence-recovery-backups/test-fixes-20261011T105608Z/before-fixes.bundle`, vérifiée. Trois piles locales neuves et secrets synthétiques, sans modification des ressources préexistantes ; ressources conservées après arrêt. Recherche de secrets avant publication et bundle final consignés dans les preuves privées.
+
+L’autorisation de publication porte sur la branche consolidée vers origin `cruxm4n/socialmediatool`, avec PR vers main ; elle ne porte sur aucun merge ou déploiement. Les tags historiques restent locaux et sauvegardés, hors du push de branche. Le statut GitHub et les URLs effectives sont fournis dans le bilan terminal après vérification distante. Le passage des suites locales ne rend pas terminé le flux manuel ni ne qualifie les comptes Buffer et la production.

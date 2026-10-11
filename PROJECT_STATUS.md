@@ -1,5 +1,31 @@
 # État réel du projet — 11 octobre 2026
 
+## Corrections des tests après consolidation — état courant
+
+**Toutes les suites locales passent après correction des 35 échecs hérités de `54cda08`.** Aucun fichier applicatif, migration ou dépendance n’est modifié par cette correction. Quatre tests supplémentaires vérifient le refus d’une connexion absente/révoquée/en révocation et une barrière d’écriture fermée.
+
+| Vérification | Résultat final |
+| --- | --- |
+| Ciblés unitaires/SQL | 151/151 |
+| Ciblés SQL après correction de la fixture historique | 53/53 |
+| Ciblés intégration V3 | 19/19 |
+| Unitaires | 460/460 |
+| SQL/RLS PGlite | 210/210 |
+| Total unitaires + SQL | 670/670, zéro ignoré |
+| Intégration native | 83/83, zéro ignoré |
+| Dont multi-comptes | 26/26 |
+| E2E Chromium | 62/62, zéro échec/ignoré |
+| Lint, TypeScript, build et calendrier navigateur | Réussis |
+| Empreintes indépendantes | 8/8 ; sept inchangées, une actualisée pour le pilote |
+
+Les tests Studio conservent le vrai `emissionProblem`. Seul le fournisseur Buffer est remplacé ; les tests natifs exécutent les vraies RPC sur une pile neuve. Le bloc complet des scénarios et assertions de `audit-independent-studio.test.ts` est identique octet par octet à `54cda08` ; seuls les imports, mocks de connexion et hooks d’environnement changent. L’empreinte actualisée est explicitement documentée, pas présentée comme inchangée.
+
+Les 35 échecs relevaient des mocks/fixtures et d’une attente de message obsolète, sans bug applicatif identifié dans ces scénarios. Trois piles synthétiques neuves (V3 ciblée, intégration complète, E2E) sont utilisées puis arrêtées sans suppression. Preuves privées : `/home/ubuntu/cadence-recovery-backups/test-fixes-20261011T105608Z/validation`. Aucun appel Buffer réel, SQL distant, mutation de production ou désactivation de test.
+
+**La publication GitHub peut être préparée ; le produit reste NOT READY pour le pilote réel.** Le flux manuel complet, les comptes Buffer réels, les médias et la restauration de production restent à qualifier. Les pourcentages précédents ne sont pas recalculés automatiquement à partir du seul passage des tests.
+
+Les tableaux d’échecs ci-dessous décrivent les passages historiques avant correction ; ils sont conservés pour la traçabilité et ne représentent plus l’état courant des suites.
+
 ## Verdict
 
 **NOT READY pour le pilote réel du nouveau périmètre. GO AVEC PRÉREQUIS pour poursuivre sur la référence récupérée.** Le portail et une grande partie de sa sécurité sont développés et testables localement. Le flux manuel préféré n'est pas encore le comportement complet du backend. La production est une ancienne version en simulation.
