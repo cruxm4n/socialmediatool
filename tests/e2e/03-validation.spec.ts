@@ -85,7 +85,7 @@ test("une publication dont la date est dépassée ne peut pas être approuvée",
   const sofia = await browser.newContext({ storageState: authFile("SOFIA") });
   const page = await sofia.newPage();
   await openPending(page, "nordwind-cycles", "expire-fb");
-  await expect(page.getByText("La date prévue est absente ou dépassée")).toBeVisible();
+  await expect(page.getByText("La date prévue est dépassée")).toBeVisible();
   await expect(page.getByRole("button", { name: "Approuver" }).first()).toBeDisabled();
   await expect(page.getByRole("button", { name: "Demander des modifications" })).toBeEnabled();
   expect((await mockBuffer(request, { action: "stats", key: "expire-fb" })).post.status).toBe("draft");

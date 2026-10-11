@@ -1,53 +1,147 @@
-# Déploiement et restauration — état constaté
+# Mise en production de Cadence V1
 
-**Aucun déploiement réalisé ni autorisé par la mission de récupération du 11 octobre 2026.** Les commandes de déploiement historiques ne doivent pas être exécutées pour suivre ce document.
+**Aucune bascule n'est faite sans l'accord explicite du propriétaire.** Ce document décrit l'état constaté de la production et la procédure préparée pour la V1. Tant qu'elle n'a pas été exécutée, la production reste telle que décrite ci-dessous.
 
-## Ce qui tourne réellement
+## Ce qui tourne réellement (constaté le 11 octobre 2026)
 
-| Preuve | Constat |
+| Élément | Constat |
 | --- | --- |
-| Conteneur applicatif | `cadence-prod-web`, sain lors de l'inspection |
-| Image exécutée | `cadence-web:v1-2f51602` |
-| ID d'image | `sha256:affb99671211c72265ee9f4aff16e7e7c7c402721cf32d108f60134f03f7027a` |
-| Label OCI revision | `2f516020a3c6071492f26fc3a7bbe7d3f6e52e1d` |
-| Source de construction correspondante sur disque | `/home/ubuntu/cadence-prod/build/2f51602`, HEAD détachée et propre |
-| Source montée dans web | Aucune ; l'image contient le code exécuté |
-| Passerelle | `cadence-prod-gw`, bind de `/home/ubuntu/cadence-prod/tools/scripts/lib/gateway.mjs`, port boucle locale `18000` |
-| Supabase de production | Conteneurs DB/Auth/REST/Storage ; volumes `cadence-prod-db-data` et `cadence-prod-storage`, inchangés |
-| Proxy | Caddy existant dans `/home/ubuntu/stack`, cible web/passerelle constatée ; aucune modification |
-| Mode applicatif | `BUFFER_MODE=mock`, `CADENCE_PROFILE=pilot`, `NOTIFICATIONS_MODE=simulate` : démonstration privée, intégration Buffer réelle non prouvée |
+| Adresse publique | <https://sociallr.duckdns.org>, servie par cette machine |
+| Conteneur applicatif | `cadence-prod-web`, image `cadence-web:v1-68e1e85` (commit `68e1e852ad442c40a94b8b480e7249bd59ebd1eb`) |
+| Passerelle Supabase | `cadence-prod-gw` (même image), port local `127.0.0.1:18000` pour les sauvegardes |
+| Supabase de production | `cadence-prod-db`, `-auth`, `-rest`, `-storage` ; volumes `cadence-prod-db-data` et `cadence-prod-storage` |
+| Schéma de la base | Niveau `0013` |
+| Proxy | Caddy existant (`/home/ubuntu/stack`), bloc `sociallr.duckdns.org` |
+| Mode | `BUFFER_MODE=mock` avec `CADENCE_ALLOW_SIMULATED_BUFFER=1`, `CADENCE_PROFILE=pilot`, `NOTIFICATIONS_MODE=simulate` : **démonstration, données fictives** |
+| Exploitation | `/home/ubuntu/cadence-prod` (hors Git) : `env/`, `bin/deploy.sh`, `bin/rollback.sh`, `bin/backup-run.sh`, `bin/monitor.sh`, `RUNBOOK.md` |
+| Base de test | Conteneurs `supabase_*_cadence-supabase-test` ; les suites utilisent des piles isolées créées par `scripts/test-stack.mjs` |
 
-Le label Git et le dossier source concordent. Ils ne prouvent pas à eux seuls que le contexte Docker était exempt de fichiers modifiés : une empreinte de contexte et une reconstruction reproductible restent à contrôler. Le candidat `rc-4e132cb` et son image existent mais ne sont pas le service web actif. Le `docker-compose.yml` du dépôt est un modèle ; il ne décrit pas à lui seul toute la pile réellement déployée.
+Le dépôt de développement `/home/ubuntu/cadence` n'alimente pas le site : `deploy.sh` extrait le commit depuis GitHub et lance l'image correspondante.
 
-Le dépôt de développement choisi, `/home/ubuntu/cadence`, n'est ni monté par la production ni utilisé par ses unités systemd. Les scripts du répertoire `cadence-prod` et les anciens chemins sont conservés. Le dépôt historique fournit encore des dépendances par symlink à certains outils et est utilisé par des sessions tmux : ne pas le supprimer.
+## Ce que la V1 change pour la production
 
-## Préparation avant une future autorisation
+| Sujet | Avant | V1 |
+| --- | --- | --- |
+| Buffer | Simulé, données fictives | Réel, en lecture seule, un compte Buffer par client |
+| Migration | `0013` | `0014` (trois fonctions redéfinies, aucune table ni donnée modifiée) |
+| `BUFFER_MODE` | `mock` | `real` |
+| `CADENCE_ALLOW_SIMULATED_BUFFER` | `1` | **à retirer** |
+| `CADENCE_CREDENTIALS_KEY` | absente | **à créer** : 32 octets en base64, chiffre les clés Buffer |
+| `BUFFER_REVIEW_TAG` | absente | facultative ; par défaut « À valider » et « À vérifier » |
+| Notifications | simulées | inchangé : aucun e-mail ne part, l'interface le dit |
+| Synchronisation planifiée | aucune | à activer (voir étape 8) |
 
-1. Achever le flux manuel et fermer les écritures externes dans tous les chemins de ce mode, y compris jobs urgents et compensations. Résoudre les tests en échec sans neutraliser les contre-tests.
-2. Identifier le schéma **réellement appliqué** sur la base de production et sa dérive. La présence de fichiers 0012/0013 dans Git ne prouve pas leur application distante. Cette lecture SQL de production n'a pas été effectuée pendant la récupération.
-3. Vérifier une sauvegarde DB/Auth/RLS/Storage restaurée dans une nouvelle pile isolée, ainsi que la disponibilité séparée de la clé maître. Aucune donnée réelle à supprimer ou réinitialiser.
-4. Construire un artefact immuable depuis une révision propre, enregistrer commit, empreinte du contexte, lockfile, ID d'image et versions de migrations. Exclure `.env*`, sauvegardes, captures, sessions de test et données privées du contexte.
-5. Tester l'image sur une base dédiée, deux clients, deux connexions et médias de test ; `/api/health` pour la vie du processus, `/api/ready` protégé pour la configuration et le schéma. Ni l'un ni l'autre ne certifie une intégration Buffer réelle.
-6. Préparer un diff exact de configuration, image et migrations, une fenêtre et un rollback vérifié. Demander l'autorisation de déploiement sur ces éléments concrets ; ne pas appliquer une migration automatiquement depuis un build.
+## Procédure
 
-Node 24 est retenu par le Dockerfile et utilisé pour cette mission. Ne pas activer le profil `scheduler` ni modifier Caddy, domaines, ports ou services existants pendant ce nettoyage. Aucun besoin démontré d'un nouveau service de queue.
+Les commandes se lancent depuis `/home/ubuntu/cadence-prod`. `<SHA>` est le commit de tête de la branche de release, donné dans le rapport de validation (`PROJECT_STATUS.md`).
 
-## Rollback
+### 1. Publier la branche sur GitHub
 
-Conserver l'image précédente et son ID, les paramètres de runtime dans un stockage privé, les empreintes et les sauvegardes vérifiées. Revenir à une image antérieure ne remet pas automatiquement la base à son ancien schéma. Les migrations de transition doivent être additives, testées avec l'application précédente, et proposer un retour arrière qui conserve décisions, versions et jobs. Une suppression de migration déjà appliquée n'est jamais une stratégie de retour arrière.
+`deploy.sh` clone GitHub : le commit doit y être.
 
-Après un retour arrière : vérifier l'isolation des deux clients, les versions, les jobs en attente et le statut externe avant de rouvrir un effet Buffer. Une restauration locale ne peut annuler une publication déjà reçue par Buffer. Maintenir les écritures fermées pendant l'analyse et le rapprochement.
+```bash
+git -C /home/ubuntu/cadence push origin release/cadence-v1-finalisation
+```
 
-Les scripts `/home/ubuntu/cadence-prod/bin/deploy.sh` et `rollback.sh` sont des outils historiques, sauvegardés, non exécutés ici. Leur compatibilité avec les nouvelles migrations et les garde-fous doit être revue avant usage ; leur existence n'autorise pas leur exécution.
+### 2. Sauvegarder
 
-## Sauvegardes et surveillance
+```bash
+bin/backup-run.sh
+jq . state/backup-status.json        # "ok": true, et le dossier de la sauvegarde
+```
 
-Les timers utilisateur `cadence-monitor.timer` (environ 5 min) et `cadence-backup.timer` (03:30) pointent vers `/home/ubuntu/cadence-prod/bin/`. Les scripts et configurations ont été inspectés en lecture seule. Leur présence ne prouve ni un succès récent de sauvegarde, ni une copie hors site récupérable.
+### 3. Vérifier que la sauvegarde se restaure, et répéter la migration
 
-La sauvegarde de récupération de cette mission couvre **code, historique Git, changements non commités, copies et configurations**. Elle ne sauvegarde pas la DB ni les volumes des services en fonctionnement. Voir [CLEANUP_REPORT.md](CLEANUP_REPORT.md#sauvegardes-et-restauration) pour emplacements et restauration du code. Les procédures DB/Storage historiques restent dans [docs/SAUVEGARDE.md](docs/SAUVEGARDE.md), à exécuter uniquement dans un laboratoire démontré isolé avec autorisation adaptée. Plusieurs scripts de laboratoire suppriment leurs propres volumes : ne pas les lancer sans revue de leur nettoyage.
+Dans une pile isolée, sans lien avec la production :
 
-Les nouveaux conteneurs de test de cette mission sont identifiés dans les fichiers privés `validation/*stack/state.json`. Ils seront arrêtés sans suppression de conteneurs, volumes, réseau ni fichiers. Les piles antérieures, y compris les conteneurs d'audit arrêtés, restent inchangées.
+```bash
+node restore-fresh.mjs --config . --backup <dossier de la sauvegarde> --prefix cadence-v1-repet --gw-port 18114
+docker exec -i cadence-v1-repet-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q \
+  < /home/ubuntu/cadence/supabase/migrations/0014_validation_manuelle.sql
+```
 
-## Confirmation après consolidation
+La restauration doit annoncer le même nombre de comptes, de clients et de publications que la production. Arrêter ensuite la pile (`docker stop`), sans supprimer ses volumes tant que la bascule n'est pas validée.
 
-L’audit de consolidation confirme la séparation : développement dans `/home/ubuntu/cadence`, branche `chore/cadence-consolidation-2026-10-11`, sans déploiement ; production inchangée sur `2f51602`. Le script existant clone GitHub, où les seules branches annoncées lors du contrôle sont `main` (`2bbd79a`) et `cadence/stabilisation-v3` (`2f51602`). Les commits locaux du dépôt canonique ne deviennent pas disponibles à ce script par un changement de répertoire. Préparer un artefact depuis la référence locale exacte, ou une publication Git explicitement autorisée, avant tout futur déploiement.
+### 4. Appliquer la migration 0014 sur la production
+
+```bash
+docker exec -i cadence-prod-db psql -U supabase_admin -d postgres -v ON_ERROR_STOP=1 -q \
+  < /home/ubuntu/cadence/supabase/migrations/0014_validation_manuelle.sql
+docker exec cadence-prod-db psql -U supabase_admin -d postgres -c \
+  "insert into supabase_migrations.schema_migrations (version, name) values ('0014', 'validation_manuelle') on conflict (version) do nothing"
+```
+
+La migration est une transaction : en cas d'erreur, rien n'est appliqué. La version actuellement en ligne (`68e1e85`) fonctionne sur une base `0014`.
+
+### 5. Modifier la configuration
+
+```bash
+cp -p env/app.env backups/app.env.$(date +%Y%m%d-%H%M%S).bak
+```
+
+Dans `env/app.env` :
+
+- `BUFFER_MODE=real`
+- supprimer la ligne `CADENCE_ALLOW_SIMULATED_BUFFER=1`
+- ajouter `CADENCE_CREDENTIALS_KEY=<résultat de : openssl rand -base64 32>`
+
+**La clé de chiffrement doit aussi être conservée hors du serveur** (gestionnaire de mots de passe). Sans elle, les clés Buffer enregistrées sont illisibles et chaque compte devra être reconnecté. Elle n'est jamais en base et n'est pas dans les sauvegardes de données.
+
+### 6. Archiver les données de démonstration (recommandé)
+
+En mode réel, les publications et canaux fictifs (`mock-…`) ne sont plus affichés. `sql/archive-mock-data.sql` les marque en plus comme retirés, sans rien supprimer. Le script se termine par `rollback` : lire ses compteurs, puis remplacer par `commit`.
+
+Le client de démonstration existant s'archive depuis l'interface (Clients → fiche → Archiver).
+
+### 7. Déployer
+
+```bash
+bin/deploy.sh <SHA> --branch release/cadence-v1-finalisation --dry-run
+bin/deploy.sh <SHA> --branch release/cadence-v1-finalisation
+```
+
+Le script fait une sauvegarde, construit l'image `cadence-web:v1-<7 premiers caractères>`, remplace les conteneurs web et passerelle, vérifie la santé, la version et `/api/ready`, et **revient seul à l'image précédente** si une vérification échoue. Coupure : quelques secondes.
+
+### 8. Mettre en service
+
+1. Se connecter en administrateur. Le bandeau « Aucun compte Buffer connecté » est attendu.
+2. Créer chaque client (Clients → Nouveau client).
+3. Paramètres → Intégrations → « Connecter un compte Buffer » : coller la clé d'API du compte Buffer du client (dans Buffer : Settings → API) et choisir le client propriétaire. Cadence vérifie la clé auprès de Buffer avant de l'enregistrer.
+4. Synchroniser, puis attribuer les canaux au client (Clients → fiche).
+5. Créer le compte de chaque utilisateur client : `bin/create-client-user.sh <email> "<Nom>" "<Fonction>"`, puis lui donner accès depuis la fiche du client.
+6. Activer la synchronisation planifiée, une fois par heure (`crontab -e`) :
+
+   ```
+   0 * * * * CADENCE_URL=https://sociallr.duckdns.org CADENCE_ENV_FILE=/home/ubuntu/cadence-prod/env/app.env /home/ubuntu/cadence/scripts/sync-tick.sh >> /home/ubuntu/cadence-prod/state/sync.log 2>&1
+   ```
+
+   Sans elle, Buffer n'est relu que lorsqu'un administrateur ouvre Cadence ou clique sur « Synchroniser ». Une lecture par heure et par compte reste très en deçà des quotas Buffer (voir [docs/BUFFER.md](docs/BUFFER.md)).
+
+### 9. Contrôles après déploiement
+
+| Contrôle | Attendu |
+| --- | --- |
+| `curl -s https://sociallr.duckdns.org/api/health` | `"version":"<SHA>"` |
+| `bin/monitor.sh && jq '.fail' state/status.json` | `0` |
+| Paramètres → Intégrations | « Réel : Buffer est lu par les comptes connectés » |
+| Paramètres → Exploitation | « Prêt », aucune ligne « À corriger » |
+| Un brouillon tagué « À valider » créé dans Buffer | Visible après synchronisation, statut « À valider » |
+| Connexion d'un client | Il ne voit que ses publications ; l'adresse d'un autre client renvoie « introuvable » |
+| Le client approuve | Statut « Approuvé », rubrique « Prêtes à publier » côté administrateur, historique mis à jour |
+| Le client demande une modification | Statut « Modifications demandées », commentaire visible de l'administrateur |
+| Programmation du brouillon approuvé dans Buffer | Statut « Programmé » après synchronisation, accord conservé |
+
+## Retour arrière
+
+- **Code** : `bin/rollback.sh` remet l'image précédente (`cadence-web:v1-68e1e85`). Elle fonctionne sur une base `0014`.
+- **Configuration** : restaurer `backups/app.env.<horodatage>.bak`, puis `./web.sh up <image>` et `./web.sh gw <image>`. Pour revenir à la démonstration, il faut à la fois `BUFFER_MODE=mock` et `CADENCE_ALLOW_SIMULATED_BUFFER=1`.
+- **Base** : `0014` ne modifie ni table ni donnée ; il n'y a rien à restaurer. Voir `supabase/outils/0014_retour_arriere.sql` pour la portée exacte. Une restauration complète se fait toujours sur une pile neuve (`restore-fresh.mjs`), jamais par écrasement de la base en service.
+- **Comptes Buffer** : révoquer une connexion efface sa clé dans Cadence ; rien ne change dans Buffer.
+
+Revenir à une image antérieure ne remet pas la base à son ancien schéma. Les migrations restent additives ; une migration appliquée ne se supprime pas.
+
+## Sauvegardes et supervision
+
+Les minuteurs `cadence-backup.timer` (03 h 30) et `cadence-monitor.timer` (toutes les 5 minutes) pointent vers `/home/ubuntu/cadence-prod/bin/`. La copie hors serveur n'est **pas configurée** (`offsite.env` absent) : la supervision le signale en avertissement. Une sauvegarde n'est valable que restaurée : voir [docs/SAUVEGARDE.md](docs/SAUVEGARDE.md).
+
+Les secrets de production (`env/`, `secrets.json`) et la clé `CADENCE_CREDENTIALS_KEY` ne sont ni dans Git, ni dans l'image, ni journalisés.

@@ -2,15 +2,18 @@ import { expect, test } from "@playwright/test";
 
 import { authFile, mockBuffer, postLink, syncViaApi } from "./helpers";
 
-test("les anciens favoris Studio ouvrent les publications, sans éditeur ni navigation Studio", async ({ browser }) => {
+test("les anciennes adresses du Studio n'existent plus : page introuvable, sans éditeur ni navigation Studio", async ({ browser }) => {
   const context = await browser.newContext({ storageState: authFile("ADMIN") });
   const page = await context.newPage();
   for (const path of ["/admin/studio", "/admin/studio/nouveau", "/admin/studio/medias", "/admin/studio/11111111-1111-4111-8111-111111111111"]) {
-    await page.goto(path);
-    await expect(page).toHaveURL(/\/admin\/publications$/);
+    const response = await page.goto(path);
+    expect(response?.status()).toBe(404);
+    await expect(page.getByText("Cette page n'existe pas.")).toBeVisible();
     await expect(page.locator('a[href^="/admin/studio"]')).toHaveCount(0);
     await expect(page.getByLabel("Titre interne")).toHaveCount(0);
   }
+  await page.goto("/admin");
+  await expect(page.locator('a[href^="/admin/studio"]')).toHaveCount(0);
   await context.close();
 });
 
@@ -39,7 +42,10 @@ test("le calendrier administrateur permet de consulter sans déplacer ni program
 test("le retrait du Studio conserve la protection administrateur", async ({ browser }) => {
   const context = await browser.newContext({ storageState: authFile("INES") });
   const page = await context.newPage();
-  await page.goto("/admin/studio/nouveau");
+  // L'ancienne adresse n'existe plus et ne montre rien de l'administration ; l'administration reste fermée au client.
+  expect((await page.goto("/admin/studio/nouveau"))?.status()).toBe(404);
+  await expect(page.getByLabel("Titre interne")).toHaveCount(0);
+  await page.goto("/admin/publications");
   await expect(page).toHaveURL(/\/client\/maison-colibri/);
   await page.goto("/client/maison-colibri/calendrier");
   await expect(page.locator('[draggable="true"], [data-movable="true"]')).toHaveCount(0);
