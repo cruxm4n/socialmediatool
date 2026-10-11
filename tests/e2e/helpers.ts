@@ -11,7 +11,7 @@ export const bufferId = (key: string) => `mock-${requireEnv("MOCK_RUN_ID")}-${ke
 
 export const postLink = (page: Page, key: string) => page.locator(`[data-post="${bufferId(key)}"]`);
 
-const automationHeaders = () => ({ "x-automation-secret": requireEnv("AUTOMATION_SECRET") });
+export const automationHeaders = () => ({ "x-automation-secret": requireEnv("AUTOMATION_SECRET") });
 
 /** Lance une synchronisation comme le ferait un planificateur. */
 export async function syncViaApi(request: APIRequestContext) {

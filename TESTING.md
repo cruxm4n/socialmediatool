@@ -1,3 +1,5 @@
+> **Référence du 11 octobre 2026 :** résultats réellement exécutés et limites dans [PROJECT_STATUS.md](PROJECT_STATUS.md). Utiliser le dépôt `/home/ubuntu/cadence`. Pour éviter la contamination, une pile neuve distincte pour chaque famille de suites qui écrit. Les anciens parcours Studio sont conservés dans `tests/legacy-e2e/`, hors suite active. Le nettoyage `test-stack.mjs down` supprime des volumes : ne pas l’utiliser dans la mission de récupération ; arrêter uniquement les ressources neuves identifiées, sans suppression.
+
 # Tests
 
 ## Lancer les tests
@@ -289,7 +291,7 @@ Six tests périmés ou fragiles ont aussi été corrigés (sélecteurs devenus a
 | Quoi | Commande | Ce que ça prouve |
 | --- | --- | --- |
 | Règles, service, outils (mémoire) | `npm test` | dont `tests/unit/v3-*.test.ts`, `lock-test-ports`, `schema-tools`, `secure-cookies`, `tests/sql/v3-correction.test.ts` |
-| Contre-tests indépendants (gelés, 25 scénarios) | `npx vitest run tests/sql/audit-independent*.test.ts tests/unit/audit-independent*.test.ts` | empreintes SHA-256 inchangées (`sha256sum` avant/après) |
+| Contre-tests indépendants (assertions gelées, 25 scénarios) | `npx vitest run tests/sql/audit-independent*.test.ts tests/unit/audit-independent*.test.ts` | manifeste SHA-256 courant conforme ; pilote Studio adapté après `54cda08`, scénarios/assertions inchangés |
 | Intégration native, vrais JWT, faux Buffer persistant, processus SIGKILL | `node scripts/test-stack.mjs up --fixture` puis `CADENCE_NO_LOCAL_ENV=1 npm run test:db` | `tests/integration/v3-correction.test.ts` : isolation HTTP, transferts concurrents, créations incertaines, reprise urgente, deux workers, 429 |
 | Migrations natives | `node scripts/migration-lab.mjs --template-prefix <pile>` | montées, fixture 307 publications, prérequis, atomicité, rejeu |
 | Sauvegarde / restauration | `backup.mjs`, `restore-check.mjs`, `restore-drill.mjs`, `restore-negatives.mjs` | voir `docs/SAUVEGARDE.md` |
@@ -297,3 +299,20 @@ Six tests périmés ou fragiles ont aussi été corrigés (sélecteurs devenus a
 | Ports | `tests/unit/lock-test-ports.test.ts` (faux `iptables`) | idempotence, IPv4/IPv6, diagnostics ; **jamais exécuté sur l'hôte** |
 
 Contexte propre : lancer ces commandes depuis une copie de travail **sans fichier `.env*`** (Next et Vite en chargent automatiquement), avec `CADENCE_NO_LOCAL_ENV=1`.
+
+## Multi-comptes : cycle de vie des connexions (migration 0013, 10 octobre 2026)
+
+Suites ajoutées après le contrôle indépendant du commit `4e132cb` (cinq défauts P1 reproduits). Aucune n'appelle Buffer : deux faux comptes persistants, ou un faux serveur HTTP injecté.
+
+| Quoi | Commande | Ce que ça prouve |
+| --- | --- | --- |
+| Base (PGlite, rôles réels) | `npx vitest run tests/sql/connexions-cycle-de-vie.test.ts tests/sql/connexions-fournisseur.test.ts` | clé réelle et identité par le serveur seulement, compte et clé non réutilisables, rotation, révocation demandée, réservation refusée sur connexion révoquée, collision de publication sans mutation, ancien appelant borné |
+| Routeur | `npx vitest run tests/unit/connection-router.test.ts` | état durable relu avant chaque opération (révocation, pause, clé remplacée), barrière d'écriture, configuration invalide, lecture en parallèle, espacement par compte |
+| Identité du compte, actions serveur | `npx vitest run tests/unit/connection-identity.test.ts` | faux Buffer HTTP : clé refusée ou non vérifiable jamais enregistrée, autre compte refusé, aucune clé dans les réponses, rotation de la clé maître |
+| Mode de production | `npx vitest run tests/unit/credentials.test.ts tests/unit/v3-readiness.test.ts` | aucun simulateur silencieux en production, écritures fermées par défaut |
+| **Intégration native, deux comptes** | `node scripts/test-stack.mjs up --fixture` puis `TEST_SCOPE=integration npx vitest run tests/integration/multi-comptes.test.ts` | les 18 contre-tests du contrôle indépendant (N01–N18) et 8 variantes : deux transactions concurrentes dans les deux ordres, SIGKILL après l'effet externe, vrai `runSync` avec un compte en panne ou en pause, ancien appelant |
+| Migrations natives | `node scripts/migration-lab.mjs` | 0013 : prérequis, interruption en cours de route annulée en entier (schéma, données, clés chiffrées), reprise, ancien appelant |
+| Parcours navigateur, deux clients | `npx playwright test tests/e2e/10-multi-comptes.spec.ts` | création des clients et des connexions, attribution des canaux, validation, panne d'un compte, reprise sans doublon, révocation, aucune action croisée, mobile |
+
+Limites : la concurrence entre transactions n'est pas jouable sur PGlite (une seule connexion) — elle l'est dans l'intégration native. Les tests à clé factice ne prouvent pas qu'une vraie clé appartient au bon compte : cela demande un essai réel, sur autorisation.
+

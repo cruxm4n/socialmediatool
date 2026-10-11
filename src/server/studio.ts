@@ -2,14 +2,14 @@ import "server-only";
 
 import { errorCodeIn } from "@/lib/domain/errors";
 import { composeText, hasBlockingIssue, STUDIO_ERRORS, validateDraft, type StudioMedia } from "@/lib/domain/studio";
-import { toNetwork, type MediaAsset, type PostVersion, type StudioDraft } from "@/lib/types";
+import { toNetwork, type MediaAsset, type StudioDraft } from "@/lib/types";
 import { listChannels } from "@/server/data";
-import { getProvider } from "@/server/publishing";
+import { emissionProblem, getProvider } from "@/server/publishing";
 import { ProviderError, type DraftContent, type ProviderPost } from "@/server/publishing/provider";
 import { createSessionClient } from "@/server/supabase/clients";
 import { activeRateLimitPause, pauseMessage } from "@/server/quota";
 import { pilotLeadSatisfied } from "@/lib/domain/schedule-margins";
-import { env } from "@/server/env";
+import { BUFFER_WRITES_DISABLED, env } from "@/server/env";
 import { recordRateLimit, runSync } from "@/server/sync";
 
 /*
@@ -137,14 +137,8 @@ export async function listMedia(organizationId: string | null, includeIds: strin
   return rows.map((row) => toMedia(row, urls.get(row.storage_path) ?? null));
 }
 
-/** Versions successives d'une publication, la plus récente d'abord. Vide si la base n'a pas la migration 0008. */
-export async function listPostVersions(postId: string): Promise<PostVersion[]> {
-  const supabase = await createSessionClient();
-  const { data, error } = await supabase.from("post_versions").select("version, text, due_at, assets, created_at").eq("post_id", postId).order("version", { ascending: false });
-  if (isMissingSchema(error)) return [];
-  if (error) throw new Error(`Lecture impossible (versions) : ${error.message}`);
-  return data.map((row) => ({ version: row.version, text: row.text, dueAt: row.due_at, assets: row.assets ?? [], createdAt: row.created_at }));
-}
+// Compatibilité pour les tests historiques du Studio ; le portail importe le module partagé.
+export { listPostVersions } from "@/server/post-versions";
 
 /** Contenu du Studio dont est issue une publication Buffer, s'il y en a un. */
 export async function findDraftForPost(bufferPostId: string): Promise<{ draftId: string; revision: number } | null> {
@@ -250,6 +244,12 @@ export async function pushDraftToBuffer(draftId: string): Promise<PushResult> {
   if (env.profile === "pilot" && !pilotLeadSatisfied(draft.dueAt)) {
     return { ok: false, code: "pilot_lead", message: "Profil pilote : la date prévue doit être à plus de 24 heures. Déplacez la date avant l'envoi.", ...empty };
   }
+  // Compte Buffer absent, révoqué ou en cours de révocation : dit clairement, avant toute réservation.
+  const targets = draft.variants.map((variant) => channels.find((channel) => channel.id === variant.channelId)?.bufferChannelId).filter((id): id is string => !!id);
+  const unreachable = await emissionProblem(targets);
+  if (unreachable) return { ok: false, code: "connection_unavailable", message: unreachable, ...empty };
+  // Barrière d'activation : sans elle, rien n'est réservé ni envoyé au vrai Buffer.
+  if (provider.mode === "real" && !env.bufferWritesEnabled) return { ok: false, code: "writes_disabled", message: BUFFER_WRITES_DISABLED, ...empty };
   // Une pause de quota s'applique aussi aux actions manuelles qui écrivent dans Buffer.
   const pause = await activeRateLimitPause(provider.mode);
   if (pause) return { ok: false, code: "quota_paused", message: pauseMessage(pause), ...empty };
@@ -342,8 +342,8 @@ export async function pushDraftToBuffer(draftId: string): Promise<PushResult> {
       if (uncertain) result.unknown += 1;
       else result.failed += 1;
       // Panne ou quota : inutile d'insister sur les canaux suivants.
-      if (error instanceof ProviderError && error.kind !== "api") blocked = describe(error) + retryHint(error);
-      if (error instanceof ProviderError && error.kind === "rate_limit") rateLimited ??= error;
+      if (error instanceof ProviderError && error.kind !== "api" && !error.connectionId) blocked = describe(error) + retryHint(error);
+      if (error instanceof ProviderError && error.kind === "rate_limit" && !error.connectionId) rateLimited ??= error;
       // Un échec de MISE À JOUR garde l'identifiant connu ; une CRÉATION sans identifiant obtenu n'en transmet aucun
       // (l'ancien identifiant, peut-être supprimé dans Buffer, ne dit rien de ce que cette tentative a créé).
       await complete(row.variant_id, false, createdId ?? (creating ? null : row.buffer_post_id), null, describe(error) + (error instanceof ProviderError ? retryHint(error) : ""), uncertain);
@@ -393,13 +393,13 @@ export async function pushDraftToBuffer(draftId: string): Promise<PushResult> {
       : ` ; la soumission au client n'est pas confirmée (${result.submitted}/${done} en attente de décision${syncError ? ` — ${syncError}` : ""}). Lancez une synchronisation.`;
   }
   if (result.unknown > 0) {
-    parts.push(`${result.unknown} canal${result.unknown > 1 ? "aux" : ""} à résultat inconnu : Buffer n'a pas répondu, le brouillon existe peut-être. Utilisez « Vérifier dans Buffer » avant tout renvoi.`);
+    parts.push(`${result.unknown} ${result.unknown > 1 ? "canaux" : "canal"} à résultat inconnu : Buffer n'a pas répondu, le brouillon existe peut-être. Utilisez « Vérifier dans Buffer » avant tout renvoi.`);
   }
   if (orphaned.length > 0) {
     parts.push(`${orphaned.length} brouillon${orphaned.length > 1 ? "s" : ""} orphelin${orphaned.length > 1 ? "s" : ""} créé${orphaned.length > 1 ? "s" : ""} dans Buffer sans tentative correspondante (consigné${orphaned.length > 1 ? "s" : ""}) : à supprimer dans Buffer avant tout renvoi.`);
   }
   if (result.failed > 0) {
-    parts.push(`${result.failed} canal${result.failed > 1 ? "aux" : ""} en échec${blocked ? ` : ${blocked}` : ". Le détail figure sur chaque canal ; rien n'a été créé en double."}`);
+    parts.push(`${result.failed} ${result.failed > 1 ? "canaux" : "canal"} en échec${blocked ? ` : ${blocked}` : ". Le détail figure sur chaque canal ; rien n'a été créé en double."}`);
   }
   const ok = result.failed === 0 && result.unknown === 0 && submissionOk;
   return { ok, ...result, code: result.unknown > 0 ? "push_unknown" : !submissionOk ? "submission_unconfirmed" : undefined, message: parts.join(" ") };

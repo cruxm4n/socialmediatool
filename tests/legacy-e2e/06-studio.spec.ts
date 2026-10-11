@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { authFile, mockBuffer, syncViaApi } from "./helpers";
+import { authFile, mockBuffer, syncViaApi } from "../e2e/helpers";
 
 /*
  * Content Studio, de la rédaction à l'approbation. Demande la migration 0008 sur la base de test.

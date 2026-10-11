@@ -23,7 +23,7 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 import { ACL_SNAPSHOT_SQL, diffSnapshots, parseSnapshot, snapshotFromJson } from "./lib/acl-snapshot.mjs";
-import { postgresIn, readManifest, restoreBackup } from "./lib/restore.mjs";
+import { postgresIn, readManifest, restoreBackup, verifyRestoredCredentials } from "./lib/restore.mjs";
 import { docker, IsolatedStack } from "./lib/stack.mjs";
 
 // Garde la boucle d'événements vivante : les délais de fetch (AbortSignal.timeout) ne la retiennent pas, et un
@@ -108,6 +108,11 @@ try {
     if (expected === null) continue;
     const actual = pg.psql("postgres", `select md5(coalesce(string_agg(t::text, '|' order by t::text), '')) from ${table} t;`);
     check(`contenu restauré à l'identique : ${table}`, actual === expected);
+  }
+  const credentials = verifyRestoredCredentials(pg, "postgres");
+  if (credentials.applicable && credentials.total > 0) {
+    if (!credentials.keyProvided) console.log(`NON VÉRIFIÉ  ${credentials.total} clé(s) Buffer chiffrée(s) restaurée(s) : clé maître non fournie (CADENCE_CREDENTIALS_KEY), déchiffrement non contrôlé.`);
+    else check(`clés Buffer restaurées déchiffrables avec la clé maître fournie (${credentials.total})`, credentials.unreadable.length === 0, `illisibles : ${credentials.unreadable.join(", ")}`);
   }
   const restoredMigrations = pg.psql("postgres", "select version from supabase_migrations.schema_migrations order by version;").split("\n").filter(Boolean);
   check("historique des migrations restauré à l'identique", JSON.stringify(restoredMigrations) === JSON.stringify(manifest.migrations));

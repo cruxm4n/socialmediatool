@@ -1,3 +1,5 @@
+> **Réévaluation du 11 octobre 2026 :** ne pas activer les commandes historiques ci-dessous pendant la récupération. L’hypothèse « une requête par passage » n’est plus un budget fiable avec le contrôle d’identité et plusieurs organisations. Voir [ARCHITECTURE.md](../ARCHITECTURE.md#budget-dappels-par-compte) : mesurer les appels par connexion, privilégier 60 min ou manuel pour démarrer. Le moteur de programmation reste à découpler.
+
 # Synchronisation automatique toutes les 5 minutes
 
 Buffer ne prévient d'aucun changement : il faut l'interroger régulièrement. Un **planificateur** appelle Cadence toutes les 5 minutes ; Cadence fait le travail (lire Buffer, mettre la base à jour, déprogrammer ce qui a été modifié après validation, programmer ce qui est approuvé, envoyer les notifications en attente).

@@ -6,7 +6,7 @@ import { buildPostViews } from "@/lib/view";
 import { requireAdmin } from "@/server/auth";
 import { getPost, listChannels, listComments, listEvents, listProfiles } from "@/server/data";
 import { env } from "@/server/env";
-import { findDraftForPost, listPostVersions } from "@/server/studio";
+import { listPostVersions } from "@/server/post-versions";
 
 export const metadata: Metadata = { title: "Publication" };
 
@@ -15,10 +15,10 @@ export default async function Page({ params }: PageProps<"/admin/publications/[i
   const post = await getPost(id);
   if (!post) notFound();
 
-  const [channels, comments, events, profiles, versions, origin] = await Promise.all([
-    listChannels(), listComments(id), listEvents({ postId: id }), listProfiles(), listPostVersions(id), findDraftForPost(post.bufferPostId),
+  const [channels, comments, events, profiles, versions] = await Promise.all([
+    listChannels(), listComments(id), listEvents({ postId: id }), listProfiles(), listPostVersions(id),
   ]);
   const [view] = buildPostViews([post], channels, session.organizations);
 
-  return <PostDetail post={view} comments={comments} events={events} profiles={profiles} now={new Date().toISOString()} reviewTag={env.reviewTag} versions={versions} studioDraftId={origin?.draftId ?? null} organizations={session.organizations} />;
+  return <PostDetail post={view} comments={comments} events={events} profiles={profiles} now={new Date().toISOString()} reviewTag={env.reviewTag} versions={versions} organizations={session.organizations} />;
 }

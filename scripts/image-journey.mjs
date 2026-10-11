@@ -160,7 +160,7 @@ cadence.test:${caddyPort} {
     `NEXT_PUBLIC_SUPABASE_URL=https://cadence.test:${caddyPort}`,
     `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=${stackEnv.TEST_SUPABASE_PUBLISHABLE_KEY}`,
     `AUTOMATION_SECRET=${stackEnv.TEST_AUTOMATION_SECRET}`,
-    "BUFFER_MODE=mock", `MOCK_RUN_ID=${runId}`, "CADENCE_PROFILE=pilot", "NODE_EXTRA_CA_CERTS=/ca/root.crt", `APP_URL=https://cadence.test:${caddyPort}`,
+    "BUFFER_MODE=mock", "CADENCE_ALLOW_SIMULATED_BUFFER=1", `MOCK_RUN_ID=${runId}`, "CADENCE_PROFILE=pilot", "NODE_EXTRA_CA_CERTS=/ca/root.crt", `APP_URL=https://cadence.test:${caddyPort}`,
   ].join("\n");
   writeFileSync(join(work, "app.env"), `${appEnv}\n`, { mode: 0o600 });
   const webName = `${network}-web`;

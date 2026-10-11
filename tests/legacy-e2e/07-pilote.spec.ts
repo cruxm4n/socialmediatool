@@ -1,7 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import { requireEnv } from "../support/env";
-import { authFile, mockBuffer, syncViaApi } from "./helpers";
+import { authFile, mockBuffer, syncViaApi } from "../e2e/helpers";
 
 /*
  * Parcours pilote de bout en bout, dans un vrai navigateur, sur la base de test et un Buffer SIMULÉ :

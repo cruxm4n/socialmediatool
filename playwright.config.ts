@@ -36,6 +36,8 @@ export default defineConfig({
     reuseExistingServer: false,
     timeout: 240_000,
     // URGENT_LOOP=off : les parcours pilotent eux-mêmes la synchronisation et la compensation (déterminisme des captures).
-    env: { ISOLATED_BUILD: "1", BUFFER_MODE: "mock", MOCK_RUN_ID: process.env.MOCK_RUN_ID, URGENT_LOOP: "off" },
+    // Build de production + Buffer simulé : autorisé EXPLICITEMENT (sans CADENCE_ALLOW_SIMULATED_BUFFER, la
+    // version de production refuse tout fournisseur simulé).
+    env: { ISOLATED_BUILD: "1", BUFFER_MODE: "mock", CADENCE_ALLOW_SIMULATED_BUFFER: "1", MOCK_RUN_ID: process.env.MOCK_RUN_ID, URGENT_LOOP: "off" },
   },
 });

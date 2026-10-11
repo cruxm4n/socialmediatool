@@ -181,7 +181,10 @@ describe("client de l'API Buffer", () => {
     expect(down.calls).toHaveLength(2);
 
     const denied = fakeBuffer(() => json({}, { status: 401 }));
-    await expect(new BufferProvider("k", "À valider", denied.fetchImpl).getPost("p1")).rejects.toThrow("BUFFER_API_KEY");
+    await expect(new BufferProvider("k", "À valider", denied.fetchImpl).getPost("p1")).rejects.toMatchObject({
+      name: "ProviderError", kind: "api", outcome: "failed",
+      message: "Buffer refuse la clé d'API de ce compte (invalide, révoquée ou expirée) : remplacez-la dans la connexion concernée.",
+    });
     expect(denied.calls).toHaveLength(1);
   });
 

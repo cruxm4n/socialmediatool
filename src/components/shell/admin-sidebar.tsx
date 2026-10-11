@@ -10,7 +10,8 @@ import { cn } from "@/lib/utils";
 
 export function AdminSidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname();
-  const { mode } = useAdmin();
+  const { mode, buffer } = useAdmin();
+  const state = bufferState(mode, buffer);
 
   return (
     <div className="flex h-full flex-col gap-6 p-4">
@@ -36,16 +37,27 @@ export function AdminSidebarContent({ onNavigate }: { onNavigate?: () => void })
         })}
       </nav>
       <div className="rounded-xl border bg-card p-3 text-xs leading-relaxed text-muted-foreground">
-        <p className="flex items-center gap-2 font-semibold text-foreground">
-          <span className={cn("size-2 rounded-full", mode === "real" ? "bg-tone-green" : "bg-tone-amber")} />
-          {mode === "real" ? "Connecté à Buffer" : "Buffer simulé"}
+        <p className="flex items-center gap-2 font-semibold text-foreground" data-testid="etat-buffer" data-state={state.key}>
+          <span className={cn("size-2 shrink-0 rounded-full", state.dot)} />
+          {state.title}
         </p>
-        <p className="mt-1">
-          {mode === "real"
-            ? "Les publications se créent dans Buffer. Ce tableau de bord gère leur validation."
-            : "Données fictives de démonstration : aucun appel à Buffer."}
-        </p>
+        <p className="mt-1">{state.text}</p>
+        {state.link && (
+          <Link href="/admin/parametres#integrations" onClick={onNavigate} className="mt-1 inline-block font-medium text-foreground underline-offset-4 hover:underline">
+            {state.link}
+          </Link>
+        )}
       </div>
     </div>
   );
+}
+
+/** Ce que le menu dit de Buffer : uniquement ce qui est vrai sur ce serveur à cet instant. */
+function bufferState(mode: "real" | "mock", buffer: { accounts: number; writesEnabled: boolean; problem: string | null }) {
+  if (mode === "mock") return { key: "simule", dot: "bg-tone-amber", title: "Buffer simulé", text: "Données fictives de démonstration : aucun appel à Buffer.", link: null };
+  if (buffer.problem) return { key: "configuration", dot: "bg-tone-red", title: "Buffer : configuration à corriger", text: "Aucune opération vers Buffer n'a lieu tant que la configuration du serveur n'est pas corrigée.", link: "Voir les paramètres" };
+  if (buffer.accounts === 0) return { key: "aucun-compte", dot: "bg-tone-red", title: "Aucun compte Buffer connecté", text: "Rien n'est lu ni envoyé. Connectez le compte Buffer de chaque client.", link: "Connecter un compte" };
+  const accounts = `${buffer.accounts} compte${buffer.accounts > 1 ? "s" : ""} Buffer connecté${buffer.accounts > 1 ? "s" : ""}`;
+  if (!buffer.writesEnabled) return { key: "lecture-seule", dot: "bg-tone-amber", title: `${accounts} — lecture seule`, text: "Les publications sont lues dans Buffer. L'envoi et la programmation ne sont pas activés sur ce serveur.", link: null };
+  return { key: "connecte", dot: "bg-tone-green", title: accounts, text: "Les publications se créent dans Buffer. Ce tableau de bord gère leur validation.", link: null };
 }

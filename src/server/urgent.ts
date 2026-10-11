@@ -37,6 +37,11 @@ export interface UrgentResult {
   reconciled: number;
   rateLimited: ProviderError | null;
   error?: string;
+  /**
+   * Empêchement GLOBAL (base, bail perdu, quota du mode, écritures désactivées) : aucune nouvelle programmation ne
+   * doit suivre. Absent quand les échecs ne concernent que certains comptes : les autres continuent.
+   */
+  blocked?: string | null;
 }
 
 const none = (extra: Partial<UrgentResult> = {}): UrgentResult => ({ ok: true, compensated: 0, compensationFailures: 0, reconciled: 0, rateLimited: null, ...extra });
@@ -80,6 +85,7 @@ export async function runUrgentCycle(provider: PublishingProvider = getProvider(
       compensationFailures: compensation.failures,
       reconciled: orphans.reconciled,
       rateLimited: compensation.rateLimited ?? orphans.rateLimited,
+      blocked: compensation.blocked,
       ...(failures > 0 ? { error: compensation.blocked ?? `${failures} opération(s) urgente(s) non terminée(s).` } : {}),
     };
   } catch (error) {

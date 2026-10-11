@@ -22,7 +22,11 @@ let pause: { until: string; reason: string | null } | null = null;
 let lock: Record<string, unknown> | null = null;
 const lockCalls: { name: string; params: Record<string, unknown> }[] = [];
 
-vi.mock("@/server/env", () => ({ env: { automationSecret: "secret-de-test", bufferMode: "mock" } }));
+let writesEnabled = true;
+vi.mock("@/server/env", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/server/env")>(),
+  env: { automationSecret: "secret-de-test", bufferMode: "mock", get bufferWritesEnabled() { return writesEnabled; } },
+}));
 vi.mock("@/server/supabase/clients", () => ({
   getAutomationClient: () => ({
     rpc: async (name: string, params: Record<string, unknown>) => {
@@ -66,6 +70,7 @@ const claim = (id = "p1", bufferId = "b1") => ({ id, buffer_post_id: bufferId, t
 const completions = () => rpcCalls.filter((call) => call.name === "complete_scheduling").map((call) => [call.params.p_post_id, call.params.p_ok]);
 
 beforeEach(() => {
+  writesEnabled = true;
   rpcCalls.length = 0;
   claimed = [];
   toUnschedule = [];
@@ -89,6 +94,16 @@ beforeEach(() => {
 });
 
 describe("programmation des posts approuvés", () => {
+  it("la barrière fermée interdit une réservation et tout appel d'écriture en mode réel", async () => {
+    writesEnabled = false;
+    provider = { ...provider, mode: "real" };
+    claimed = [claim()];
+    expect(await scheduleApprovedPosts("p1")).toMatchObject({ scheduled: 0, writesDisabled: true });
+    expect(rpcCalls.some((call) => call.name.startsWith("claim_posts_for_scheduling"))).toBe(false);
+    expect(provider.getPost).not.toHaveBeenCalled();
+    expect(provider.schedulePost).not.toHaveBeenCalled();
+  });
+
   it("programme un post dont le contenu Buffer est identique au contenu validé", async () => {
     claimed = [claim()];
     const result = await scheduleApprovedPosts("p1");

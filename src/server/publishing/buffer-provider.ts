@@ -78,17 +78,68 @@ export function parseRetryAfter(header: string | null, now: number = Date.now())
   return seconds > 0 ? seconds : undefined;
 }
 
+/** Compte Buffer tel que constaté avec une clé : jamais la clé elle-même. */
+export interface BufferAccount {
+  id: string;
+  label: string;
+  organizations: number;
+  channels: { id: string; service: string; name: string; isDisconnected: boolean }[];
+  rateLimit: RateLimit | null;
+}
+
+/** Libellé affichable d'un compte : son nom, sinon son adresse masquée (jamais l'adresse entière). */
+export function accountLabel(name: string | null | undefined, email: string | null | undefined): string {
+  if (name?.trim()) return name.trim().slice(0, 80);
+  const [local, domain] = (email ?? "").split("@");
+  return local && domain ? `${local.slice(0, 1)}•••@${domain}`.slice(0, 80) : "Compte Buffer";
+}
+
 export class BufferProvider implements PublishingProvider {
   readonly mode = "real" as const;
   private organizationIds: string[] | null = null;
   private reviewTagIds = new Map<string, string>();
   private lastRateLimit: RateLimit | null = null;
 
+  private identityChecked = false;
+
+  /**
+   * `expectedAccountId` : identité du compte constatée lors de la vérification de la connexion. Si elle est fournie,
+   * la toute première requête de ce client relit `account.id` : une clé qui n'appartient pas (ou plus) à ce compte
+   * ne sert à AUCUNE opération.
+   */
   constructor(
     private readonly apiKey: string,
     private readonly reviewTag: string,
     private readonly fetchImpl: typeof fetch = fetch,
+    private readonly expectedAccountId: string | null = null,
   ) {}
+
+  /** Compte auquel appartient la clé (lecture seule). Champs documentés : https://developers.buffer.com/reference.html (Account). */
+  async describeAccount(): Promise<BufferAccount> {
+    const data = await this.send<{ account: { id: string; email: string | null; name: string | null; organizations: { id: string }[] } | null }>(
+      `query { account { id email name organizations { id } } }`, {},
+    );
+    if (!data.account?.id) throw new ProviderError("Buffer n'a pas indiqué le compte de cette clé : identité non démontrée.");
+    this.organizationIds = data.account.organizations.map((organization) => organization.id);
+    const channels: BufferAccount["channels"] = [];
+    for (const org of this.organizationIds) {
+      const page = await this.send<{ channels: { id: string; service: string; name: string; displayName: string | null; isDisconnected: boolean }[] | null }>(
+        `query Channels($org: OrganizationId!) { channels(input: { organizationId: $org }) { id service name displayName isDisconnected } }`, { org },
+      );
+      for (const channel of page.channels ?? []) channels.push({ id: channel.id, service: channel.service, name: channel.displayName ?? channel.name, isDisconnected: channel.isDisconnected });
+    }
+    return { id: data.account.id, label: accountLabel(data.account.name, data.account.email), organizations: this.organizationIds.length, channels, rateLimit: this.lastRateLimit };
+  }
+
+  private async ensureIdentity(): Promise<void> {
+    if (this.identityChecked || !this.expectedAccountId) return;
+    const data = await this.send<{ account: { id: string; organizations: { id: string }[] } | null }>(`query { account { id organizations { id } } }`, {});
+    if (data.account?.id !== this.expectedAccountId) {
+      throw new ProviderError("La clé enregistrée n'appartient pas au compte Buffer de cette connexion : aucune opération n'est envoyée. Vérifiez la connexion.");
+    }
+    this.organizationIds = data.account.organizations.map((organization) => organization.id);
+    this.identityChecked = true;
+  }
 
   /**
    * Une lecture est retentée une fois après une panne passagère (réseau, erreur 5xx).
@@ -96,6 +147,8 @@ export class BufferProvider implements PublishingProvider {
    */
   private async request<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
     const isRead = !query.trimStart().startsWith("mutation");
+    // Avant toute opération : la clé appartient-elle bien au compte de la connexion ? (une requête, une fois par client)
+    await this.ensureIdentity();
     try {
       return await this.send<T>(query, variables);
     } catch (error) {
@@ -138,7 +191,7 @@ export class BufferProvider implements PublishingProvider {
     }
 
     if (response.status === 401 || response.status === 403) {
-      throw new ProviderError("Buffer refuse la clé d'API : vérifiez BUFFER_API_KEY.");
+      throw new ProviderError("Buffer refuse la clé d'API de ce compte (invalide, révoquée ou expirée) : remplacez-la dans la connexion concernée.");
     }
     if (response.status >= 500) {
       throw new ProviderError(`Buffer est momentanément indisponible (HTTP ${response.status}).`, "network", undefined, "unknown");

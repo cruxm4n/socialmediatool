@@ -39,7 +39,9 @@ vi.mock("@/server/data", () => ({ listChannels: async () => [] }));
 vi.mock("@/server/publishing", () => ({ getProvider: () => ({}) }));
 vi.mock("@/server/sync", () => ({ runSync: vi.fn(), recordRateLimit: vi.fn() }));
 
-const { listMedia, listStudioDrafts, getStudioDraft, listPostVersions } = await import("@/server/studio");
+const { listMedia, listStudioDrafts, getStudioDraft } = await import("@/server/studio");
+
+const { listPostVersions } = await import("@/server/post-versions");
 
 const media = (id: string, extra: Record<string, unknown> = {}) => ({
   id, organization_id: "o1", storage_path: `o1/${id}.jpg`, file_name: `${id}.jpg`, kind: "image", mime_type: "image/jpeg", size_bytes: 1, width: 1, height: 1,
@@ -87,5 +89,15 @@ describe("erreurs de lecture", () => {
     await expect(listMedia(null)).rejects.toThrow("connexion interrompue");
     await expect(listPostVersions("p")).rejects.toThrow("connexion interrompue");
     await expect(getStudioDraft("11111111-1111-4111-8111-111111111111")).rejects.toThrow("connexion interrompue");
+  });
+});
+
+describe("historique partagé sans dépendance au Studio", () => {
+  it("conserve le texte, les médias et la date des versions et filtre la lecture par publication", async () => {
+    const assets = [{ type: "image", url: "https://s/version-2.jpg" }];
+    mainResult = { data: [{ version: 2, text: "Texte validé", due_at: null, assets, created_at: "2026-10-11T10:00:00Z" }], error: null };
+    expect(await listPostVersions("publication-a")).toEqual([{ version: 2, text: "Texte validé", dueAt: null, assets, createdAt: "2026-10-11T10:00:00Z" }]);
+    expect(queries).toContainEqual({ table: "post_versions", method: "eq", args: ["post_id", "publication-a"] });
+    expect(queries).toContainEqual({ table: "post_versions", method: "order", args: ["version", { ascending: false }] });
   });
 });

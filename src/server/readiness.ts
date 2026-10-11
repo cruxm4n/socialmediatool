@@ -1,6 +1,8 @@
 import "server-only";
 
 import { MissingFunctionError, rpc } from "@/server/automation-rpc";
+import { credentialKeyAvailable } from "@/server/credentials";
+import { bufferModeProblem } from "@/server/env";
 
 /*
  * Contrôle de PRÉPARATION (≠ liveness) : l'application est-elle en état de servir ? Il vérifie la configuration, la
@@ -38,7 +40,10 @@ export function configurationChecks(): ReadinessCheck[] {
     { name: "configuration : clé publique Supabase", ok: present("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY") },
     { name: "configuration : secret d'automatisation", ok: present("AUTOMATION_SECRET") && (process.env.AUTOMATION_SECRET ?? "").length >= 24 },
     { name: "configuration : mode Buffer explicite (mock ou real)", ok: ["mock", "real"].includes(process.env.BUFFER_MODE ?? "") },
-    { name: "configuration : clé Buffer présente en mode réel", ok: !real || present("BUFFER_API_KEY") },
+    // En production, le Buffer simulé n'est jamais choisi en silence : il exige une autorisation explicite.
+    { name: "configuration : aucun Buffer simulé en production sans autorisation explicite (CADENCE_ALLOW_SIMULATED_BUFFER)", ok: bufferModeProblem() === null },
+    // Les clés Buffer sont propres à chaque connexion et chiffrées : en mode réel, la clé de chiffrement est requise.
+    { name: "configuration : clé de chiffrement des connexions présente en mode réel (CADENCE_CREDENTIALS_KEY)", ok: !real || credentialKeyAvailable() },
     // Profil pilote : notifications simulées et contenu minimal imposés par env.ts ; un réglage contraire est une
     // erreur de configuration à corriger (il ne produirait de toute façon aucun envoi).
     { name: "profil pilote : aucun réglage d'envoi réel ni de contenu détaillé", ok: !pilot || (process.env.NOTIFICATIONS_MODE !== "webhook" && process.env.NOTIFICATIONS_CONTENT !== "full") },
@@ -57,6 +62,10 @@ export async function readiness(): Promise<Readiness> {
       checks.push({ name: "base de données joignable, secret d'automatisation accepté", ok: !!status });
       for (const [level, ok] of Object.entries(status?.checks ?? {})) checks.push({ name: `migration ${level} en place`, ok: ok === true });
       if (!status?.checks) checks.push({ name: "migrations requises vérifiables", ok: false });
+      // Cette version route chaque opération par une connexion fournisseur : sans 0012, rien ne peut être envoyé.
+      else if (!("0012" in status.checks)) checks.push({ name: "migration 0012 en place", ok: false });
+      // Révocation sûre, identité des comptes et collisions refusées : sans 0013, cette version ne doit pas servir.
+      else if (!("0013" in status.checks)) checks.push({ name: "migration 0013 en place", ok: false });
     } catch (error) {
       checks.push({ name: error instanceof MissingFunctionError ? "migration 0011 absente (schema_status)" : "base de données joignable", ok: false });
     }

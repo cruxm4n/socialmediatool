@@ -121,7 +121,7 @@ describe("anti-doublon et silence", () => {
 
   it("les publications simulées sont rangées à part et ne sont jamais réservées en mode réel", async () => {
     await start();
-    await db.sync([{ id: "mock-dev-a" }], { mode: "mock" });
+    await db.sync([{ id: "mock-dev-a" }], { mode: "mock", channelPrefix: "mock-" });
     expect(await queued()).toMatchObject([{ mode: "mock" }]);
     expect(await claim("real")).toEqual([]);
     expect(await claim("mock")).toHaveLength(1);

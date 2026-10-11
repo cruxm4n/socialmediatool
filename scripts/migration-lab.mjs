@@ -154,7 +154,7 @@ try {
   if (option("export-expected")) {
     const out = resolve(option("export-expected"));
     mkdirSync(out, { recursive: true });
-    for (const level of ["0003", "0008", "0009", "0010", "0011"]) {
+    for (const level of ["0003", "0008", "0009", "0010", "0011", "0012", "0013"]) {
       const database = newDatabase();
       migrate(database, upTo(level));
       writeFileSync(resolve(out, `niveau-${level}.txt`), `${fingerprint(database).lines.join("\n")}\n`);
@@ -181,7 +181,7 @@ try {
     const outcome = psql(database, text(file), { allowFailure: true });
     const replayable = outcome.failed !== true;
     const same = replayable && fingerprint(database).digest === reference;
-    const required = ["0009", "0010", "0011"].includes(level);
+    const required = ["0009", "0010", "0011", "0012", "0013"].includes(level);
     const reason = replayable ? (same ? "" : "empreinte différente") : (String(outcome.message).split("\n").find((line) => /ERROR/.test(line)) ?? "");
     if (required) check(`rejeu de ${file} à son niveau : sans erreur, empreinte inchangée`, same, reason);
     else console.log(`INFO   rejeu de ${file} à son niveau : ${same ? "possible" : `non rejouable (${reason || "empreinte différente"}) — migration historique, jamais réécrite`}`);
@@ -201,7 +201,7 @@ try {
   }
 
   // 4. Montée avec données depuis 0008, 0009 puis 0010
-  for (const level of ["0008", "0009", "0010"]) {
+  for (const level of ["0008", "0009", "0010", "0011", "0012"]) {
     const database = newDatabase();
     migrate(database, upTo(level));
     if (level >= "0009") seedFixture(database);
@@ -239,8 +239,8 @@ try {
     const after = fingerprint(database).digest;
     check("0011 sur une base à 0009 : refus explicite du prérequis", failed.failed === true && /migration_0011_requires_0010/.test(failed.message));
     check("échec de prérequis atomique : empreinte de la base inchangée", before === after);
-    migrate(database, ["0010_contre_audit.sql", "0011_correction_v3.sql"]);
-    check("reprise après l'échec : 0010 puis 0011 aboutissent à l'empreinte d'une installation neuve", fingerprint(database).digest === freshPrint.digest);
+    migrate(database, ["0010_contre_audit.sql", "0011_correction_v3.sql", "0012_connexions_fournisseur.sql", "0013_connexions_cycle_de_vie.sql"]);
+    check("reprise après l'échec : 0010, 0011 puis 0012 aboutissent à l'empreinte d'une installation neuve", fingerprint(database).digest === freshPrint.digest);
     dropDatabase(database);
   }
 
@@ -253,8 +253,55 @@ try {
     const failed = psql(database, broken, { allowFailure: true });
     check("migration interrompue en cours de route : erreur signalée", failed.failed === true && /division by zero/.test(failed.message));
     check("migration interrompue : annulée en entier (aucune table ni fonction à moitié créée)", fingerprint(database).digest === before);
-    migrate(database, ["0011_correction_v3.sql"]);
+    migrate(database, ["0011_correction_v3.sql", "0012_connexions_fournisseur.sql", "0013_connexions_cycle_de_vie.sql"]);
     check("reprise après interruption : la migration aboutit", fingerprint(database).digest === freshPrint.digest);
+    dropDatabase(database);
+  }
+  // 7. Migration corrective 0013 : prérequis, interruption en cours de route sur une base 0012 AVEC données, reprise
+  {
+    const database = newDatabase();
+    migrate(database, upTo("0011"));
+    const before = fingerprint(database).digest;
+    const refused = psql(database, text("0013_connexions_cycle_de_vie.sql"), { allowFailure: true });
+    check("0013 sur une base à 0011 : refus explicite du prérequis, empreinte inchangée", refused.failed === true && /0012 doit être appliquée/.test(refused.message) && fingerprint(database).digest === before);
+    dropDatabase(database);
+  }
+  {
+    const database = newDatabase();
+    migrate(database, upTo("0012"));
+    seedFixture(database);
+    // Connexion d'un client créée par la version 4e132cb (clé enregistrée par une session, jamais vérifiée).
+    psql(database, `
+      select set_config('request.jwt.claim.sub', '00000000-0000-4000-8000-0000000000a0', false);
+      set role authenticated;
+      select public.admin_create_provider_connection('00000000-0000-4000-8000-00000000c001', 'real', 'Compte du client B', (select id from public.organizations where slug = 'client-b'), 'stored', 'v1.lab.t.c', 1, '1234', null);
+      reset role;`);
+    const CONNECTIONS_SQL = `
+      select 'connections|' || count(*) || '|' || md5(coalesce(string_agg(id || ':' || mode || ':' || status || ':' || credential_source, ',' order by id), '')) from public.provider_connections
+      union all select 'credentials|' || count(*) || '|' || md5(coalesce(string_agg(connection_id || ':' || ciphertext || ':' || key_version, ',' order by connection_id), '')) from private.provider_credentials
+      union all select 'events|' || count(*) from public.provider_connection_events
+      union all select 'channel-connections|' || md5(coalesce(string_agg(buffer_channel_id || ':' || coalesce(provider_connection_id::text, '-'), ',' order by buffer_channel_id), '')) from public.channels;`;
+    const print = fingerprint(database).digest;
+    const content = psql(database, CONTENT_SQL);
+    const connections = psql(database, CONNECTIONS_SQL);
+    const broken = text("0013_connexions_cycle_de_vie.sql").replace(/\ncommit;\s*$/, "\nselect 1 / 0;\ncommit;\n");
+    const failed = psql(database, broken, { allowFailure: true });
+    check("0013 interrompue en cours de route : erreur signalée", failed.failed === true && /division by zero/.test(failed.message));
+    check("0013 interrompue : annulée en entier (schéma, droits, publications, connexions et clés chiffrées inchangés)",
+      fingerprint(database).digest === print && psql(database, CONTENT_SQL) === content && psql(database, CONNECTIONS_SQL) === connections);
+    migrate(database, ["0013_connexions_cycle_de_vie.sql"]);
+    check("0013 après interruption : aboutit, schéma identique à une installation neuve", fingerprint(database).digest === freshPrint.digest);
+    check("0013 : publications, décisions, versions, connexions, clés chiffrées et rattachement des canaux conservés",
+      psql(database, CONTENT_SQL) === content && psql(database, CONNECTIONS_SQL) === connections);
+    const unverified = psql(database, `select (c ->> 'verified') || '|' || (c ->> 'status') from jsonb_array_elements(public.provider_connections_for_run('${SECRET}', 'real')) c where c ->> 'id' = '00000000-0000-4000-8000-00000000c001';`);
+    check("0013 : une clé enregistrée avant la vérification d'identité est conservée mais signalée NON vérifiée", unverified === "false|active", unverified);
+    // Ancien appelant (application 2f51602) sur le schéma final : son relevé complet ne retire rien du compte du client B.
+    psql(database, `
+      select public.sync_buffer_posts('${SECRET}', '{"mode":"real","complete":false,"scopeConnectionIds":["00000000-0000-4000-8000-00000000c001"],"channels":[{"id":"real-ch-b","service":"linkedin","name":"B","connectionId":"00000000-0000-4000-8000-00000000c001"}],"posts":[{"id":"real-b-1","channelId":"real-ch-b","service":"linkedin","status":"scheduled","text":"Publication du client B","dueAt":"2031-04-01T09:00:00.000Z","hasReviewTag":true,"assets":[],"connectionId":"00000000-0000-4000-8000-00000000c001"}]}'::jsonb);
+      select public.sync_buffer_posts('${SECRET}', '{"mode":"real","complete":true,"channels":[],"posts":[]}'::jsonb);`);
+    const kept = psql(database, "select count(*) from public.posts where buffer_post_id = 'real-b-1' and removed_at is null;");
+    const historical = psql(database, "select count(*) from public.posts where buffer_post_id like 'real-lab-%' and removed_at is not null;");
+    check("0013 : relevé complet d'un ancien appelant — le compte du client B garde ses publications, seul le compte historique est concerné", kept === "1" && historical === "9", `B conservées ${kept}, historiques retirées ${historical}`);
     dropDatabase(database);
   }
   dropDatabase(fresh);

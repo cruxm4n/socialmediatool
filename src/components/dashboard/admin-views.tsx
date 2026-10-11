@@ -1,12 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { toast } from "sonner";
 import { ArrowRight, CalendarDays, CircleAlert, CircleCheckBig, Clock, Inbox, MessageSquareWarning, PartyPopper, TriangleAlert, type LucideIcon } from "lucide-react";
 
-import { ConfirmDialog } from "@/components/admin/confirm-dialog";
 import { EditorialCalendar } from "@/components/calendar/editorial-calendar";
 import { AttentionBanner } from "@/components/dashboard/attention-banner";
 import { ActivityTimeline } from "@/components/publications/activity";
@@ -17,14 +13,11 @@ import { statusBar, TONE_CLASSES } from "@/components/shared/status-badge";
 import { matchesOrgFilter, useAdmin } from "@/components/shell/admin-context";
 import { SyncButton } from "@/components/shell/sync-button";
 import { Button } from "@/components/ui/button";
-import { leaveIfExpired } from "@/lib/action-result";
-import { addDays, capitalize, dayKeyOf, dayNumber, formatDateTime, formatDayLong, timeOf, weekdayLabel, zonedToUtcIso, type DayKey } from "@/lib/dates";
-import { canMoveTo, findConflicts } from "@/lib/domain/studio";
+import { addDays, capitalize, dayKeyOf, dayNumber, formatDayLong, timeOf, weekdayLabel } from "@/lib/dates";
 import { buildInbox } from "@/lib/domain/inbox";
 import type { Tone } from "@/lib/domain/status";
 import { DISPLAY_STATUSES, type Channel, type DisplayStatus, type PostEvent, type Profile } from "@/lib/types";
-import { DEFAULT_TIMEZONE, studioDraftIdOf, type PostView } from "@/lib/view";
-import { moveCalendarItem } from "@/server/studio-actions";
+import { DEFAULT_TIMEZONE, type PostView } from "@/lib/view";
 import { cn } from "@/lib/utils";
 
 function Stat({ icon: Icon, tone, value, label, hint, status }: { icon: LucideIcon; tone: Tone; value: number; label: string; hint: string; status: DisplayStatus }) {
@@ -211,84 +204,13 @@ export function AdminOverview({
   );
 }
 
-export function AdminCalendarView({ posts, studioPosts = [], now }: { posts: PostView[]; studioPosts?: PostView[]; now: string }) {
+export function AdminCalendarView({ posts, now }: { posts: PostView[]; now: string }) {
   const { orgFilter } = useAdmin();
-  const router = useRouter();
-  const [moving, startMove] = useTransition();
-  const [pending, setPending] = useState<{ post: PostView; dueAt: string; reasons: string[] } | null>(null);
-  // Les contenus du Studio pas encore envoyés à Buffer figurent au calendrier comme des brouillons.
-  const scoped = [...posts, ...studioPosts].filter((post) => matchesOrgFilter(orgFilter, post.organization?.id));
-
-  const run = (post: PostView, dueAt: string) =>
-    startMove(async () => {
-      setPending(null);
-      const draftId = studioDraftIdOf(post.id);
-      try {
-        const result = await moveCalendarItem(draftId ? { kind: "studio", draftId, dueAt } : { kind: "post", postId: post.id, dueAt });
-        if (leaveIfExpired(result)) return;
-        if (result.ok) toast.success(result.message);
-        else toast.error("Date inchangée", { description: result.message });
-      } catch {
-        toast.error("La confirmation n'a pas été reçue", { description: "Rechargez le calendrier pour vérifier la date avant de réessayer." });
-      }
-      router.refresh();
-    });
-
-  const onMove = (post: PostView, day: DayKey) => {
-    if (!post.dueAt || moving) return;
-    // Le jour change, l'heure est conservée, dans le fuseau du client.
-    const dueAt = zonedToUtcIso(day, timeOf(post.dueAt, post.timezone), post.timezone);
-    if (!canMoveTo(dueAt, new Date().toISOString())) {
-      toast.error("Impossible de déplacer une publication dans le passé.");
-      return;
-    }
-    const reasons: string[] = [];
-    if (post.approvalStatus === "approved") reasons.push("Cette publication est approuvée. La date fait partie de ce que le client a validé : la changer annule son accord, il devra le redonner.");
-    for (const other of findConflicts(dueAt, [post.channelId], scoped.map((item) => ({ id: item.id, channelId: item.channelId, dueAt: item.dueAt, title: item.title })), [post.id])) {
-      reasons.push(`Une autre publication est déjà prévue sur ce canal à ${formatDateTime(other.dueAt!, post.timezone)} : « ${other.title} ».`);
-    }
-    if (reasons.length > 0) setPending({ post, dueAt, reasons });
-    else run(post, dueAt);
-  };
-
+  const scoped = posts.filter((post) => matchesOrgFilter(orgFilter, post.organization?.id));
   return (
     <div className="grid animate-rise grid-cols-1 gap-6">
-      <PageHeader
-        title="Calendrier"
-        description="Toutes les publications à leur date prévue : celles de Buffer et les contenus en préparation dans le Studio. Le client affiché dépend du sélecteur en haut de page."
-      />
-      <EditorialCalendar
-        posts={scoped}
-        now={now}
-        statuses={DISPLAY_STATUSES}
-        showOrg={orgFilter === "all"}
-        hrefFor={(post) => {
-          const draftId = studioDraftIdOf(post.id);
-          return draftId ? `/admin/studio/${draftId}` : `/admin/publications/${post.id}`;
-        }}
-        reschedule={{ canMove: (post) => !post.removedAt && post.bufferStatus === "draft" && !!post.dueAt, onMove }}
-      />
-      <ConfirmDialog
-        open={pending !== null}
-        onOpenChange={(open) => !open && setPending(null)}
-        title="Changer la date de cette publication ?"
-        confirmLabel="Déplacer quand même"
-        pending={moving}
-        onConfirm={() => pending && run(pending.post, pending.dueAt)}
-      >
-        {pending && (
-          <>
-            <p>
-              « {pending.post.title} » passerait au <span className="font-medium text-foreground">{formatDateTime(pending.dueAt, pending.post.timezone)}</span>.
-            </p>
-            <ul className="mt-2 grid list-disc gap-1 pl-5">
-              {pending.reasons.map((reason) => (
-                <li key={reason}>{reason}</li>
-              ))}
-            </ul>
-          </>
-        )}
-      </ConfirmDialog>
+      <PageHeader title="Calendrier" description="Publications synchronisées depuis Buffer. Les dates se modifient dans Buffer. Le sélecteur en haut de page permet de consulter un client." />
+      <EditorialCalendar posts={scoped} now={now} statuses={DISPLAY_STATUSES} showOrg={orgFilter === "all"} hrefFor={(post) => `/admin/publications/${post.id}`} />
     </div>
   );
 }

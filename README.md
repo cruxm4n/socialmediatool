@@ -1,89 +1,60 @@
-# Cadence — portail de validation des publications
+# Cadence — portail de validation client
 
-Les publications se créent dans **Buffer**. Cadence les récupère, les présente au bon client, recueille sa décision, puis les programme dans Buffer une fois approuvées.
+État de référence au **11 octobre 2026** : `/home/ubuntu/cadence`, branche `chore/cadence-consolidation-2026-10-11`, issue de `09cdeb1974f13301790d17fa2ab6a7150f6e8fab`. Ce dépôt est indépendant, restauré depuis un Git bundle vérifié puis consolidé depuis `c0af3a0`. Les historiques divergents sont conservés sous les tags `archive/consolidation-2026-10-11/*` ; voir la section « Consolidation du dépôt canonique » de [CLEANUP_REPORT.md](CLEANUP_REPORT.md#consolidation-du-dépôt-canonique). La production exécute encore **2f51602**, avec Buffer et notifications simulés. Aucun déploiement n'a été réalisé par cette mission.
 
-> **État au 8 octobre 2026 : fonctionnel en local, relié à Supabase et à Buffer, sans n8n.**
-> Vérifié de bout en bout sur un vrai compte Buffer (canal X de test). Rien n'est déployé.
+## Produit et état réel
 
-## Le fonctionnement en six étapes
+Buffer devient l'outil de création, de gestion des médias, de programmation et de publication. Cadence conserve connexion client, consultation, calendrier, aperçus, validation, demandes de modification, commentaires et historique. Supabase porte les comptes, les permissions et les décisions.
 
-1. Vous créez un brouillon daté dans Buffer et lui ajoutez le tag **« À valider »**.
-2. Vous cliquez **Synchroniser** dans Cadence (ou un planificateur le fait).
-3. Le client du canal concerné voit la publication, avec un aperçu.
-4. Il **approuve**, **commente** ou **demande une modification**.
-5. Une approbation programme aussitôt la publication dans Buffer, à sa date prévue.
-6. Si vous modifiez ensuite la publication dans Buffer, la validation est annulée, la publication repasse en brouillon dans Buffer et le client doit la revalider.
+**Cible MVP :** brouillon Buffer → synchronisation Cadence → décision client → programmation manuelle dans Buffer.
 
-Une publication que le client n'a pas approuvée n'est jamais programmée par Cadence.
+**Comportement encore présent dans le backend :** l'approbation appelle le moteur de programmation et les synchronisations peuvent programmer ou déprogrammer. En mode réel, la barrière `CADENCE_BUFFER_WRITES` ferme ces écritures par défaut ; ne pas l'activer. Les validations exigent encore une date future. Le flux manuel complet nécessite donc une transition métier et SQL, décrite dans [NEXT_STEPS.md](NEXT_STEPS.md). La suppression des écrans Studio ne réalise pas cette transition.
 
-## Lancer en local
+L'interface Studio a été retirée ; ses anciens liens redirigent vers les publications après contrôle administrateur. Les calendriers permettent de consulter, filtrer et ouvrir une fiche. Les données, médias, versions, migrations et tests historiques restent conservés.
 
-Prérequis : Node.js 20.9 ou plus récent (Node 22 conseillé), npm.
+## Travailler sur la même version
+
+Claude Code et Codex doivent démarrer depuis le même dossier :
 
 ```bash
-npm install
+cd /home/ubuntu/cadence
+git status --short --branch
+```
+
+Vérifier la branche ci-dessus et se répartir les fichiers si les deux outils travaillent simultanément. Les anciennes sessions tmux et agents restent dans leurs dossiers historiques ; elles n'ont pas été déplacées. Les anciens dépôts ne doivent pas être supprimés : ils contiennent des références d'exploitation et du travail sauvegardé.
+
+## Installation locale
+
+Prérequis retenu : **Node.js 24**, npm ; Docker seulement pour les tests isolés. Utiliser le lockfile :
+
+```bash
+npm ci
+cp .env.example .env.local
 npm run dev
 ```
 
-Puis ouvrir <http://localhost:3000>. Le serveur n'écoute que sur `127.0.0.1` ; avec VS Code en Remote SSH, le port est redirigé automatiquement.
+Compléter uniquement une configuration de développement isolée. Aucune configuration de production n'a été copiée dans ce nouveau dépôt. `.env.example` décrit les variables ; les secrets restent hors Git. Appliquer les migrations **0001 à 0013**, dans l'ordre, uniquement à une base de développement neuve pour l'installation locale. Ne pas utiliser les seeds de démonstration contre une base réelle.
 
-La configuration est dans `.env.local` (déjà présent sur cette machine, jamais versionné). Pour repartir de zéro : copier `.env.example`, appliquer `supabase/migrations/0001_schema.sql`, puis suivre `supabase/seed.example.sql`.
+Le serveur de développement écoute sur `127.0.0.1`. Buffer simulé est le défaut en développement ; les clés réelles ne sont jamais nécessaires aux tests.
 
-### Comptes de démonstration
+## Vérifications
 
-Les adresses et mots de passe sont dans `.env.local` (variables `DEMO_…`).
+```bash
+CADENCE_NO_LOCAL_ENV=1 npm run lint
+CADENCE_NO_LOCAL_ENV=1 npm run typecheck
+CADENCE_NO_LOCAL_ENV=1 npm test
+CADENCE_NO_LOCAL_ENV=1 ISOLATED_BUILD=1 BUFFER_MODE=mock CADENCE_ALLOW_SIMULATED_BUFFER=1 URGENT_LOOP=off npm run build
+npm run test:ui
+```
 
-| Compte | Rôle | Voit |
-| --- | --- | --- |
-| Alex Martin | Administrateur | Tous les clients |
-| Inès Faure, Hugo Bernard | Clients | Maison Colibri uniquement |
-| Sofia Lemaire | Cliente | Nordwind Cycles uniquement |
+Les suites d'intégration et E2E écrivent : utiliser exclusivement des identifiants `TEST_*` d'une pile indépendante, sans clé Buffer réelle. Les commandes et limites sont dans [PROJECT_STATUS.md](PROJECT_STATUS.md) et [TESTING.md](TESTING.md). Les suites locales passent après adaptation des mocks et fixtures hérités (670 unitaires/SQL, 83 intégrations, 62 E2E) ; ces succès avec Buffer simulé ne certifient pas l’intégration réelle ni la mise en production. Le script historique `test-stack.mjs down` supprime des volumes : **ne pas l'utiliser dans le cadre de cette récupération** ; les piles créées pour la mission seront simplement arrêtées et conservées.
 
-Les deux organisations sont fictives. Le canal X de test est rattaché à Maison Colibri.
+## Documentation de référence
 
-### Buffer réel ou simulé
+- [ARCHITECTURE.md](ARCHITECTURE.md) : constat, cible, Buffer et n8n.
+- [PROJECT_STATUS.md](PROJECT_STATUS.md) : preuves, tests, avancement et limites.
+- [DEPLOYMENT.md](DEPLOYMENT.md) : exploitation constatée, préparation et rollback, sans déploiement.
+- [CLEANUP_REPORT.md](CLEANUP_REPORT.md) : inventaire Git, sauvegardes, choix de base et modifications.
+- [NEXT_STEPS.md](NEXT_STEPS.md) : actions ordonnées et critères d'acceptation.
 
-`BUFFER_MODE` dans `.env.local` :
-
-- `real` — appelle l'API Buffer avec `BUFFER_API_KEY`.
-- `mock` — Buffer simulé, quinze publications fictives, aucun appel réseau. C'est le mode des tests automatiques.
-
-Les données simulées et réelles ne s'affichent jamais ensemble.
-
-### Synchroniser
-
-- À la main : bouton **Synchroniser** (en-tête de l'espace admin).
-- À l'ouverture de l'espace admin, si la dernière synchronisation date de plus de quinze minutes.
-- Automatiquement, toutes les 5 minutes : planificateur préparé, à activer par une commande — [docs/PLANIFICATEUR.md](docs/PLANIFICATEUR.md).
-
-La pastille de l'en-tête et l'écran **Synchronisation** disent si les données sont à jour.
-
-## Commandes
-
-| Commande | Rôle |
-| --- | --- |
-| `npm run dev` | Serveur de développement, port 3000 |
-| `npm run check` | Lint, typage, tests des règles, compilation |
-| `npm run test:db` | Tests de la base Supabase : isolation, validations simultanées, programmation |
-| `npm run test:e2e` | Parcours dans un navigateur, Buffer simulé, port 3100 |
-| `node scripts/setup-test-db.mjs` | Prépare la base de test locale (voir docs/BASE_DE_TEST.md) |
-| `npm run build` puis `npm run start` | Version de production en local |
-
-Première utilisation des parcours : `npx playwright install --only-shell chromium`.
-
-## Documentation
-
-- [ARCHITECTURE.md](ARCHITECTURE.md) — qui fait quoi, modèle de données, sécurité
-- [docs/BUFFER.md](docs/BUFFER.md) — ce que l'API Buffer permet, résultats des essais réels
-- [docs/PILOTE.md](docs/PILOTE.md) — sauvegarde, migrations, Docker, checklist de l'essai réel sur le canal X
-- [docs/BASE_DE_TEST.md](docs/BASE_DE_TEST.md) — base Supabase locale pour les tests qui écrivent
-- [docs/MISE_EN_SERVICE.md](docs/MISE_EN_SERVICE.md) — **ce qu'il reste à autoriser** : fusion, migrations, planificateur, notifications
-- [docs/STUDIO.md](docs/STUDIO.md) — Content Studio : création, médias, calendrier, garde-fous, activation
-- [docs/PLANIFICATEUR.md](docs/PLANIFICATEUR.md) — synchronisation automatique
-- [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) — qui est prévenu de quoi, mode simulation, envoi réel
-- [docs/N8N.md](docs/N8N.md) — brancher n8n
-- [TESTING.md](TESTING.md) — tests et résultats
-- [DECISIONS.md](DECISIONS.md) — décisions et leurs raisons
-- [ROADMAP.md](ROADMAP.md) — ce qui est fait, ce qui reste
-- [NIGHT_REPORT.md](NIGHT_REPORT.md) — audit et améliorations du 8 octobre 2026
-- [CLAUDE.md](CLAUDE.md) — conventions pour les sessions Claude Code
+Les documents historiques utiles sont indexés dans `CLEANUP_REPORT.md`. Leurs affirmations de validation réelle ou de préparation à la production ne valent pas pour cette branche sans nouvelle vérification.

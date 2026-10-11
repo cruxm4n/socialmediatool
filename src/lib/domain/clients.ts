@@ -72,4 +72,6 @@ export const ADMIN_ERRORS: Record<string, string> = {
   organization_unavailable: "Ce client est archivé ou n'existe plus : restaurez-le avant de lui attribuer un canal.",
   not_a_client: "Seul un compte client peut être associé à un client (pas un administrateur).",
   user_not_found: "Aucun compte ne correspond à cet e-mail. Créez ou invitez d'abord l'utilisateur dans Supabase → Authentication → Users.",
+  channel_connection_org_mismatch: "Ce canal vient du compte Buffer d'un autre client : il ne peut être attribué qu'à ce client.",
+  channel_connection_immutable: "Un canal reste lié au compte Buffer dont il provient : il ne change pas de compte.",
 };

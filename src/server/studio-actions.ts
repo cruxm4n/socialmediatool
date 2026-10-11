@@ -8,7 +8,7 @@ import { pilotLeadSatisfied } from "@/lib/domain/schedule-margins";
 import { canMoveTo, dedupeHashtags, normalizeHashtag } from "@/lib/domain/studio";
 import { getSession } from "@/server/auth";
 import { getPost } from "@/server/data";
-import { env } from "@/server/env";
+import { BUFFER_WRITES_DISABLED, env } from "@/server/env";
 import { getProvider } from "@/server/publishing";
 import { confirmDraftAbsent, findDraftForPost, pushDraftToBuffer, reconcileDraftPush, studioFailure, type PushResult } from "@/server/studio";
 import { ProviderError } from "@/server/publishing/provider";
@@ -208,6 +208,7 @@ export async function moveCalendarItem(input: z.input<typeof moveSchema>): Promi
 
   try {
     const provider = getProvider();
+    if (provider.mode === "real" && !env.bufferWritesEnabled) return { ok: false, message: BUFFER_WRITES_DISABLED };
     const pause = await activeRateLimitPause(provider.mode);
     if (pause) return { ok: false, message: pauseMessage(pause) };
     const live = await provider.getPost(post.bufferPostId);

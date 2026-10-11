@@ -30,6 +30,7 @@ try {
   await page.addScriptTag({ content: script });
   const day = page.getByRole("button", { name: "vendredi 9 octobre 2026 · 1 publication", exact: true });
   await day.waitFor();
+  assert.equal(await page.locator('[draggable="true"], [data-movable="true"]').count(), 0, "Le calendrier ne propose aucun déplacement de publication");
   await day.focus();
   await page.keyboard.press("Enter");
   assert.equal(await day.getAttribute("aria-pressed"), "true", "Sélection du jour au clavier");
@@ -41,6 +42,7 @@ try {
   await page.getByRole("button", { name: "Aujourd'hui", exact: true }).click();
   assert.equal(await page.getByTestId("calendar-title").innerText(), "Octobre 2026", "Retour à aujourd'hui");
   await page.getByRole("button", { name: "Semaine", exact: true }).click();
+  assert.equal(await page.locator('[draggable="true"], [data-movable="true"]').count(), 0, "La vue semaine reste en consultation");
   assert.ok((await page.getByTestId("calendar-title").innerText()).includes("5 – 11 octobre 2026"), "Navigation hebdomadaire");
   for (const width of [320, 390, 768, 1440]) {
     await page.setViewportSize({ width, height: 900 });

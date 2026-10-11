@@ -143,7 +143,9 @@ export class LocalDb {
   }
 
   /** Envoie un état de Buffer à la base, comme le fait la couche de service. */
-  async sync(posts: SyncPost[], options: { mode?: "real" | "mock"; complete?: boolean; confirmedGone?: string[] } = {}) {
+  async sync(posts: SyncPost[], options: { mode?: "real" | "mock"; complete?: boolean; confirmedGone?: string[]; channelPrefix?: string } = {}) {
+    // Les fixtures mixtes du schéma actuel isolent leurs canaux ; les montées de version conservent leurs identités historiques.
+    const prefix = options.channelPrefix ?? "";
     const payload = {
       mode: options.mode ?? "real",
       complete: options.complete ?? false,
@@ -153,10 +155,10 @@ export class LocalDb {
         { id: "canal-nordwind", service: "instagram", name: "Nordwind", organizationSlug: "nordwind" },
         { id: "canal-colibri-2", service: "linkedin", name: "Colibri (second compte)", organizationSlug: "colibri" },
         { id: "canal-libre", service: "instagram", name: "Libre" },
-      ],
+      ].map((channel) => ({ ...channel, id: `${prefix}${channel.id}` })),
       posts: posts.map((post) => ({
         id: post.id,
-        channelId: post.channelId ?? "canal-colibri",
+        channelId: post.channelId ?? `${prefix}canal-colibri`,
         service: "linkedin",
         status: post.status ?? "draft",
         text: post.text ?? "Texte",

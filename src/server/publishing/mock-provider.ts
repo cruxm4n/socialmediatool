@@ -28,6 +28,8 @@ interface MockState {
   loseNextScheduleResponse: boolean;
   /** Simule un refus certain du quota (429) lors de la prochaine écriture. */
   rateLimitNextWrite: number | null;
+  /** Simule un compte injoignable : toute opération échoue (panne réseau) tant que c'est vrai. */
+  unavailable?: boolean;
 }
 
 const PARIS = "Europe/Paris";
@@ -40,6 +42,27 @@ function image(file: string): PostAsset[] {
 function video(file: string): PostAsset[] {
   const url = `/demo-media/${file}.svg`;
   return [{ type: "video", source: url, thumbnail: url, mimeType: "video/mp4" }];
+}
+
+/** Compte simulé supplémentaire (connexion d'un client) : identifiants propres, deux canaux, deux brouillons. */
+function buildAccountState(runId: string, account: string): MockState {
+  const today = dayKeyOf(new Date().toISOString(), PARIS);
+  const at = (offset: number, time: string) => zonedToUtcIso(addDays(today, offset), time, PARIS);
+  const channel = (service: string): ProviderChannel => ({
+    id: `mock-ch-${account}-${service}`, service, name: `Compte simulé ${account}`, displayName: `Compte simulé ${account}`, avatar: null, isDisconnected: false,
+  });
+  const post = (key: string, service: string, dueAt: string, text: string): ProviderPost => ({
+    id: `mock-${runId}-${account}-${key}`, channelId: `mock-ch-${account}-${service}`, service, status: "draft", text, dueAt, sentAt: null,
+    updatedAt: at(-1, "10:00"), externalLink: null, error: null, hasReviewTag: true, schedulingType: "automatic", assets: [],
+  });
+  return {
+    failNextSchedule: null, scheduleCalls: 0, createCalls: 0, failNextCreate: null, loseNextCreateResponse: false, loseNextScheduleResponse: false, rateLimitNextWrite: null,
+    channels: [channel("linkedin"), channel("instagram")],
+    posts: [
+      post("bienvenue-li", "linkedin", at(6, "09:00"), `Publication de démonstration du compte simulé ${account} (LinkedIn).`),
+      post("bienvenue-ig", "instagram", at(8, "12:00"), `Publication de démonstration du compte simulé ${account} (Instagram).`),
+    ],
+  };
 }
 
 function buildState(runId: string): MockState {
@@ -153,19 +176,27 @@ function buildState(runId: string): MockState {
 
 const globalStore = globalThis as unknown as { __cadenceMockBuffer?: Record<string, MockState> };
 
-function getState(runId: string): MockState {
+function getState(runId: string, account?: string): MockState {
   globalStore.__cadenceMockBuffer ??= {};
-  globalStore.__cadenceMockBuffer[runId] ??= buildState(runId);
-  return globalStore.__cadenceMockBuffer[runId];
+  // Chaque compte simulé a son propre état : rien n'est partagé entre deux comptes.
+  const key = account ? `${runId}::${account}` : runId;
+  globalStore.__cadenceMockBuffer[key] ??= account ? buildAccountState(runId, account) : buildState(runId);
+  return globalStore.__cadenceMockBuffer[key];
 }
 
 export class MockProvider implements PublishingProvider {
   readonly mode = "mock" as const;
 
-  constructor(private readonly runId: string) {}
+  /** `account` : compte simulé d'une connexion propre à un client (absent : le compte de démonstration). */
+  constructor(private readonly runId: string, private readonly account?: string) {}
 
   private get state() {
-    return getState(this.runId);
+    return getState(this.runId, this.account);
+  }
+
+  /** Compte simulé injoignable : aucune opération n'aboutit, et rien n'est modifié. */
+  private reach(): void {
+    if (this.state.unavailable) throw new ProviderError("Buffer simulé injoignable (panne simulée).", "network", undefined, "failed");
   }
 
   private find(id: string): ProviderPost {
@@ -175,6 +206,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async fetchSnapshot(): Promise<ProviderSnapshot> {
+    this.reach();
     const state = this.state;
     return {
       channels: structuredClone(state.channels),
@@ -185,11 +217,13 @@ export class MockProvider implements PublishingProvider {
   }
 
   async getPost(id: string): Promise<ProviderPost | null> {
+    this.reach();
     const post = this.state.posts.find((item) => item.id === id);
     return post ? structuredClone(post) : null;
   }
 
   async schedulePost(post: ProviderPost): Promise<ProviderPost> {
+    this.reach();
     const state = this.state;
     state.scheduleCalls += 1;
     if (state.failNextSchedule) {
@@ -218,6 +252,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async unschedulePost(post: ProviderPost): Promise<ProviderPost> {
+    this.reach();
     const stored = this.find(post.id);
     stored.status = "draft";
     stored.updatedAt = new Date().toISOString();
@@ -225,6 +260,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async createDraft(content: DraftContent): Promise<ProviderPost> {
+    this.reach();
     const state = this.state;
     if (state.failNextCreate) {
       const message = state.failNextCreate;
@@ -235,7 +271,7 @@ export class MockProvider implements PublishingProvider {
     if (!state.channels.some((channel) => channel.id === content.channelId)) throw new ProviderError("Canal introuvable dans le Buffer simulé.");
     state.createCalls += 1;
     const post: ProviderPost = {
-      id: `mock-${this.runId}-studio-${state.createCalls}`,
+      id: `mock-${this.runId}-${this.account ? `${this.account}-` : ""}studio-${state.createCalls}`,
       channelId: content.channelId,
       service: content.service,
       status: "draft",
@@ -259,6 +295,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async findDraftCandidates(lookup: DraftLookup): Promise<{ candidates: ProviderPost[]; possible: ProviderPost[]; complete: boolean }> {
+    this.reach();
     const instant = Date.parse(lookup.dueAt);
     const exact = (post: ProviderPost) =>
       post.channelId === lookup.channelId && post.text === lookup.text && post.dueAt !== null && Date.parse(post.dueAt) === instant &&
@@ -271,6 +308,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async updateDraft(postId: string, content: DraftContent): Promise<ProviderPost> {
+    this.reach();
     const stored = this.find(postId);
     if (stored.status === "sent" || stored.status === "sending") throw new ProviderError("Ce post est déjà publié.");
     Object.assign(stored, {
@@ -284,6 +322,7 @@ export class MockProvider implements PublishingProvider {
   }
 
   async rescheduleDraft(post: ProviderPost, dueAt: string): Promise<ProviderPost> {
+    this.reach();
     const stored = this.find(post.id);
     if (stored.status !== "draft") throw new ProviderError("Seul un brouillon peut changer de date depuis Cadence.");
     stored.dueAt = dueAt;
@@ -310,6 +349,11 @@ export class MockProvider implements PublishingProvider {
   remove(id: string) {
     const state = this.state;
     state.posts = state.posts.filter((item) => item.id !== id);
+  }
+
+  /** Rend le compte simulé injoignable, ou le rétablit. */
+  setUnavailable(unavailable: boolean) {
+    this.state.unavailable = unavailable;
   }
 
   failNextSchedule(message: string) {

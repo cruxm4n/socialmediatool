@@ -1,3 +1,5 @@
+> **Document historique, 11 octobre 2026 :** les chemins décrits ci-dessous ne sont plus l’architecture recommandée. Voir [ARCHITECTURE.md](../ARCHITECTURE.md#n8n--dépendances-constatées). Ne pas déplacer l’orchestration ou les secrets vers n8n ; les templates ne prouvent pas que des workflows sont installés. Aucune modification de l’instance n8n n’est autorisée par la mission de nettoyage.
+
 # Brancher n8n plus tard
 
 Aujourd'hui, le serveur de l'application fait lui-même le lien avec Buffer (`src/server/sync.ts`). Rien n'est à reconstruire pour passer à n8n : deux chemins sont possibles.

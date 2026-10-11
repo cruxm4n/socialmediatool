@@ -239,3 +239,50 @@ Avec un planificateur, un bouton et bientôt n8n, deux synchronisations peuvent 
 ## D39 — Un compte Buffer pour le pilote ; la liveness n'est pas la préparation
 
 **Décision.** Le pilote utilise un seul compte et une clé, figés tant qu'une tentative est non résolue (C14). `/api/health` dit que le processus tourne ; `/api/ready` (secret) dit que la configuration, la base et les migrations requises sont en place, sans appeler Buffer. Les cookies de session sont `Secure` derrière HTTPS.
+
+## D40 — Un compte Buffer par connexion, routé par le canal (10 octobre 2026)
+
+Une clé Buffer globale ne permet pas plusieurs clients à comptes indépendants. Chaque canal reçoit sa connexion d'origine (`channels.provider_connection_id`), posée une fois et immuable ; le routeur envoie chaque opération au compte du canal. Il n'existe aucun repli : sans route active, l'opération est refusée. La clé du serveur ne sert qu'à la connexion « historique » qui la déclare. Alternatives écartées : une colonne « clé » par client (secret en clair, pas d'historique) ; un fournisseur choisi par le client actuel du canal (un transfert de canal aurait changé de compte en silence).
+
+## D41 — Secrets chiffrés par le serveur, schéma privé (10 octobre 2026)
+
+Les clés sont chiffrées en AES-256-GCM avant d'atteindre la base, liées à leur connexion, stockées dans `private.provider_credentials` (hors API). La clé de chiffrement vit hors base. La RLS seule ne suffit pas : le serveur lit les secrets avec le secret d'automatisation, donc un vol de la base sans la clé de chiffrement ne livre aucune clé Buffer.
+
+## D42 — Panne et quota par compte (10 octobre 2026)
+
+Une erreur du fournisseur porte sa connexion. Elle n'interrompt que les opérations de ce compte pendant le passage, et un 429 ne met en pause que lui. La lecture d'un compte ne peut déclarer retirées que ses propres publications. Conséquence acceptée : la pause préventive de quota n'est plus appliquée lorsqu'il y a plusieurs comptes.
+
+## D43 — En production, aucun fournisseur simulé n'est choisi en silence (10 octobre 2026)
+
+**Contexte.** « Tout ce qui n'est pas `real` est simulé » était prudent pour un pilote, mais dangereux pour une production : une variable oubliée affichait de fausses publications comme si elles existaient.
+
+**Décision.** En production, le Buffer simulé exige `BUFFER_MODE=mock` **et** `CADENCE_ALLOW_SIMULATED_BUFFER=1` (piles de test, démonstration). Toute autre configuration est le mode réel ; si elle est invalide (mode absent, mal écrit, `mock` sans autorisation), le fournisseur est **bloqué en entier** et `/api/ready` le signale. Sans compte connecté, le mode réel n'appelle rien et l'interface affiche « Aucun compte Buffer connecté ». Hors production, le simulateur reste le défaut.
+
+## D44 — Lire Buffer n'autorise pas à y écrire : barrière d'activation (10 octobre 2026)
+
+**Décision.** En mode réel, créer, modifier, programmer et annuler exigent `CADENCE_BUFFER_WRITES=enabled`, fermé par défaut. Sans lui, rien n'est réservé en base ni envoyé ; l'interface dit « lecture seule ». L'annulation est fermée comme le reste : la barrière est un interrupteur complet, simple à auditer. **Conséquence acceptée** : refermer la barrière alors que des annulations sont en attente les reporte (elles restent visibles « à confirmer »).
+
+## D45 — L'identité d'un compte se constate côté serveur, jamais depuis le navigateur (10 octobre 2026)
+
+**Contexte.** Contrôle indépendant, P1-02 : la règle « remplacer une clé = même compte » ne s'appliquait que si l'identité était fournie, et rien ne la fournissait.
+
+**Décision.** Le serveur lit `account.id` chez Buffer (lecture seule) avant d'enregistrer ou de remplacer une clé réelle, et l'enregistre par des fonctions SQL protégées par le secret d'automatisation et un acteur administrateur (`server_*`). Les fonctions de session correspondantes sont fermées (`server_only`). Une clé à l'identité inconnue ne remplace jamais une clé vérifiée ; un échec de vérification ne prouve rien et ne change rien. Un compte = une connexion non révoquée ; une clé = une connexion (empreinte HMAC). Chaque client HTTP recontrôle l'identité avant sa première opération. En simulation, une clé peut être enregistrée « non vérifiée » : elle reste inutilisable.
+
+## D46 — Révocation et réservations partagent un verrou ; « révocation demandée » garde la clé pour annuler (10 octobre 2026)
+
+**Contexte.** Contrôle indépendant, P1-01 : une réservation concurrente pouvait aboutir pendant une révocation, laissant une publication programmée sans clé pour l'annuler ; un routeur déjà chargé continuait d'émettre.
+
+**Décision.** Toute réservation d'effet externe (déclencheurs sur `posts` et `studio_variants`) prend la connexion du canal en verrou partagé et exige qu'elle soit active ; la révocation la prend en exclusif puis compte les effets en attente. L'état intermédiaire `revoking` bloque tout nouvel effet et **conserve la clé** pour annuler, relire et rapprocher. Le routeur relit l'état durable avant chaque opération. La révocation forcée reste possible, sur phrase de confirmation, et dit qu'elle n'annule rien chez Buffer.
+
+## D47 — Un seul passage de synchronisation à la fois, comptes lus en parallèle (10 octobre 2026)
+
+**Contexte.** Le verrou de synchronisation et le bail urgent sont par mode. Faut-il un verrou par compte ?
+
+**Décision.** Non, pour l'instant. La fusion du relevé est une seule transaction ; un verrou par compte multiplierait les ordres d'entrelacement à prouver sans gain pour deux ou trois comptes. Ce qui isole réellement les comptes est ailleurs et il est prouvé : lecture en parallèle (un compte lent ne retarde pas les autres), panne et quota portés par la connexion, annulation en échec sur A qui ne retient pas les programmations de B, espacement des lectures planifiées par compte. **Limite assumée** : les écritures d'un passage restent séquentielles ; un compte qui répond lentement à chaque écriture allonge le passage (délai borné à 15 s par requête, puis le compte n'est plus sollicité pendant ce passage). À mesurer avant d'aller au-delà de quelques comptes.
+
+## D48 — Une publication garde son compte d'origine ; un ancien appelant ne vaut que pour le compte historique (10 octobre 2026)
+
+**Contexte.** Contrôle indépendant, P1-03 et P1-05 : le même identifiant annoncé par un autre compte déplaçait la publication et révélait un texte à l'autre client ; un relevé « sans périmètre » de l'ancienne application retirait les publications des nouveaux comptes.
+
+**Décision.** `sync_buffer_posts` (0013) refuse sans aucune mutation une publication connue annoncée sur un canal d'un autre compte, et la consigne. Un relevé sans connexion est rattaché au compte historique du mode (`is_default`) : il ne peut ni retirer, ni modifier, ni créer quoi que ce soit sur les comptes des clients. Le choix reste de **refuser** les collisions, pas de composer les clés avec la connexion.
+

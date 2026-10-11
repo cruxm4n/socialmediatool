@@ -1,3 +1,13 @@
+# Référence de travail — 11 octobre 2026
+
+Utiliser `/home/ubuntu/cadence`, branche `chore/cadence-recovery-cleanup-2026-10-11`, pour Claude Code ET Codex. Vérifier `git status --short --branch` avant de modifier. Les anciens dossiers sont conservés ; ne pas y poursuivre le développement ni les supprimer. Lire README.md, PROJECT_STATUS.md et NEXT_STEPS.md avant de reprendre.
+
+La cible est un portail client : création et programmation dans Buffer, décisions/commentaires locaux. Studio retiré de l’interface ; backend automatique encore présent et flux manuel incomplet. Ne pas réintroduire un éditeur ni activer `CADENCE_BUFFER_WRITES` pour achever ce nettoyage.
+
+Aucun push, merge main, déploiement, modification Supabase réelle/Buffer/n8n/Caddy ni suppression de volumes sans nouvelle autorisation. Les essais réels décrits historiquement ci-dessous ne sont pas autorisés par cette mission. Le disque a été vérifié au début de cette mission (environ 21 Go libres), et doit être recontrôlé avant une installation lourde. Node 24 est utilisé pour les validations.
+
+---
+
 # Instructions pour Claude Code
 
 @AGENTS.md
@@ -42,6 +52,15 @@
 - **Une tentative d'envoi Studio a une identité** (D35) : toute confirmation représente `push_attempt_id` ; une réponse d'une autre tentative devient un brouillon orphelin consigné, jamais appliquée.
 - **Profil pilote** : `CADENCE_PROFILE=pilot` impose notifications simulées et minimales, échéances ≥ 24 h à chaque programmation ; `/api/ready` (secret) ≠ `/api/health` (liveness).
 - **Contexte de test propre** : lancer les suites depuis une copie sans `.env*`, avec `CADENCE_NO_LOCAL_ENV=1` ; piles de test : `scripts/test-stack.mjs` (secrets générés, 127.0.0.1 seulement).
+- **Un compte Buffer par connexion, jamais de clé globale par défaut** (D40) : tout appel passe par le routeur (`src/server/publishing/router.ts`), qui envoie l'opération au compte du canal. Pas de route, connexion révoquée ou secret illisible → refus, jamais de repli. Un canal ne change jamais de connexion. Voir docs/CONNEXIONS_FOURNISSEUR.md.
+- **Les secrets des connexions sont chiffrés avant la base** (D41) : `src/server/credentials.ts`, clé `CADENCE_CREDENTIALS_KEY` hors base ; jamais renvoyés au navigateur, jamais journalisés, jamais réaffichés.
+- **Une erreur de fournisseur marquée d'une connexion ne vaut que pour elle** (D42) : elle ne bloque ni ne met en pause les autres comptes (`ProviderError.connectionId`).
+- **`npm run dev` n'utilise jamais le vrai Buffer** : `BUFFER_MODE=real` est ignoré en développement sans `CADENCE_ALLOW_REAL_BUFFER_IN_DEV=1`.
+- **En production, aucun Buffer simulé silencieux** (D43) : il exige `BUFFER_MODE=mock` ET `CADENCE_ALLOW_SIMULATED_BUFFER=1` ; toute configuration invalide BLOQUE le fournisseur (`bufferModeProblem()`), elle ne le remplace jamais par un simulateur. Ne jamais présenter une simulation comme un résultat du fournisseur.
+- **Lire Buffer n'autorise pas à y écrire** (D44) : en mode réel, toute écriture exige `CADENCE_BUFFER_WRITES=enabled` (fermé par défaut). Ne pas ouvrir cette barrière sans décision explicite du propriétaire.
+- **L'identité d'un compte Buffer se constate côté serveur** (D45) : clé réelle et identité ne s'enregistrent que par les fonctions `server_*` (secret d'automatisation + acteur administrateur), après lecture de `account.id`. Jamais par une fonction de session, jamais depuis une valeur venue du navigateur. Un échec de vérification ne remplace jamais la clé en place.
+- **Révocation et réservations partagent un verrou** (D46) : ne jamais réserver un effet externe sans passer par les fonctions de réservation (leurs déclencheurs verrouillent la connexion) ; l'état `revoking` garde la clé pour annuler. Le routeur relit l'état durable avant chaque opération : ne pas mettre cet état en cache.
+- **Une publication garde son compte d'origine** (D48) : une collision d'identifiant entre comptes est refusée sans mutation ; un relevé sans connexion ne vaut que pour le compte historique.
 - **Notifications : jamais d'envoi réel en développement.** Le mode par défaut est `simulate` ; ne pas renseigner `NOTIFICATIONS_MODE=webhook` dans `.env.local`.
 - Tout appel à Buffer passe par `PublishingProvider`. Les tests utilisent `MockProvider`, jamais l'API réelle.
 - Essais sur le vrai Buffer : uniquement sur le canal de test, posts datés loin dans le futur, supprimés ensuite, contrôle final « zéro post restant ». Jamais sur les pages Synology.

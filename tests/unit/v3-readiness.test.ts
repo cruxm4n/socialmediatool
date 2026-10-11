@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
  * (Mission V3, C11) Préparation au service ≠ liveness : configuration absente, migration manquante, base injoignable
  * ou secret refusé font échouer le contrôle, sans jamais renvoyer de valeur de configuration.
  */
-let answer: unknown = { ready: true, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": true } };
+let answer: unknown = { ready: true, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": true, "0012": true } };
 let failure: Error | null = null;
 vi.mock("@/server/automation-rpc", () => {
   class MissingFunctionError extends Error {}
@@ -30,7 +30,7 @@ const GOOD = {
 };
 
 beforeEach(() => {
-  answer = { ready: true, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": true } };
+  answer = { ready: true, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": true, "0012": true, "0013": true } };
   failure = null;
 });
 afterEach(() => {
@@ -48,9 +48,17 @@ describe("readiness", () => {
     expect(result.checks.every((check) => check.ok)).toBe(true);
   });
 
+  it("base sans la migration 0012 (connexions fournisseur) : non prête, la migration est nommée", async () => {
+    configure(GOOD);
+    answer = { ready: true, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": true } };
+    const result = await readiness();
+    expect(result.ready).toBe(false);
+    expect(result.checks.filter((check) => !check.ok).map((check) => check.name)).toEqual(["migration 0012 en place"]);
+  });
+
   it("une migration manquante : non prête, la migration est nommée", async () => {
     configure(GOOD);
-    answer = { ready: false, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": false } };
+    answer = { ready: false, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": false, "0012": true } };
     const result = await readiness();
     expect(result.ready).toBe(false);
     expect(result.checks.find((check) => !check.ok)?.name).toContain("0011");
@@ -79,7 +87,7 @@ describe("readiness", () => {
     expect(result.checks.at(-1)?.name).toContain("0011 absente");
   });
 
-  it("mode réel sans clé Buffer, adresse en HTTP non locale, secret trop court : non prête", async () => {
+  it("mode réel sans clé de chiffrement des connexions, adresse en HTTP non locale, secret trop court : non prête", async () => {
     configure({ ...GOOD, BUFFER_MODE: "real" });
     expect((await readiness()).ready).toBe(false);
     configure({ ...GOOD, NEXT_PUBLIC_SUPABASE_URL: "http://projet.exemple.org" });

@@ -1,3 +1,11 @@
+# Cadence — référence commune
+
+Répertoire : `/home/ubuntu/cadence`. Branche : `chore/cadence-consolidation-2026-10-11`. Lire les six documents racine référencés dans README.md, dont la section de consolidation de CLEANUP_REPORT.md. Les tags archive/consolidation-2026-10-11/* préservent les variantes historiques ; ne pas les fusionner globalement. Ne pas confondre ce dépôt de développement avec la production `2f51602` ni les anciens checkouts.
+
+La cible abandonne le Studio et privilégie Buffer → décision locale → programmation humaine. Le backend historique conserve des écritures Buffer : ne pas les activer. Préserver les migrations, données, fixtures et contre-tests indépendants. Documenter les échecs hérités sans affaiblir leurs assertions pour obtenir du vert.
+
+Ne pas toucher aux services existants, à la production, aux comptes Buffer, aux secrets ni aux volumes Docker. Pas de push, merge principal ou déploiement sans autorisation explicite. `scripts/test-stack.mjs down` et plusieurs scripts de laboratoire suppriment leurs volumes : ne pas les utiliser dans le cadre de la récupération ; arrêter uniquement les piles neuves identifiées, sans suppression.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 ## This is NOT the Next.js you know
