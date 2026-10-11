@@ -124,8 +124,10 @@ export default async function Page() {
             { label: "Comptes Buffer utilisables", value: usable === 0 ? "Aucun compte Buffer connecté : rien n'est lu ni envoyé" : `${usable} compte${usable > 1 ? "s" : ""} connecté${usable > 1 ? "s" : ""} et vérifié${usable > 1 ? "s" : ""}`, ok: usable > 0 },
             {
               label: "Envoi vers Buffer",
-              value: "Jamais : Buffer est lu, mais rien n'y est créé, modifié, programmé ni annulé",
-              note: "lecture seule, sans réglage pour l'activer",
+              value: env.bufferWritesEnabled
+                ? "Une seule écriture : un brouillon approuvé par le client est programmé à sa date. Rien d'autre n'est créé, modifié ni annulé"
+                : "Programmation désactivée sur ce serveur : Buffer est seulement lu",
+              ok: env.bufferWritesEnabled,
             },
           ]),
           { label: "Chiffrement des clés", value: credentialKeyAvailable() ? `Disponible (clé maître n° ${keyVersion ?? "?"}) : les clés sont chiffrées avant enregistrement` : "Indisponible : aucune clé Buffer ne peut être enregistrée", ok: credentialKeyAvailable() },
@@ -145,7 +147,7 @@ export default async function Page() {
 
       <Section id="publications" title="Publications" description="Règles appliquées à toute publication. Elles sont fixées par l'application et ne se désactivent pas.">
         <Rows rows={[
-          { label: "Validation", value: "Le client approuve une version exacte ; la programmation se fait ensuite à la main dans Buffer" },
+          { label: "Validation", value: "Le client approuve une version exacte ; Cadence la programme aussitôt dans Buffer, à la date du brouillon" },
           { label: "Tag de soumission", value: env.reviewTagLabel, note: "posé dans Buffer" },
           { label: "Accord du client", value: "Attaché au contenu : il tombe si le texte, les médias ou une date déjà validée changent dans Buffer" },
           { label: "Profil", value: env.profile === "pilot" ? "Pilote : envoi d'e-mails désactivé" : "Standard" },
@@ -164,7 +166,13 @@ export default async function Page() {
 
       <Section id="securite" title="Sécurité" description="Accès et opérations sensibles. Les secrets ne sont jamais affichés.">
         <Rows rows={[
-          { label: "Comptes utilisateurs", value: "Créés sur le serveur par l'administrateur, puis associés à un client depuis sa fiche" },
+          {
+            label: "Comptes utilisateurs",
+            value: env.supabaseServiceKey && credentialKeyAvailable()
+              ? "Créés depuis la fiche d'un client ; mot de passe généré, affiché à l'administrateur et chiffré en base"
+              : "Création depuis l'interface non activée sur ce serveur (clé d'administration des comptes absente)",
+            ok: Boolean(env.supabaseServiceKey) && credentialKeyAvailable(),
+          },
           { label: "Secret d'automatisation", value: process.env.AUTOMATION_SECRET ? "Présent" : "Absent", ok: Boolean(process.env.AUTOMATION_SECRET) },
           { label: "Clés Buffer", value: "Chiffrées en base, déchiffrées par le serveur uniquement, jamais envoyées au navigateur" },
           {

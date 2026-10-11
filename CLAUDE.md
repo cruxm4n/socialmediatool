@@ -2,7 +2,7 @@
 
 Utiliser `/home/ubuntu/cadence`, branche `release/cadence-v1-finalisation`, pour Claude Code ET Codex. Vérifier `git status --short --branch` avant de modifier. Les anciens dossiers sont conservés ; ne pas y poursuivre le développement ni les supprimer. Lire README.md, PROJECT_STATUS.md et DEPLOYMENT.md avant de reprendre.
 
-Cadence est un portail de validation client : **Buffer** crée, programme et publie ; **Cadence** lit Buffer, affiche le calendrier et porte la validation du client (accord, demande de modification, commentaires, historique). Le Studio a été supprimé : ne pas réintroduire d'éditeur ni d'écriture vers Buffer.
+Cadence est un portail de validation client : **Buffer** crée et publie ; **Cadence** lit Buffer, affiche le calendrier, porte la validation du client (accord, demande de modification, commentaires, historique) et programme dans Buffer le brouillon que le client vient d'approuver. Le Studio a été supprimé : ne pas réintroduire d'éditeur ni d'autre écriture vers Buffer.
 
 Aucun push, merge, déploiement, modification de la base de production, de Buffer, de n8n, de Caddy ni suppression de volumes sans autorisation explicite du propriétaire. La production tourne sur cette machine (`cadence-prod-*`, pilotée depuis `/home/ubuntu/cadence-prod`) : voir DEPLOYMENT.md. Node 24 est utilisé pour les validations.
 
@@ -14,7 +14,7 @@ Aucun push, merge, déploiement, modification de la base de production, de Buffe
 
 ## Le projet en deux lignes
 
-« Cadence » : portail de validation client relié à Buffer en lecture seule. Supabase garde comptes, clients, publications lues, décisions et commentaires ; une couche de service côté serveur relie le tout. L'utilisateur débute en développement : expliquer simplement, en français, et faire soi-même plutôt que de lui demander de créer des fichiers.
+« Cadence » : portail de validation client relié à Buffer, qu'il lit et où il ne fait que programmer les brouillons approuvés. Supabase garde comptes, clients, publications lues, décisions et commentaires ; une couche de service côté serveur relie le tout. L'utilisateur débute en développement : expliquer simplement, en français, et faire soi-même plutôt que de lui demander de créer des fichiers.
 
 ## Par où commencer
 
@@ -43,14 +43,15 @@ Aucun push, merge, déploiement, modification de la base de production, de Buffe
 - **Un accord appartient à une personne habilitée** (D28) : retirer un membre retire ses approbations ; la réservation revalide l'approbateur.
 - **Une sauvegarde n'est valide que restaurée** avec droits, Auth et Storage (D32) : `scripts/restore-check.mjs` puis `scripts/restore-drill.mjs`. Ne jamais dumper avec `--no-privileges`.
 - **Une seule synchronisation à la fois** : tout déclenchement passe par `runSync`, qui prend le verrou de la base (`begin_sync_run`).
-- **Profil pilote** : `CADENCE_PROFILE=pilot` impose notifications simulées et minimales, échéances ≥ 24 h à chaque programmation ; `/api/ready` (secret) ≠ `/api/health` (liveness).
+- **Profil pilote** : `CADENCE_PROFILE=pilot` impose notifications simulées et minimales ; `/api/ready` (secret) ≠ `/api/health` (liveness).
 - **Contexte de test propre** : lancer les suites depuis une copie sans `.env*`, avec `CADENCE_NO_LOCAL_ENV=1` ; piles de test : `scripts/test-stack.mjs` (secrets générés, 127.0.0.1 seulement).
 - **Un compte Buffer par connexion, jamais de clé globale par défaut** (D40) : tout appel passe par le routeur (`src/server/publishing/router.ts`), qui envoie l'opération au compte du canal. Pas de route, connexion révoquée ou secret illisible → refus, jamais de repli. Un canal ne change jamais de connexion. Voir docs/CONNEXIONS_FOURNISSEUR.md.
 - **Les secrets des connexions sont chiffrés avant la base** (D41) : `src/server/credentials.ts`, clé `CADENCE_CREDENTIALS_KEY` hors base ; jamais renvoyés au navigateur, jamais journalisés, jamais réaffichés.
 - **Une erreur de fournisseur marquée d'une connexion ne vaut que pour elle** (D42) : elle ne bloque ni ne met en pause les autres comptes (`ProviderError.connectionId`).
 - **`npm run dev` n'utilise jamais le vrai Buffer** : `BUFFER_MODE=real` est ignoré en développement sans `CADENCE_ALLOW_REAL_BUFFER_IN_DEV=1`.
 - **En production, aucun Buffer simulé silencieux** (D43) : il exige `BUFFER_MODE=mock` ET `CADENCE_ALLOW_SIMULATED_BUFFER=1` ; toute configuration invalide BLOQUE le fournisseur (`bufferModeProblem()`), elle ne le remplace jamais par un simulateur. Ne jamais présenter une simulation comme un résultat du fournisseur.
-- **Cadence ne fait que LIRE Buffer** (D44, durci le 11 octobre 2026) : aucune écriture vers le vrai Buffer, quelle que soit la configuration (`CADENCE_BUFFER_WRITES` n'est plus lue). Ne jamais réintroduire de mutation dans `buffer-provider.ts` ni d'appel de programmation dans les validations ou la synchronisation : `tests/unit/buffer-read-only.test.ts` le vérifie.
+- **Une seule écriture vers Buffer : programmer un brouillon approuvé** (D44, révisé par le propriétaire le 11 octobre 2026). Dès que le client approuve, Cadence passe le brouillon en « programmé » dans Buffer, à la date déjà portée par le brouillon (`schedulePost`, appelé par `scheduleApprovedPosts`). Rien d'autre n'est écrit : ni création, ni modification de contenu, ni suppression, ni retour en brouillon. Le client Buffer refuse toute autre mutation avant qu'elle ne quitte le serveur ; `tests/unit/buffer-write-scope.test.ts` le vérifie. `CADENCE_BUFFER_SCHEDULING=off` coupe cette programmation.
+- **Les mots de passe des comptes clients** sont générés par le serveur, affichés en clair à l'administrateur dans la fiche du client et chiffrés dans la base avec `CADENCE_CREDENTIALS_KEY` (décision du propriétaire, 11 octobre 2026). Jamais en clair dans une table, jamais journalisés.
 - **L'identité d'un compte Buffer se constate côté serveur** (D45) : clé réelle et identité ne s'enregistrent que par les fonctions `server_*` (secret d'automatisation + acteur administrateur), après lecture de `account.id`. Jamais par une fonction de session, jamais depuis une valeur venue du navigateur. Un échec de vérification ne remplace jamais la clé en place.
 - **Révocation et réservations partagent un verrou** (D46) : ne jamais réserver un effet externe sans passer par les fonctions de réservation (leurs déclencheurs verrouillent la connexion) ; l'état `revoking` garde la clé pour annuler. Le routeur relit l'état durable avant chaque opération : ne pas mettre cet état en cache.
 - **Une publication garde son compte d'origine** (D48) : une collision d'identifiant entre comptes est refusée sans mutation ; un relevé sans connexion ne vaut que pour le compte historique.

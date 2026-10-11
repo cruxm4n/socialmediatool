@@ -53,6 +53,8 @@ const COUNTED_TABLES = [
   // Connexions fournisseur (0012/0013) : comptes, clés CHIFFRÉES (schéma privé) et journal. Leur empreinte fait partie
   // de la sauvegarde ; la clé maître (CADENCE_CREDENTIALS_KEY), elle, n'est jamais dans la base ni dans le dump.
   "public.provider_connections", "private.provider_credentials", "public.provider_connection_events",
+  // Mots de passe CHIFFRÉS des comptes clients (0015) : illisibles sans la clé maître, qui n'est pas dans le dump.
+  "private.user_passwords",
   "auth.users", "auth.identities", "storage.objects",
 ];
 

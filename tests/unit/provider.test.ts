@@ -118,36 +118,49 @@ describe("client de l'API Buffer", () => {
     await expect(new BufferProvider("k", "À valider", fetchImpl).getPost("absent")).resolves.toBeNull();
   });
 
-  it("programme un brouillon en renvoyant le texte, la date et le mode — refusé, lecture seule", async () => {
-    const { fetchImpl } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, status: "scheduled" } } } }));
-    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost), fetchImpl);
-    expect(fetchImpl).toHaveBeenCalledTimes(0);
+  it("programme un brouillon en renvoyant le texte, la date et le mode : la seule écriture de Cadence", async () => {
+    const { fetchImpl, calls } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, status: "scheduled" } } } }));
+    const result = await new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost);
+    expect(result.status).toBe("scheduled");
+    expect(calls).toHaveLength(1);
+    expect(calls[0].query).toContain("editPost");
+    // Rien d'autre que le passage en « programmé » à la date déjà portée par le brouillon : ni tag, ni média, ni canal.
+    expect(calls[0].variables).toEqual({
+      input: { id: "p1", saveToDraft: false, mode: "customScheduled", schedulingType: "automatic", dueAt: "2026-12-15T10:00:00.000Z", text: "Bonjour" },
+    });
   });
 
-  it("renvoie le média quand le post n'a pas de texte — refusé, lecture seule", async () => {
+  it("renvoie le média quand le post n'a pas de texte (Buffer exige l'un ou l'autre)", async () => {
+    const { fetchImpl, calls } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, status: "scheduled" } } } }));
+    await new BufferProvider("k", "À valider", fetchImpl).schedulePost({ ...livePost, text: "", assets: [{ type: "image", source: "https://img/1.jpg", thumbnail: "" }] });
+    expect(calls[0].variables.input).toMatchObject({ id: "p1", saveToDraft: false, assets: [{ image: { url: "https://img/1.jpg" } }] });
+    expect(calls[0].variables.input).not.toHaveProperty("text");
+  });
+
+  it("repasser un post en brouillon reste refusé, sans aucun appel réseau", async () => {
     const { fetchImpl } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, status: "draft" } } } }));
-    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).unschedulePost({
-      ...livePost, text: "", assets: [{ type: "image", source: "https://img/1.jpg", thumbnail: "" }],
-    }), fetchImpl);
+    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).unschedulePost(livePost), fetchImpl);
     expect(fetchImpl).toHaveBeenCalledTimes(0);
   });
 
-  it("refuse de programmer un post sans date — refusé, lecture seule", async () => {
+  it("refuse de programmer un post sans date, sans aucun appel réseau", async () => {
     const { fetchImpl, calls } = fakeBuffer(() => json({}));
-    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost({ ...livePost, dueAt: null }), fetchImpl);
+    await expect(new BufferProvider("k", "À valider", fetchImpl).schedulePost({ ...livePost, dueAt: null })).rejects.toMatchObject({ name: "ProviderError", outcome: "failed", message: "Ce post n'a pas de date prévue." });
     expect(calls).toHaveLength(0);
   });
 
-  it("remonte le refus de Buffer comme une erreur — refusé, lecture seule", async () => {
+  it("remonte le refus de Buffer comme un échec certain", async () => {
     const { fetchImpl } = fakeBuffer(() => json({ data: { editPost: { __typename: "InvalidInputError", message: "Invalid post: Post must have either text or media." } } }));
-    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost), fetchImpl);
-    expect(fetchImpl).toHaveBeenCalledTimes(0);
+    await expect(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost)).rejects.toMatchObject({
+      name: "ProviderError", kind: "api", outcome: "failed", message: "Buffer a refusé la programmation : Invalid post: Post must have either text or media.",
+    });
   });
 
-  it("considère comme un échec une réponse qui ne passe pas le post en « programmé » — refusé, lecture seule", async () => {
+  it("une réponse qui ne passe pas le post en « programmé » est un résultat incertain, jamais une réussite", async () => {
     const { fetchImpl } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: RAW_POST } } }));
-    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost), fetchImpl);
-    expect(fetchImpl).toHaveBeenCalledTimes(0);
+    await expect(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost)).rejects.toMatchObject({ name: "ProviderError", outcome: "unknown" });
+    const empty = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess" } } }));
+    await expect(new BufferProvider("k", "À valider", empty.fetchImpl).schedulePost(livePost)).rejects.toMatchObject({ name: "ProviderError", outcome: "unknown" });
   });
 
   it("signale le dépassement de quota avec le délai d'attente", async () => {
@@ -177,12 +190,12 @@ describe("client de l'API Buffer", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it("ne retente jamais une écriture : on ignore si Buffer l'a prise en compte — refusé, lecture seule", async () => {
+  it("ne retente jamais une écriture : on ignore si Buffer l'a prise en compte", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("ECONNRESET");
     }) as unknown as typeof fetch;
-    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost), fetchImpl);
-    expect(fetchImpl).toHaveBeenCalledTimes(0);
+    await expect(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost)).rejects.toMatchObject({ kind: "network", outcome: "unknown" });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
   });
 
   it("traite une erreur 5xx comme une panne passagère et une erreur 401 comme une clé invalide", async () => {

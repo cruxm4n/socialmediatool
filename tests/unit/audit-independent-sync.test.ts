@@ -81,11 +81,16 @@ beforeEach(() => {
 });
 
 describe("Contre-audit indépendant orchestration",()=>{
- it("la synchronisation ne réserve rien et ne programme rien : aucune réservation périmée ne peut naître",async()=>{
+ it("réservation devenue périmée pendant la programmation : jamais comptée comme programmée, jamais déprogrammée par Cadence, Buffer relu aussitôt",async()=>{
   claimed=[claim()];completeOutcome="stale";
-  const r=await runSync("contre-audit");expect(r.ok).toBe(true);
-  expect(rpcCalls.filter((call)=>call.name.startsWith("claim_posts_for_scheduling"))).toHaveLength(0);
-  expect(provider.schedulePost).toHaveBeenCalledTimes(0);
+  const r=await runSync("contre-audit");
+  // Buffer a accepté la programmation mais l'accord a changé entre-temps : la synchronisation est partielle et le dit.
+  expect(r.ok).toBe(false);
+  expect(r).toMatchObject({scheduled:0,scheduleFailures:1});
+  expect(rpcCalls.filter((call)=>call.name.startsWith("claim_posts_for_scheduling"))).toHaveLength(1);
+  expect(provider.schedulePost).toHaveBeenCalledTimes(1);
   expect(provider.unschedulePost).toHaveBeenCalledTimes(0);
+  // Relecture immédiate de Buffer : c'est elle qui constate l'état réel et retire l'accord devenu invalide.
+  expect(provider.fetchSnapshot).toHaveBeenCalledTimes(2);
  });
 });

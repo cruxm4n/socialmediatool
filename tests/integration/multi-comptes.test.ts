@@ -122,8 +122,10 @@ async function approved(which: "A" | "B") {
 const stable = (item: Record<string, unknown>) => Object.fromEntries(Object.entries(item).filter(([key]) => key !== "synced_at"));
 const status = (id: string) => owner(`select status from public.provider_connections where id='${id}'`);
 const fingerprint = (text: string) => createHash("sha256").update(text).digest("hex");
-/** Écritures de Cadence vers un faux Buffer (toutes les méthodes qui modifient Buffer). Doit rester à 0 en lecture seule. */
+/** Toutes les écritures de Cadence vers un faux Buffer, programmation comprise. */
 const writeCalls = (fake: FileProvider) => ["createDraft", "updateDraft", "rescheduleDraft", "schedulePost", "unschedulePost"].reduce((sum, name) => sum + fake.calls(name), 0);
+/** Écritures INTERDITES : tout sauf la programmation d'un brouillon approuvé. Doit toujours rester à 0. */
+const forbiddenCalls = (fake: FileProvider) => ["createDraft", "updateDraft", "rescheduleDraft", "unschedulePost"].reduce((sum, name) => sum + fake.calls(name), 0);
 /** L'agence agit À LA MAIN dans Buffer : le faux Buffer change de statut, sans passer par Cadence. */
 function byHand(file: string, id: string, statusValue: ProviderPost["status"]) {
   const state = readState(file);
@@ -190,24 +192,20 @@ describe("contrôle indépendant multi-comptes — PostgreSQL natif et deux faux
     for (const [name, args] of calls) expect((await automation.rpc(name, { p_secret: "incorrect", ...args })).error).not.toBeNull();
   });
 
-  it("N06 — deux workers de synchronisation sur deux comptes, publications programmées à la main dans Buffer : Cadence n'écrit rien, chaque constat reste dans son compte — lecture seule", async () => {
+  it("N06 — deux workers de synchronisation sur deux comptes, publications déjà programmées à la main dans Buffer : Cadence ne les reprogramme pas, chaque constat reste dans son compte", async () => {
     const pa = await approved("A"), pb = await approved("B");
-    // L'agence programme à la main, dans Buffer, les deux publications approuvées.
+    // L'agence programme à la main, dans Buffer, les deux publications approuvées, avant toute synchronisation.
     byHand(fileA, pa.id, "scheduled");
     byHand(fileB, pb.id, "scheduled");
-    const [first, second] = await Promise.all([runSync("independent-w1"), runSync("independent-w2")]);
-    // Les DEUX passages : aucune programmation, aucun échec de programmation.
-    expect(first.scheduled).toBe(0);
-    expect(second.scheduled).toBe(0);
-    expect(first.scheduleFailures + second.scheduleFailures).toBe(0);
-    // Cadence n'a rien programmé, sur aucun compte.
-    expect(writeCalls(providerA)).toBe(0);
-    expect(writeCalls(providerB)).toBe(0);
+    await Promise.all([runSync("independent-w1"), runSync("independent-w2")]);
+    // Aucune écriture interdite, sur aucun compte ; rien n'a été déprogrammé.
+    expect(forbiddenCalls(providerA)).toBe(0);
+    expect(forbiddenCalls(providerB)).toBe(0);
     expect(readState(fileA).posts[pa.id].status).toBe("scheduled");
     expect(readState(fileB).posts[pb.id].status).toBe("scheduled");
-    // Le constat est enregistré pour chaque compte ; aucune réservation de Cadence, accord intact.
-    expect(await row(pa.id)).toMatchObject({ buffer_status: "scheduled", approval_status: "approved", schedule_state: "idle" });
-    expect(await row(pb.id)).toMatchObject({ buffer_status: "scheduled", approval_status: "approved", schedule_state: "idle" });
+    // Le constat est enregistré pour chaque compte ; l'accord est intact et la publication n'est pas reprogrammée.
+    expect(await row(pa.id)).toMatchObject({ buffer_status: "scheduled", approval_status: "approved" });
+    expect(await row(pb.id)).toMatchObject({ buffer_status: "scheduled", approval_status: "approved" });
   });
 
   it("N07 — réservation héritée de l'ancien moteur (réponse jamais confirmée), programmation A constatée à la main, reprise urgente avec B disponible : compte et jeton conservés — lecture seule", async () => {
@@ -442,7 +440,7 @@ describe("variantes ajoutées après correction (N19 et suivants)", () => {
     expect(Object.keys(readState(fileB).posts)).not.toContain(pa.id);
   });
 
-  it("N21 — révocation DEMANDÉE avec une publication programmée à la main : plus aucun nouvel effet sur A, la constatation passe encore par SA clé ; puis révocation définitive — lecture seule", async () => {
+  it("N21 — révocation DEMANDÉE avec une publication programmée : plus aucun nouvel effet sur A (son accord en attente n'est PAS programmé), B continue d'être programmé ; puis révocation définitive", async () => {
     const programmed = await approved("A");
     // L'agence programme cette publication à la main ; la synchronisation le constate.
     byHand(fileA, programmed.id, "scheduled");
@@ -458,12 +456,14 @@ describe("variantes ajoutées après correction (N19 et suivants)", () => {
     await runSync("independent-revoking-sync");
     expect((await row(waiting.id)).schedule_state).toBe("idle");
     expect(writeCalls(providerA)).toBe(writesOnA);
-    // B : programmé à la main, constaté ; Cadence n'écrit rien chez lui.
-    byHand(fileB, pb.id, "scheduled");
+    // B, compte actif : son accord est programmé par Cadence pendant la révocation de A, dans SON compte.
     await runSync("independent-b-during-revocation");
-    expect(await row(pb.id)).toMatchObject({ buffer_status: "scheduled", schedule_state: "idle" });
-    expect(writeCalls(providerB)).toBe(0);
+    expect(readState(fileB).posts[pb.id].status).toBe("scheduled");
+    expect(await row(pb.id)).toMatchObject({ buffer_status: "scheduled", approval_status: "approved" });
+    expect(writeCalls(providerA)).toBe(writesOnA);
+    expect(forbiddenCalls(providerB)).toBe(0);
     await expect(router().createDraft(content(chA))).rejects.toThrow(/Révocation demandée/);
+    const readsOnB = providerB.calls("getPost");
 
     // Constatation de l'effet engagé : l'agence repasse la publication en brouillon à la main ; le constat part par le compte A, qui a toujours sa clé.
     owner(`update public.posts set schedule_state='unschedule_pending' where id='${programmed.localId}'`);
@@ -474,8 +474,9 @@ describe("variantes ajoutées après correction (N19 et suivants)", () => {
     expect((await row(programmed.id)).schedule_state).toBe("idle");
     expect(providerA.calls("getPost")).toBeGreaterThan(0);
     expect(providerA.calls("unschedulePost")).toBe(0);
-    expect(providerB.calls("getPost")).toBe(0);
-    expect(writeCalls(providerB)).toBe(0);
+    // Le constat sur A ne lit ni n'écrit rien dans le compte de B.
+    expect(providerB.calls("getPost")).toBe(readsOnB);
+    expect(forbiddenCalls(providerB)).toBe(0);
 
     // Plus rien en attente : la révocation devient définitive.
     await runSync("independent-revoking");
@@ -484,18 +485,23 @@ describe("variantes ajoutées après correction (N19 et suivants)", () => {
     expect(status(B)).toBe("active");
   });
 
-  it("N22 — vrai runSync : compte A injoignable (lecture et relecture en panne), B approuvé → B reste brouillon (Cadence ne programme pas), aucune pause ni erreur portée sur B — lecture seule", async () => {
+  it("N22 — vrai runSync : compte A injoignable (lecture et relecture en panne), B approuvé → B est programmé dans SON compte, A reste brouillon, aucune pause ni erreur portée sur B", async () => {
+    // La base réserve dix publications par passage, par date : les accords laissés en attente par les scénarios
+    // précédents (même date) sont retirés du circuit, pour que ce scénario porte bien sur pa et pb.
+    owner("update public.posts set approval_status = 'none', schedule_state = 'idle' where approval_status = 'approved' and buffer_status = 'draft' and buffer_post_id like 'mock-%'");
     const pa = await approved("A"), pb = await approved("B");
     const state = readState(fileA);
     state.snapshotFails = true;
     state.faults.push("getPost:fail", "getPost:fail");
     writeState(fileA, state);
     const result = await runSync("independent-outage");
-    // B n'est pas programmé par Cadence : il reste brouillon, sans écriture, sans état de programmation.
-    expect(readState(fileB).posts[pb.id].status).toBe("draft");
-    expect(writeCalls(providerB)).toBe(0);
-    expect((await row(pb.id)).schedule_state).toBe("idle");
+    // La panne de A ne retient pas B : son accord est programmé, par la seule écriture autorisée.
+    expect(readState(fileB).posts[pb.id].status).toBe("scheduled");
+    expect(forbiddenCalls(providerB)).toBe(0);
+    expect((await row(pb.id)).schedule_state).toBe("scheduled");
+    // A est injoignable : rien n'y est programmé, rien n'y est écrit.
     expect(readState(fileA).posts[pa.id].status).toBe("draft");
+    expect(forbiddenCalls(providerA)).toBe(0);
     expect(result.anomalies?.some((line) => /non lu/.test(line))).toBe(true);
     const rows = await auto("provider_connections_for_run", { p_mode: "mock" });
     expect(rows.find((x: ConnectionRow) => x.id === B).pausedUntil).toBeNull();

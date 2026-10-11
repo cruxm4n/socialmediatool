@@ -41,8 +41,8 @@ export function bufferModeProblem(): string | null {
   return "BUFFER_MODE doit valoir « real » en production : aucune opération vers Buffer n'a lieu tant qu'il n'est pas défini.";
 }
 
-/** Phrase affichée quand une écriture vers le vrai Buffer est refusée (toujours : Cadence ne fait que le lire). */
-export const BUFFER_WRITES_DISABLED = "Cadence est en lecture seule vis-à-vis de Buffer : rien n'y est créé, modifié, programmé ni déprogrammé. Faites l'opération dans Buffer.";
+/** Phrase affichée quand la programmation dans Buffer est coupée sur ce serveur (CADENCE_BUFFER_SCHEDULING=off). */
+export const BUFFER_WRITES_DISABLED = "La programmation dans Buffer est désactivée sur ce serveur : programmez la publication à la main dans Buffer.";
 
 export const env = {
   get supabaseUrl() {
@@ -53,6 +53,14 @@ export const env = {
   },
   get automationSecret() {
     return required("AUTOMATION_SECRET");
+  },
+  /**
+   * Clé d'administration des comptes (rôle de service de Supabase). Facultative : sans elle, les comptes clients ne
+   * peuvent pas être créés depuis l'interface. Elle contourne toutes les règles de la base : elle ne sert qu'à
+   * `src/server/user-actions.ts` (créer un compte, changer son mot de passe), jamais à lire des données.
+   */
+  get supabaseServiceKey(): string | null {
+    return process.env.SUPABASE_SERVICE_ROLE_KEY || null;
   },
   /**
    * Mode du fournisseur.
@@ -68,13 +76,13 @@ export const env = {
     return simulatedBufferAllowed() && (process.env.NODE_ENV !== "production" || process.env.BUFFER_MODE === "mock") ? "mock" : "real";
   },
   /**
-   * Écritures vers le fournisseur. Cadence est en LECTURE SEULE vis-à-vis du vrai Buffer : toujours `false` en mode
-   * réel, quelle que soit la configuration. L'ancienne variable CADENCE_BUFFER_WRITES n'est plus lue : la renseigner
-   * (même à « enabled ») n'ouvre rien. Seul le Buffer simulé (tests, démonstration) accepte des écritures, qui ne
-   * quittent pas ce serveur et servent à jouer le rôle de la personne qui travaille dans Buffer.
+   * Programmation dans Buffer après l'accord du client : la SEULE écriture de Cadence vers le vrai Buffer. Active par
+   * défaut ; CADENCE_BUFFER_SCHEDULING=off la coupe (l'accord reste enregistré, l'agence programme alors à la main).
+   * L'ancienne variable CADENCE_BUFFER_WRITES n'est plus lue. Le Buffer simulé (tests) accepte toujours ses
+   * écritures, qui ne quittent pas le serveur.
    */
   get bufferWritesEnabled(): boolean {
-    return this.bufferMode === "mock";
+    return this.bufferMode === "mock" || process.env.CADENCE_BUFFER_SCHEDULING !== "off";
   },
   get bufferApiKey() {
     return required("BUFFER_API_KEY");

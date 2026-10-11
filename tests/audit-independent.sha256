@@ -3,6 +3,6 @@
 73bb92288f96e440162db35fe43d15a1b465a44e99a0fc39a9239171051b7410  tests/unit/audit-independent-b1.test.ts
 2500e62c5c2dca20fa02fa6d3d27303dba38a7bbbf75323bfe3c7e6c7d1a0870  tests/unit/audit-independent-provider.test.ts
 e561896db53a4ca560dfa3e31d31bf2ebc8ee62f0c4953b01b7986c97214e1ef  tests/legacy-unit/audit-independent-studio.test.ts
-4935567f6b93e23f7b754e6cfe91e8349848aae603918e3c77b80c6daa7f24b0  tests/unit/audit-independent-sync.test.ts
+9adc62da08b7869b05df5f4f3f918925f27694e7cc369b66d7c0e8e31c927b86  tests/unit/audit-independent-sync.test.ts
 d7ef949a90366363047c14ff681a6e62d4e4f8e796ba646843821c4479419196  tests/unit/audit-independent-view.test.ts
 caf28a1e5ad174f4d228023aedf570d5ad296c4db37599989ebe5509c4ac57ae  tests/unit/audit-independent-notifications.test.ts

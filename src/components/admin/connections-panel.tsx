@@ -200,7 +200,7 @@ export function ConnectionsPanel({
                       </p>
                     )}
                     {connection.mode === "real" && live && serverMode === "real" && !writesEnabled && (
-                      <p className="mt-1 text-xs text-muted-foreground">Lecture seule : l&apos;envoi vers Buffer n&apos;est pas activé sur ce serveur.</p>
+                      <p className="mt-1 text-xs text-muted-foreground">La programmation après accord est désactivée sur ce serveur : ce compte est seulement lu.</p>
                     )}
                     {seen && (
                       <div className="mt-2 rounded-xl bg-muted/60 p-3 text-xs" data-testid="compte-constate">

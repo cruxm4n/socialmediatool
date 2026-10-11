@@ -116,7 +116,7 @@ export function SyncView({
                     {status.urgent.lastAttemptAt ? `, dernier essai ${formatRelative(status.urgent.lastAttemptAt, now)}` : ", aucun essai pour l'instant"}.
                   </li>
                   {status.urgent.lastAttemptError && <li className="text-xs text-muted-foreground">Dernière erreur : {status.urgent.lastAttemptError}</li>}
-                  <li>Cadence ne modifie rien dans Buffer : repassez ces publications en brouillon dans Buffer. Le retour en brouillon est constaté à la synchronisation suivante.</li>
+                  <li>Cadence ne déprogramme jamais une publication : repassez celles-ci en brouillon dans Buffer. Le retour en brouillon est constaté à la synchronisation suivante.</li>
                 </>
               )}
               {status.urgent.staleClaims > 0 && <li>{status.urgent.staleClaims} réservation{status.urgent.staleClaims > 1 ? "s" : ""} abandonnée{status.urgent.staleClaims > 1 ? "s" : ""} (arrêt probable du serveur) : rapprochée{status.urgent.staleClaims > 1 ? "s" : ""} de l&apos;état réel de Buffer par le traitement urgent.</li>}

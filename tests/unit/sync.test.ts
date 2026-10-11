@@ -4,8 +4,8 @@ import { ProviderError, type ProviderPost, type PublishingProvider } from "@/ser
 
 /*
  * La couche de service, isolée : la base et Buffer sont remplacés par des doublures.
- * Lecture seule vis-à-vis de Buffer : la synchronisation lit, constate et met la base à jour ; elle ne réserve,
- * ne programme, ne déprogramme ni ne crée rien dans Buffer.
+ * La synchronisation lit, constate et met la base à jour. Sa seule écriture vers Buffer est la programmation d'un
+ * brouillon approuvé ; elle ne déprogramme, ne crée et ne modifie rien.
  */
 
 const rpcCalls: { name: string; params: Record<string, unknown> }[] = [];
@@ -14,7 +14,7 @@ let toUnschedule: unknown[] = [];
 /** true : la base n'a pas reçu la migration 0003 (fonctions « _in_mode » absentes). */
 let outdatedDatabase = false;
 let unresolved: string[] = [];
-/** Réponse de la base à une confirmation de programmation (inutilisée par la synchronisation en lecture seule). */
+/** Réponse de la base à une confirmation de programmation. */
 let completeOutcome: string | null = null;
 /** Pause de quota renvoyée par get_sync_pause (migration 0010). null : aucune. */
 let pause: { until: string; reason: string | null } | null = null;
@@ -95,9 +95,9 @@ beforeEach(() => {
   };
 });
 
-describe("lecture seule : aucune réservation ni programmation", () => {
-  it("la barrière d'écriture ouverte ne change rien : en mode réel, la synchronisation ne réserve rien et n'écrit rien — lecture seule", async () => {
-    writesEnabled = true;
+describe("programmation des publications approuvées, constat du reste", () => {
+  it("programmation coupée sur le serveur : en mode réel, la synchronisation ne réserve rien et n'écrit rien", async () => {
+    writesEnabled = false;
     provider = { ...provider, mode: "real" };
     claimed = [claim()];
     const result = await runSync("test");
@@ -108,12 +108,13 @@ describe("lecture seule : aucune réservation ni programmation", () => {
     expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 
-  it("des publications approuvées sont réservables, runSync ne réserve et ne programme rien — lecture seule", async () => {
+  it("une publication approuvée en attente est relue puis programmée ; rien n'est jamais déprogrammé", async () => {
     claimed = [claim()];
     const result = await runSync("test");
-    expect(result).toMatchObject({ ok: true, scheduled: 0, scheduleFailures: 0, unscheduled: 0, unscheduleFailures: 0 });
-    expect(claimCalls()).toHaveLength(0);
-    expect(provider.schedulePost).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ ok: true, scheduled: 1, scheduleFailures: 0, unscheduled: 0, unscheduleFailures: 0 });
+    expect(claimCalls()).toHaveLength(1);
+    expect(provider.getPost).toHaveBeenCalledTimes(1);
+    expect(provider.schedulePost).toHaveBeenCalledTimes(1);
     expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 
@@ -140,17 +141,19 @@ describe("lecture seule : aucune réservation ni programmation", () => {
 });
 
 describe("synchronisation complète", () => {
-  it("la synchronisation lit, constate, et n'écrit rien : une publication encore programmée reste signalée — lecture seule", async () => {
+  it("la synchronisation lit, constate, puis programme l'approuvé : une publication programmée sans accord reste signalée, jamais déprogrammée", async () => {
     toUnschedule = [claim("p9", "b9")];
     claimed = [claim()];
     provider.getPost.mockImplementation(async (id: string) => live({ id, status: id === "b9" ? "scheduled" : "draft" }));
     const result = await runSync("test");
-    expect(result).toMatchObject({ ok: false, fetched: 1, unscheduled: 0, unscheduleFailures: 1, scheduled: 0 });
+    expect(result).toMatchObject({ ok: false, fetched: 1, unscheduled: 0, unscheduleFailures: 1, scheduled: 1, scheduleFailures: 0 });
     expect(provider.unschedulePost).not.toHaveBeenCalled();
-    expect(provider.schedulePost).not.toHaveBeenCalled();
-    expect(claimCalls()).toHaveLength(0);
+    expect(provider.schedulePost).toHaveBeenCalledTimes(1);
+    expect(provider.schedulePost.mock.calls[0][0]).toMatchObject({ id: "b1", status: "draft" });
+    // Le constat précède toujours la programmation.
     expect(businessCalls()).toEqual([
-      "sync_buffer_posts", "list_posts_to_unschedule_in_mode", "complete_unscheduling", "record_sync_failure",
+      "sync_buffer_posts", "list_posts_to_unschedule_in_mode", "complete_unscheduling",
+      "claim_posts_for_scheduling_in_mode", "complete_scheduling", "record_sync_failure",
     ]);
     expect(rpcCalls.find((call) => call.name === "complete_unscheduling")?.params).toMatchObject({ p_post_id: "p9", p_ok: false, p_error: STILL_SCHEDULED });
   });
@@ -275,17 +278,18 @@ describe("exécutions concurrentes et pauses (migration 0006)", () => {
 });
 
 describe("base sans la migration 0003", () => {
-  it("le mode réel se rabat sur les anciennes fonctions, sans rien réserver ni programmer — lecture seule", async () => {
+  it("le mode réel se rabat sur les anciennes fonctions pour le constat comme pour la programmation", async () => {
     outdatedDatabase = true;
     provider = { ...provider, mode: "real" };
     claimed = [claim()];
     const result = await runSync("test");
-    expect(result).toMatchObject({ ok: true, scheduled: 0, scheduleFailures: 0 });
+    expect(result).toMatchObject({ ok: true, scheduled: 1, scheduleFailures: 0 });
     expect(businessCalls()).toEqual([
       "sync_buffer_posts", "list_posts_to_unschedule_in_mode", "list_posts_to_unschedule",
+      "claim_posts_for_scheduling_in_mode", "claim_posts_for_scheduling", "complete_scheduling",
     ]);
-    expect(claimCalls()).toHaveLength(0);
-    expect(provider.schedulePost).not.toHaveBeenCalled();
+    expect(provider.schedulePost).toHaveBeenCalledTimes(1);
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 
   it("le mode réel n'envoie jamais un post simulé à Buffer, ni en lecture ni en écriture — lecture seule", async () => {

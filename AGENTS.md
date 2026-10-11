@@ -2,7 +2,7 @@
 
 Répertoire : `/home/ubuntu/cadence`. Branche : `release/cadence-v1-finalisation`. Lire README.md, PROJECT_STATUS.md et DEPLOYMENT.md. Les tags `archive/consolidation-2026-10-11/*` préservent les variantes historiques ; ne pas les fusionner globalement. Ne pas confondre ce dépôt de développement avec la production (conteneurs `cadence-prod-*`, pilotés depuis `/home/ubuntu/cadence-prod`) ni avec les anciens checkouts.
 
-Produit : Buffer crée, programme et publie ; Cadence lit Buffer et porte la validation du client. Le Studio est supprimé et Cadence n'écrit jamais dans Buffer : ne réintroduire ni éditeur ni mutation. Préserver les migrations, les données et les contre-tests indépendants. Ne jamais affaiblir une assertion pour obtenir du vert ; documenter un échec plutôt que le masquer.
+Produit : Buffer crée et publie ; Cadence lit Buffer, porte la validation du client et programme dans Buffer le brouillon que le client vient d'approuver. C'est sa SEULE écriture vers Buffer : ne réintroduire ni éditeur ni autre mutation. Préserver les migrations, les données et les contre-tests indépendants. Ne jamais affaiblir une assertion pour obtenir du vert ; documenter un échec plutôt que le masquer.
 
 Ne pas toucher aux services existants, à la production, aux comptes Buffer, aux secrets ni aux volumes Docker. Pas de push, de fusion ni de déploiement sans autorisation explicite. `scripts/test-stack.mjs down` et plusieurs scripts de laboratoire suppriment leurs propres volumes : arrêter les piles de test sans les supprimer, sauf demande contraire.
 

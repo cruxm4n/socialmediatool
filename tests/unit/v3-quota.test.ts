@@ -114,14 +114,15 @@ describe("comptage des requêtes Buffer par opération (budget de quota)", () =>
     expect(total()).toBe(3);
   });
 
-  it("lire un post : 1 requête ; programmer ou déprogrammer : refusé sans aucune requête — lecture seule", async () => {
+  it("lire un post : 1 requête ; le programmer : 1 requête de plus ; le déprogrammer : refusé sans aucune requête", async () => {
     const { provider, counts, total } = counted();
     const live = (await provider.getPost("p1"))!;
     expect(total()).toBe(1);
-    await expect(provider.schedulePost(live)).rejects.toThrow(BUFFER_READ_ONLY);
+    expect((await provider.schedulePost(live)).status).toBe("scheduled");
+    expect(total()).toBe(2);
     await expect(provider.unschedulePost(live)).rejects.toThrow(BUFFER_READ_ONLY);
-    expect(total()).toBe(1);
-    expect(counts).toEqual({ "lecture d'un post": 1 });
+    expect(total()).toBe(2);
+    expect(counts).toEqual({ "lecture d'un post": 1, "écriture : modification": 1 });
   });
 
   it("créer un brouillon : refusé sans aucune requête (ni canal, ni tags, ni création) — lecture seule", async () => {

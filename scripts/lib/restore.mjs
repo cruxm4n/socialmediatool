@@ -32,7 +32,7 @@ export const REQUIRED_SINCE = {
   "public.notifications": "0007", "public.notification_preferences": "0007",
   "public.media_assets": "0008", "public.studio_drafts": "0008", "public.studio_variants": "0008", "public.post_versions": "0008",
   "public.channel_owner_history": "0010", "public.studio_push_events": "0011",
-  "public.provider_connections": "0012", "private.provider_credentials": "0012", "public.provider_connection_events": "0012",
+  "public.provider_connections": "0012", "private.provider_credentials": "0012", "public.provider_connection_events": "0012", "private.user_passwords": "0015",
   "auth.users": "0000", "auth.identities": "0000", "storage.objects": "0000",
 };
 export const REQUIRED_SCHEMAS = ["public", "private", "auth", "storage", "supabase_migrations"];

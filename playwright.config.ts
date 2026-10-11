@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import { defineConfig, devices } from "@playwright/test";
 
 import { configureIsolatedTests, loadLocalEnv } from "./tests/support/env";
@@ -10,6 +12,10 @@ import { configureIsolatedTests, loadLocalEnv } from "./tests/support/env";
 loadLocalEnv();
 configureIsolatedTests();
 process.env.MOCK_RUN_ID ??= `e2e-${Date.now()}`;
+// Création de comptes depuis l'interface : clé d'administration des comptes de la PILE DE TEST (jamais une autre) et
+// clé de chiffrement jetable, générée pour cette série.
+if (process.env.TEST_SERVICE_ROLE_KEY) process.env.SUPABASE_SERVICE_ROLE_KEY = process.env.TEST_SERVICE_ROLE_KEY;
+process.env.CADENCE_CREDENTIALS_KEY ??= randomBytes(32).toString("base64");
 
 const PORT = 3100;
 // E2E_BASE_URL : application déjà démarrée (image Docker, serveur lancé sous une autre version de Node) ; aucun serveur

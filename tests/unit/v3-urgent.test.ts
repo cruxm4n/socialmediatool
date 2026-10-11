@@ -280,19 +280,19 @@ describe("réservations abandonnées (crash entre l'acceptation par Buffer et la
   });
 });
 
-describe("profil pilote : lecture seule, y compris avec des accords anciens et des échéances proches", () => {
+describe("programmation après accord : toute échéance réservée par la base, quel que soit le profil", () => {
   const soon = new Date(Date.now() + 3_600_000).toISOString();
   const later = new Date(Date.now() + 3 * 86_400_000).toISOString();
   const claim = (id: string, dueAt: string) => ({ id, buffer_post_id: `b-${id}`, text: "Texte validé", assets: [], due_at: dueAt, service: "twitter", token: `jeton-${id}` });
 
-  it("des publications approuvées sont réservables, runSync ne réserve et ne programme rien, même en profil pilote — lecture seule", async () => {
+  it("runSync programme les publications approuvées que la base réserve, proches ou lointaines, et ne déprogramme rien", async () => {
     profile = "pilot";
     claimedForSync = [claim("proche", soon), claim("loin", later)];
     provider.getPost.mockImplementation(async (id: string) => live({ id, dueAt: id === "b-proche" ? soon : later }));
     const result = await runSync("test");
-    expect(names().filter((name) => name.startsWith("claim_posts_for_scheduling"))).toHaveLength(0);
-    expect(provider.schedulePost).not.toHaveBeenCalled();
+    expect(names().filter((name) => name.startsWith("claim_posts_for_scheduling"))).toHaveLength(1);
+    expect(provider.schedulePost).toHaveBeenCalledTimes(2);
     expect(provider.unschedulePost).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ scheduled: 0, scheduleFailures: 0 });
+    expect(result).toMatchObject({ scheduled: 2, scheduleFailures: 0 });
   });
 });

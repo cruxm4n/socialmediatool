@@ -1,3 +1,46 @@
+# Cadence — programmation à la validation et comptes clients (11 octobre 2026, soir)
+
+Deux ajouts demandés par le propriétaire après la mise en production de la V1 (`86fc3b9`). **Non déployés** : la production sert toujours `86fc3b9`.
+
+## Ce qui change
+
+| Sujet | Avant (`86fc3b9`) | Maintenant |
+| --- | --- | --- |
+| Approbation d'un client | Enregistrée dans Cadence ; l'agence programmait à la main dans Buffer | Enregistrée, puis le brouillon est **programmé aussitôt dans Buffer**, à la date qu'il porte déjà |
+| Écritures vers Buffer | Aucune | **Une seule** : cette programmation. Création, modification, suppression et retour en brouillon restent refusés avant de quitter le serveur |
+| Brouillon sans date | Approuvable, programmé à la main | Approuvable ; il attend dans « Approuvées, pas encore programmées » que l'agence fixe sa date, puis part à la synchronisation suivante |
+| Échec de programmation | Sans objet | L'accord reste enregistré, l'échec est affiché, la synchronisation suivante réessaie |
+| Contenu modifié après programmation | Signalé | Signalé, comme avant : Cadence ne repasse rien en brouillon |
+| Comptes des utilisateurs clients | Script serveur | Créés depuis la fiche du client ; mot de passe généré, affiché à l'administrateur, réaffichable et renouvelable |
+| Mot de passe en base | Sans objet | Chiffré avec la clé du serveur (migration `0015`, table privée) ; jamais en clair, jamais lisible par une session de navigateur |
+| Interrupteur | Sans objet | `CADENCE_BUFFER_SCHEDULING=off` coupe la programmation automatique |
+
+Garde-fous de la programmation : la base ne réserve qu'un accord valable sur le contenu courant ; le brouillon est relu dans Buffer juste avant, et rien n'est programmé si son texte, ses médias ou sa date ne sont plus ceux validés ; seul un brouillon est programmé ; un résultat incertain n'est jamais présenté comme une réussite.
+
+## Tests exécutés
+
+| Vérification | Résultat |
+| --- | --- |
+| Lint, TypeScript, compilation de production | Réussis |
+| Unitaires et SQL/RLS | 639/639, 46 fichiers |
+| Intégration (vrais PostgreSQL, Auth, JWT ; deux clients, deux comptes) | 73/73 |
+| E2E Chromium | 66/66, dont 4 nouveaux parcours de création de compte avec le vrai service des comptes de la pile de test |
+| Laboratoire de migrations | Réussi, `0015` comprise |
+
+Les 34 tests qui vérifiaient « Cadence n'écrit rien dans Buffer » ont été **réécrits pour la nouvelle règle**, à la demande du propriétaire : ils vérifient désormais que la programmation part une seule fois, pour un accord valable, sur un contenu relu, et que toute autre écriture reste refusée. Le fichier `buffer-read-only.test.ts` est remplacé par `buffer-write-scope.test.ts`. Un contre-test indépendant (`audit-independent-sync.test.ts`) a été modifié pour la même raison ; son empreinte est mise à jour dans le manifeste.
+
+## Ce qui n'a pas été vérifié
+
+- **La programmation n'a pas été exécutée contre le vrai Buffer.** Elle reprend la requête vérifiée le 8 octobre 2026 et passe tous les tests avec fournisseur simulé. Le premier accord réel d'un client en sera la vérification : à surveiller.
+- Publication sans texte (médias seuls), vidéos : jamais essayées en réel.
+- Limite de l'offre gratuite de Buffer (10 publications programmées par compte) : au-delà, Buffer refusera et Cadence l'affichera comme un échec de programmation.
+
+## Risque
+
+**Plus élevé qu'en lecture seule, par nature** : Cadence agit désormais sur les comptes sociaux des clients. Une publication programmée part à sa date sans autre intervention. Le risque est borné par les garde-fous ci-dessus, par l'interrupteur, et par le fait que seule une personne habilitée du client peut déclencher la programmation en approuvant. La clé d'administration des comptes (`SUPABASE_SERVICE_ROLE_KEY`) donne tous les droits sur la base : elle reste sur le serveur et ne sert qu'à créer un compte et changer son mot de passe.
+
+---
+
 # Cadence V1 — rapport de validation (11 octobre 2026)
 
 Branche `release/cadence-v1-finalisation`, issue de `68e1e85` (version actuellement en production). Code vérifié : `4be0e3fad4873d598f13cae7f25c242f582e09e9` ; les commits suivants de la branche ne touchent que la documentation. **Rien n'est poussé, fusionné ni déployé** : la production est inchangée.

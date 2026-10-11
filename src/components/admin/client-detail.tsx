@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Archive, ArchiveRestore, ArrowLeft, ArrowRight, Inbox, Pencil, Radio, UserMinus, UserPlus, Users } from "lucide-react";
+import { Archive, ArchiveRestore, ArrowLeft, ArrowRight, Copy, Inbox, KeyRound, Pencil, Radio, RefreshCw, UserMinus, UserPlus, Users } from "lucide-react";
 import { toast } from "sonner";
 
 import { ChannelRow } from "@/components/admin/channel-row";
@@ -15,6 +15,7 @@ import { EmptyState } from "@/components/shared/page-header";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { useAdmin } from "@/components/shell/admin-context";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -23,6 +24,7 @@ import { isArchived, sortChannels } from "@/lib/domain/clients";
 import { DISPLAY_STATUSES, type Channel, type Organization, type Profile } from "@/lib/types";
 import type { PostView } from "@/lib/view";
 import { addUserByEmail, assignChannel, setMember, setOrganizationArchived } from "@/server/actions";
+import { createClientUser, regenerateUserPassword, revealUserPassword, type PasswordResult } from "@/server/user-actions";
 
 const PRIORITY = ["pending_approval", "changes_requested", "error", "approved", "scheduled", "draft", "published"];
 
@@ -53,9 +55,47 @@ function Card({ title, icon: Icon, count, children, id }: { title: string; icon:
   );
 }
 
-function MembersPanel({ organization, users, candidates, emails }: { organization: Organization; users: Profile[]; candidates: Profile[]; emails: Record<string, string> }) {
+/** Mot de passe d'un compte client, montré à l'administrateur : à la création, à la demande, ou après renouvellement. */
+interface Shown {
+  userId: string | null;
+  name: string;
+  email: string | null;
+  password: string | null;
+  note: string;
+}
+
+function MembersPanel({ organization, users, candidates, emails, canCreateUsers }: { organization: Organization; users: Profile[]; candidates: Profile[]; emails: Record<string, string>; canCreateUsers: boolean }) {
   const [pending, startTransition] = useTransition();
   const [removing, setRemoving] = useState<Profile | null>(null);
+  const [shown, setShown] = useState<Shown | null>(null);
+  const [renewing, setRenewing] = useState(false);
+
+  /** Exécute une action qui rend un mot de passe ; affiche le résultat dans la fenêtre plutôt que dans une notification. */
+  const withPassword = (target: Omit<Shown, "password" | "note">, action: () => Promise<PasswordResult>, after?: () => void) =>
+    startTransition(async () => {
+      try {
+        const result = await action();
+        if (leaveIfExpired(result)) return;
+        if (!result.ok) {
+          toast.error(result.message);
+          return;
+        }
+        setShown({ ...target, email: result.email ?? target.email, password: result.password ?? null, note: result.message });
+        after?.();
+      } catch {
+        toast.error("La connexion a été interrompue. Rechargez la page avant de réessayer.");
+      }
+    });
+
+  const copyPassword = async () => {
+    if (!shown?.password) return;
+    try {
+      await navigator.clipboard.writeText(shown.password);
+      toast.success("Mot de passe copié.");
+    } catch {
+      toast.error("Copie impossible : sélectionnez le mot de passe et copiez-le à la main.");
+    }
+  };
   const [existing, setExisting] = useState("");
   const [email, setEmail] = useState("");
   const [fullName, setFullName] = useState("");
@@ -67,11 +107,31 @@ function MembersPanel({ organization, users, candidates, emails }: { organizatio
     });
   const addByEmail = (event: React.FormEvent) => {
     event.preventDefault();
+    const reset = () => {
+      setEmail("");
+      setFullName("");
+      setJobTitle("");
+    };
+    if (!canCreateUsers) {
+      startTransition(async () => {
+        if (await run(() => addUserByEmail({ organizationId: organization.id, email, fullName, jobTitle }))) reset();
+      });
+      return;
+    }
+    // Compte existant : l'accès est donné. Adresse inconnue : le compte est créé et son mot de passe affiché.
     startTransition(async () => {
-      if (await run(() => addUserByEmail({ organizationId: organization.id, email, fullName, jobTitle }))) {
-        setEmail("");
-        setFullName("");
-        setJobTitle("");
+      try {
+        const result = await createClientUser({ organizationId: organization.id, email, fullName, jobTitle });
+        if (leaveIfExpired(result)) return;
+        if (!result.ok) {
+          toast.error(result.message);
+          return;
+        }
+        if (result.password) setShown({ userId: null, name: fullName, email: result.email ?? email, password: result.password, note: result.message });
+        else toast.success(result.message);
+        reset();
+      } catch {
+        toast.error("La connexion a été interrompue. Rechargez la page avant de réessayer.");
       }
     });
   };
@@ -90,6 +150,16 @@ function MembersPanel({ organization, users, candidates, emails }: { organizatio
                   <span className="block truncate text-sm font-medium">{user.fullName}</span>
                   <span className="block truncate text-xs text-muted-foreground">{[user.jobTitle, emails[user.id]].filter(Boolean).join(" · ") || "Client"}</span>
                 </span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={pending}
+                  aria-label={`Mot de passe de ${user.fullName}`}
+                  onClick={() => withPassword({ userId: user.id, name: user.fullName, email: emails[user.id] ?? null }, () => revealUserPassword({ userId: user.id }))}
+                >
+                  <KeyRound />
+                  <span className="max-sm:sr-only">Mot de passe</span>
+                </Button>
                 <Button variant="ghost" size="sm" onClick={() => setRemoving(user)} disabled={pending} aria-label={`Retirer l'accès de ${user.fullName}`}>
                   <UserMinus />
                   <span className="max-sm:sr-only">Retirer</span>
@@ -133,7 +203,9 @@ function MembersPanel({ organization, users, candidates, emails }: { organizatio
             </div>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <p className="max-w-md text-xs text-muted-foreground">
-                Le compte doit d&apos;abord exister : dans Supabase → Authentication → Users, « Invite user » lui envoie l&apos;e-mail d&apos;invitation.
+                {canCreateUsers
+                  ? "Si cette adresse n'a pas encore de compte, Cadence le crée et génère son mot de passe, que vous transmettrez vous-même."
+                  : "La création de comptes n'est pas activée sur ce serveur : le compte doit déjà exister."}
               </p>
               <Button type="submit" variant="outline" size="lg" disabled={pending || !email}>
                 <UserPlus />
@@ -163,6 +235,62 @@ function MembersPanel({ organization, users, candidates, emails }: { organizatio
           Cette personne ne verra plus les publications de {organization.name}. Ses commentaires et décisions passés sont conservés, et son compte n&apos;est pas supprimé.
         </p>
       </ConfirmDialog>
+
+      <Dialog open={shown !== null} onOpenChange={(open) => { if (!open) { setShown(null); setRenewing(false); } }}>
+        <DialogContent className="sm:max-w-md" data-testid="mot-de-passe">
+          <DialogHeader>
+            <DialogTitle>Identifiants de {shown?.name || "ce compte"}</DialogTitle>
+            <DialogDescription>
+              Transmettez-les vous-même à cette personne, par un moyen sûr. Vous pourrez les réafficher ici à tout moment.
+            </DialogDescription>
+          </DialogHeader>
+          <dl className="grid grid-cols-1 gap-3 text-sm">
+            {shown?.email && (
+              <div className="grid grid-cols-1 gap-1">
+                <dt className="text-xs font-medium text-muted-foreground">Adresse e-mail</dt>
+                <dd className="break-all font-medium">{shown.email}</dd>
+              </div>
+            )}
+            <div className="grid grid-cols-1 gap-1">
+              <dt className="text-xs font-medium text-muted-foreground">Mot de passe</dt>
+              <dd className="flex items-center gap-2">
+                {shown?.password ? (
+                  <>
+                    <code className="min-w-0 flex-1 rounded-lg bg-muted px-3 py-2 font-mono text-sm break-all select-all" data-testid="mot-de-passe-valeur">{shown.password}</code>
+                    <Button variant="outline" size="sm" onClick={copyPassword} aria-label="Copier le mot de passe">
+                      <Copy />
+                      <span className="max-sm:sr-only">Copier</span>
+                    </Button>
+                  </>
+                ) : (
+                  <span className="text-muted-foreground">Non disponible.</span>
+                )}
+              </dd>
+            </div>
+          </dl>
+          {shown?.note && <p className="text-xs text-muted-foreground">{shown.note}</p>}
+          <DialogFooter>
+            {shown?.userId && canCreateUsers && (
+              renewing ? (
+                <Button
+                  variant="destructive"
+                  disabled={pending}
+                  onClick={() => shown.userId && withPassword(shown, () => regenerateUserPassword({ userId: shown.userId! }), () => setRenewing(false))}
+                >
+                  <RefreshCw />
+                  {pending ? "Génération…" : "Confirmer : l'ancien ne fonctionnera plus"}
+                </Button>
+              ) : (
+                <Button variant="outline" disabled={pending} onClick={() => setRenewing(true)}>
+                  <RefreshCw />
+                  Générer un nouveau mot de passe
+                </Button>
+              )
+            )}
+            <Button onClick={() => { setShown(null); setRenewing(false); }}>Fermer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
@@ -176,6 +304,7 @@ export function ClientDetail({
   profiles,
   members,
   emails,
+  canCreateUsers,
 }: {
   organization: Organization;
   organizations: Organization[];
@@ -184,6 +313,8 @@ export function ClientDetail({
   profiles: Profile[];
   members: { organizationId: string; userId: string }[];
   emails: Record<string, string>;
+  /** Le serveur peut-il créer des comptes et conserver leur mot de passe ? */
+  canCreateUsers: boolean;
 }) {
   const router = useRouter();
   const { setOrgFilter } = useAdmin();
@@ -301,7 +432,7 @@ export function ClientDetail({
           </div>
         </Card>
 
-        <MembersPanel organization={organization} users={users} candidates={candidates} emails={emails} />
+        <MembersPanel organization={organization} users={users} candidates={candidates} emails={emails} canCreateUsers={canCreateUsers} />
       </div>
 
       <Card title="Publications" icon={Inbox} count={ownPosts.length} id="publications-title">

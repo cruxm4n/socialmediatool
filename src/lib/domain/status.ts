@@ -26,7 +26,7 @@ export const STATUS_META: Record<DisplayStatus, StatusMeta> = {
   },
   approved: {
     label: "Approuvé",
-    description: "Validé par le client, en attente de programmation dans Buffer.",
+    description: "Validé par le client. Programmé dans Buffer dès qu'il porte une date.",
     tone: "green",
   },
   scheduled: {
@@ -94,7 +94,7 @@ export function getPostAlerts(post: AlertInput, now: string): PostAlert[] {
   if (post.scheduleState === "unschedule_pending") {
     alerts.push({
       level: "warning",
-      message: "Programmé dans Buffer alors que la validation n'est plus valable : repassez-le en brouillon dans Buffer (Cadence n'y modifie rien).",
+      message: "Programmé dans Buffer alors que la validation n'est plus valable : repassez-le en brouillon dans Buffer (Cadence ne déprogramme jamais une publication).",
     });
   }
   if (post.bufferStatus === "draft" && post.approvalStatus !== "none") {

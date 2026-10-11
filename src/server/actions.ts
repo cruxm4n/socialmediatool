@@ -11,7 +11,7 @@ import { errorCodeIn } from "@/lib/domain/errors";
 import { getSession, homePath } from "@/server/auth";
 import { dispatchNotifications } from "@/server/notifications";
 import { createSessionClient } from "@/server/supabase/clients";
-import { runSync, type SyncResult } from "@/server/sync";
+import { runSync, scheduleApprovedPosts, type SyncResult } from "@/server/sync";
 
 const SESSION_EXPIRED: ActionResult = { ok: false, message: "Votre session a expiré. Reconnectez-vous.", expired: true };
 
@@ -94,15 +94,32 @@ async function decide(decision: "approved" | "changes_requested", input: unknown
 }
 
 /**
- * Approbation par le client. La décision reste interne à Cadence : RIEN n'est envoyé à Buffer. L'agence programme
- * ensuite la publication à la main dans Buffer. Les droits sont vérifiés par la fonction SQL decide_post, pas ici.
+ * Approbation par le client, puis programmation immédiate du brouillon dans Buffer, à la date qu'il porte déjà.
+ * L'accord est enregistré dans tous les cas ; si la programmation n'aboutit pas, le message le dit et la
+ * synchronisation suivante la reprend. Les droits sont vérifiés par la fonction SQL decide_post, pas ici.
  */
 export async function approvePost(input: { postId: string; expectedHash: string }): Promise<ActionResult> {
   const result = await decide("approved", input);
   if (!result.ok) return result;
+
+  let message = "Publication approuvée et programmée dans Buffer.";
+  try {
+    const scheduling = await scheduleApprovedPosts(result.postId);
+    if (scheduling.writesDisabled) {
+      message = "Publication approuvée. Votre agence la programmera dans Buffer.";
+    } else if (scheduling.paused) {
+      message = "Publication approuvée. Buffer limite les requêtes pour le moment : elle sera programmée dès la fin de la pause.";
+    } else if (scheduling.claimed === 0) {
+      message = "Publication approuvée. Elle n'a pas encore de date de publication (ou sa date est trop proche) : votre agence la programmera dans Buffer.";
+    } else if (scheduling.scheduled === 0) {
+      message = "Publication approuvée. La programmation dans Buffer n'a pas abouti : votre agence est prévenue et un nouvel essai aura lieu.";
+    }
+  } catch {
+    message = "Publication approuvée. La programmation dans Buffer sera faite à la prochaine synchronisation.";
+  }
   notifySoon();
   revalidatePath("/", "layout");
-  return { ok: true, message: "Publication approuvée. Votre agence la programmera dans Buffer." };
+  return { ok: true, message };
 }
 
 /**
@@ -122,7 +139,8 @@ export async function approvePosts(items: { postId: string; expectedHash: string
     else refused.push({ postId: item.postId, message: result.message });
   }
   if (approved > 0) {
-    // Décisions internes à Cadence : rien n'est envoyé à Buffer.
+    // Programmation de tout ce qui vient d'être approuvé ; en cas de panne, la synchronisation suivante s'en charge.
+    await scheduleApprovedPosts().catch(() => undefined);
     notifySoon();
     revalidatePath("/", "layout");
   }

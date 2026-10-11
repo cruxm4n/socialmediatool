@@ -125,21 +125,27 @@ describe("mode réel et serveur de développement", () => {
     expect(bufferModeProblem()).toBeNull();
   });
 
-  it("les écritures vers le vrai Buffer sont fermées par défaut ; seule CADENCE_BUFFER_WRITES=enabled les ouvre — refusé, lecture seule", async () => {
+  it("la programmation dans le vrai Buffer est active par défaut ; seule CADENCE_BUFFER_SCHEDULING=off la coupe", async () => {
     const { env } = await import("@/server/env");
     Object.assign(process.env, { BUFFER_MODE: "real", NODE_ENV: "production" });
-    for (const value of [undefined, "", "1", "true", "Enabled", "disabled"]) {
+    delete process.env.CADENCE_BUFFER_SCHEDULING;
+    // L'ancienne variable n'est plus lue : aucune de ses valeurs ne change quoi que ce soit.
+    for (const value of [undefined, "", "1", "true", "enabled", "disabled"]) {
       if (value === undefined) delete process.env.CADENCE_BUFFER_WRITES;
       else process.env.CADENCE_BUFFER_WRITES = value;
-      expect(env.bufferWritesEnabled).toBe(false);
+      expect(env.bufferWritesEnabled).toBe(true);
     }
-    // La variable n'est plus lue en mode réel : « enabled » n'ouvre rien non plus.
-    process.env.CADENCE_BUFFER_WRITES = "enabled";
-    expect(env.bufferWritesEnabled).toBe(false);
-    // Le Buffer simulé n'envoie rien nulle part : la barrière ne le concerne pas.
     delete process.env.CADENCE_BUFFER_WRITES;
+    for (const value of ["on", "1", "", "OFF"]) {
+      process.env.CADENCE_BUFFER_SCHEDULING = value;
+      expect(env.bufferWritesEnabled, `CADENCE_BUFFER_SCHEDULING=${value}`).toBe(true);
+    }
+    process.env.CADENCE_BUFFER_SCHEDULING = "off";
+    expect(env.bufferWritesEnabled).toBe(false);
+    // Le Buffer simulé n'envoie rien nulle part : l'interrupteur ne le concerne pas.
     Object.assign(process.env, { BUFFER_MODE: "mock", NODE_ENV: "test" });
     expect(env.bufferWritesEnabled).toBe(true);
+    delete process.env.CADENCE_BUFFER_SCHEDULING;
   });
 });
 

@@ -14,7 +14,7 @@ export const INBOX_META: Record<InboxKey, { label: string; hint: string; tone: T
   unvalidated: { label: "Programmées sans validation", hint: "Programmées à la main dans Buffer, sans accord du client.", tone: "red" },
   late: { label: "En retard", hint: "La date prévue est passée et rien n'a été publié.", tone: "amber" },
   attribution: { label: "À attribuer à un client", hint: "Importées depuis un canal transféré ou détaché : visibles de vous seul tant qu'elles ne sont pas attribuées.", tone: "amber" },
-  ready: { label: "Prêtes à publier", hint: "Validées par le client : il reste à les programmer dans Buffer.", tone: "green" },
+  ready: { label: "Approuvées, pas encore programmées", hint: "Sans date dans Buffer, ou programmation en échec : fixez la date dans Buffer, puis synchronisez.", tone: "amber" },
   changes: { label: "Modifications demandées", hint: "Le client attend une nouvelle version.", tone: "rose" },
   pending: { label: "Validations en attente", hint: "Soumises au client, sans réponse pour l'instant.", tone: "amber" },
 };

@@ -247,7 +247,7 @@ export function ApprovalsView({ organization, posts, now }: SpaceProps) {
         pending={busy}
         onConfirm={approveSelection}
       >
-        <p>Vous validez chacune telle qu&apos;elle est affichée ici ; votre agence les programmera ensuite :</p>
+        <p>Vous validez chacune telle qu&apos;elle est affichée ici ; celles qui ont une date sont programmées aussitôt :</p>
         <ul className="mt-2 grid grid-cols-1 list-disc gap-1 pl-5">
           {selected.map((post) => (
             <li key={post.id}>

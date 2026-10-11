@@ -77,7 +77,7 @@ export interface CompensationOutcome {
 }
 
 /** Phrase enregistrée tant qu'une publication reste programmée dans Buffer sans accord valable. */
-export const STILL_SCHEDULED = "Toujours programmée dans Buffer sans accord valable du client : repassez-la en brouillon dans Buffer (Cadence ne modifie rien dans Buffer).";
+export const STILL_SCHEDULED = "Toujours programmée dans Buffer sans accord valable du client : repassez-la en brouillon dans Buffer (Cadence ne déprogramme jamais une publication).";
 
 /**
  * CONSTAT des publications programmées dont l'accord n'est plus valable (« annulation à confirmer »).

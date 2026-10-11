@@ -152,7 +152,7 @@ export function ReviewView({
       {post.status === "approved" && (
         <StatusBanner tone="green" icon={CircleCheckBig} title={`Version ${post.approvedVersion} approuvée`}>
           {approver && post.approvedAt && `Par ${approver.fullName}, ${formatDateTime(post.approvedAt, post.timezone)}. `}
-          Votre agence la programmera dans Buffer.
+          {post.dueAt ? "Sa programmation est en cours : elle apparaîtra « Programmée » dans un instant." : "Elle sera programmée dès que votre agence aura fixé sa date de publication."}
         </StatusBanner>
       )}
       {post.status === "scheduled" && (
@@ -211,7 +211,7 @@ export function ReviewView({
             <DialogTitle className="font-display text-xl font-medium">Approuver cette publication ?</DialogTitle>
             <DialogDescription>
               Vous validez cette version pour {NETWORK_LABELS[post.network]}
-              {post.dueAt ? `, prévue le ${formatDateTime(post.dueAt, post.timezone)}` : ""}. Votre agence la programmera ensuite.
+              {post.dueAt ? `, prévue le ${formatDateTime(post.dueAt, post.timezone)}. Elle sera programmée aussitôt pour cette date.` : ". Votre agence fixera ensuite sa date de publication."}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

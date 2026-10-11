@@ -30,7 +30,7 @@ const GOOD = {
 };
 
 beforeEach(() => {
-  answer = { ready: true, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": true, "0012": true, "0013": true, "0014": true } };
+  answer = { ready: true, checks: { "0006": true, "0007": true, "0008": true, "0009": true, "0010": true, "0011": true, "0012": true, "0013": true, "0014": true, "0015": true } };
   failure = null;
 });
 afterEach(() => {

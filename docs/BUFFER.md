@@ -46,7 +46,7 @@ Une synchronisation coûte une requête (deux si plus de 100 posts actifs), plus
 
 ## Vérification du 11 octobre 2026 (lecture seule)
 
-Cadence ne fait plus que **lire** Buffer : aucune des écritures décrites plus haut n'est utilisée par l'application, et son client Buffer n'en contient plus. Les lectures ont été revérifiées sur l'API réelle, sans aucune mutation :
+Les lectures ont été revérifiées sur l'API réelle, sans aucune mutation. À cette date Cadence ne faisait que lire Buffer ; depuis, il y écrit **une seule chose** (voir « Programmation après accord » plus bas).
 
 | Contrôle | Résultat |
 | --- | --- |
@@ -66,3 +66,19 @@ Cadence ne fait plus que **lire** Buffer : aucune des écritures décrites plus 
 - **Offre gratuite** : 3 canaux, 3 tags, 10 publications programmées par compte (constaté sur le compte « Syno »).
 - **Pagination** : la lecture s'arrête à 500 publications actives par compte et le signale ; au-delà, rien n'est déclaré supprimé.
 - **Non vérifié en réel** : vidéos, documents, publications sans texte, adresses de médias dans la durée.
+
+## Programmation après accord (décision du propriétaire, 11 octobre 2026)
+
+Dès que le client approuve un brouillon, Cadence le passe en « programmé » dans Buffer. C'est sa seule écriture :
+
+```graphql
+mutation SchedulePost($input: EditPostInput!) { editPost(input: $input) { ... } }
+# input : { id, saveToDraft: false, mode: customScheduled, schedulingType, dueAt, text }
+```
+
+- La date envoyée est celle que le brouillon porte déjà ; le texte envoyé est celui relu à l'instant dans Buffer, après comparaison avec le contenu validé par le client. Médias et tags ne sont pas renvoyés : Buffer les conserve (essai du 8 octobre 2026).
+- Une publication sans texte renvoie ses médias à la place du texte. **Ce cas n'a pas été essayé en réel.**
+- Un brouillon **sans date** ne peut pas être programmé ainsi : il reste approuvé, en attente d'une date.
+- Le client Buffer de Cadence refuse toute autre mutation avant qu'elle ne quitte le serveur (`tests/unit/buffer-write-scope.test.ts`).
+- Offre gratuite : 10 publications programmées au plus par compte. Au-delà, Buffer refuse ; Cadence l'affiche comme un échec de programmation et réessaie à la synchronisation suivante.
+- **Cette écriture n'a pas été réexécutée contre le vrai Buffer depuis sa réintroduction** : elle reprend la requête vérifiée le 8 octobre, et elle est couverte par les tests avec fournisseur simulé. Le premier accord réel d'un client en sera la vérification.

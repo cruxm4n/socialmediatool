@@ -31,6 +31,7 @@ export default async function Page({ params }: PageProps<"/admin/clients/[id]">)
         profiles={profiles}
         members={members}
         emails={emails}
+        canCreateUsers={Boolean(env.supabaseServiceKey) && credentialKeyAvailable()}
       />
       {scoped && (
         <section id="comptes-buffer" aria-labelledby="comptes-buffer-titre" className="grid grid-cols-1 gap-3">

@@ -50,6 +50,18 @@ interface PostsPage {
   pageInfo: { hasNextPage: boolean; endCursor: string | null };
 }
 
+/**
+ * LA SEULE écriture que Cadence envoie à Buffer : passer un brouillon en « programmé » à sa date prévue, après
+ * l'accord du client. Toute autre mutation est refusée avant de quitter le serveur (voir `send`).
+ */
+const SCHEDULE_MUTATION = `mutation SchedulePost($input: EditPostInput!) {
+  editPost(input: $input) {
+    __typename
+    ... on PostActionSuccess { post { ${POST_FIELDS} } }
+    ... on MutationError { message }
+  }
+}`;
+
 const normalize = (value: string) => value.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 
 /** Lit les en-têtes « RateLimit » : une entrée par fenêtre (15 min, 1 jour, 30 jours). */
@@ -163,8 +175,9 @@ export class BufferProvider implements PublishingProvider {
 
   private async send<T>(query: string, variables: Record<string, unknown>): Promise<T> {
     const isMutation = query.trimStart().startsWith("mutation");
-    // Dernier garde-fou : même si une mutation était réintroduite plus haut, elle ne quitterait pas le serveur.
-    if (isMutation) throw readOnlyRefusal();
+    // Dernier garde-fou : la seule mutation qui quitte le serveur est la programmation d'un brouillon approuvé.
+    // Toute autre mutation, même réintroduite plus haut par erreur, est refusée ici sans appel réseau.
+    if (isMutation && query !== SCHEDULE_MUTATION) throw readOnlyRefusal();
     let response: Response;
     try {
       response = await this.fetchImpl(ENDPOINT, {
@@ -333,9 +346,9 @@ export class BufferProvider implements PublishingProvider {
   }
 
   /*
-   * LECTURE SEULE. Cadence ne crée, ne modifie, ne programme et ne déprogramme rien dans Buffer : tout cela se fait à
-   * la main dans Buffer. Ce fournisseur ne contient plus aucune mutation ; les opérations d'écriture du contrat sont
-   * refusées ici, sans appel réseau et quelle que soit la configuration (CADENCE_BUFFER_WRITES n'a plus d'effet).
+   * Cadence ne crée, ne modifie le contenu, ne supprime et ne déprogramme rien dans Buffer. Sa seule écriture est la
+   * programmation d'un brouillon approuvé par le client (`schedulePost`). Les autres opérations d'écriture du contrat
+   * sont refusées ici, sans appel réseau.
    */
   private refuseWrite(): never {
     throw readOnlyRefusal();
@@ -378,9 +391,31 @@ export class BufferProvider implements PublishingProvider {
     return this.refuseWrite();
   }
 
+  /**
+   * Passe un brouillon en « programmé » à SA date. Buffer exige de renvoyer le texte (ou, pour une publication sans
+   * texte, ses médias) : sans cela il répond « Post must have either text or media ». Médias et tags omis sont
+   * conservés (vérifié le 8 octobre 2026, docs/BUFFER.md). Le texte renvoyé est celui lu à l'instant dans Buffer et
+   * comparé par l'appelant au contenu validé : rien d'autre que le statut ne change.
+   */
   async schedulePost(post: ProviderPost): Promise<ProviderPost> {
-    void post;
-    return this.refuseWrite();
+    if (!post.dueAt) throw new ProviderError("Ce post n'a pas de date prévue.");
+    const input: Record<string, unknown> = { id: post.id, saveToDraft: false, mode: "customScheduled", schedulingType: post.schedulingType ?? "automatic", dueAt: post.dueAt };
+    if (post.text.trim().length > 0) input.text = post.text;
+    else input.assets = post.assets.map((asset) => (asset.type === "video" ? { video: { url: asset.source } } : { image: { url: asset.source } }));
+
+    const data = await this.request<{ editPost: { __typename?: string; message?: string; post?: RawPost } | null }>(SCHEDULE_MUTATION, { input });
+    const result = data.editPost;
+    // Refus typé : échec certain (rien n'a changé). Ni post ni message : l'effet est inconnu, jamais supposé.
+    if (!result?.post) {
+      if (result?.message) throw new ProviderError(`Buffer a refusé la programmation : ${result.message}`);
+      throw new ProviderError(`Réponse de Buffer sans résultat pour la programmation (${result?.__typename ?? "absente"}) : elle a peut-être été appliquée.`, "api", undefined, "unknown");
+    }
+    const scheduled = this.toPost(result.post);
+    if (scheduled.status !== "scheduled") {
+      // Buffer a répondu mais a changé le post d'une autre façon : l'effet est réel, il ne s'agit pas d'un refus.
+      throw new ProviderError(`Buffer n'a pas programmé le post (statut « ${scheduled.status} »).`, "api", undefined, "unknown");
+    }
+    return scheduled;
   }
 
   async unschedulePost(post: ProviderPost): Promise<ProviderPost> {

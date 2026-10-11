@@ -119,15 +119,16 @@ describe("constat d'une publication programmée sans accord valable (contre-audi
     expect(result.anomalies?.join(" ")).toContain("sans accord valable");
   });
 
-  it("la constatation ne lit que la publication à confirmer, jamais une réservation ordinaire — lecture seule", async () => {
+  it("la constatation ne modifie pas la publication à confirmer ; seule la réservation ordinaire est programmée", async () => {
     toUnschedule = [claim()];
     claimed = [claim("p2", "b2")];
     provider.getPost.mockImplementation(async (id: string) => live({ id, status: id === "b1" ? "scheduled" : "draft" }));
     await runSync("test");
     expect(provider.getPost).toHaveBeenCalledWith("b1");
-    expect(provider.getPost).not.toHaveBeenCalledWith("b2");
-    expect(claimCalls()).toHaveLength(0);
-    expect(provider.schedulePost).not.toHaveBeenCalled();
+    expect(provider.getPost).toHaveBeenCalledWith("b2");
+    expect(claimCalls()).toHaveLength(1);
+    // La publication programmée sans accord valable (b1) n'est ni reprogrammée ni déprogrammée.
+    expect(provider.schedulePost.mock.calls.map(([post]) => (post as ProviderPost).id)).toEqual(["b2"]);
     expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 
@@ -167,13 +168,14 @@ describe("constat d'une publication programmée sans accord valable (contre-audi
     expect(rpcCalls.find((call) => call.name === "set_sync_backoff")?.params).toMatchObject({ p_seconds: 172800 });
   });
 
-  it("des publications approuvées sont réservables, runSync ne réserve et ne programme rien, même pendant une pause préventive — lecture seule", async () => {
+  it("pause de quota : une programmation déclenchée par une approbation ne réserve rien et n'appelle pas Buffer", async () => {
     pause = { until: DUE_SOON, reason: "Quota atteint" };
     claimed = [claim()];
-    const result = await runSync("test");
+    const { scheduleApprovedPosts } = await import("@/server/sync");
+    const result = await scheduleApprovedPosts("p1");
+    expect(result).toMatchObject({ claimed: 0, scheduled: 0, failures: 0, paused: { until: DUE_SOON } });
     expect(claimCalls()).toHaveLength(0);
     expect(provider.schedulePost).not.toHaveBeenCalled();
     expect(provider.getPost).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ scheduled: 0, scheduleFailures: 0, unscheduled: 0 });
   });
 });
