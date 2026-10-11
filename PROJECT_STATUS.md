@@ -1,4 +1,104 @@
-# État réel du projet — 11 octobre 2026
+# Cadence V1 — rapport de validation (11 octobre 2026)
+
+Branche `release/cadence-v1-finalisation`, issue de `68e1e85` (version actuellement en production). Code vérifié : `4be0e3fad4873d598f13cae7f25c242f582e09e9` ; les commits suivants de la branche ne touchent que la documentation. **Rien n'est poussé, fusionné ni déployé** : la production est inchangée.
+
+## Verdict : READY WITH RESERVATIONS
+
+L'application candidate est prête à être mise en production : isolation entre clients, connexion Buffer réelle, synchronisation, validation, commentaires et historique sont vérifiés, et aucune donnée simulée n'est atteignable sur un serveur réglé pour la production. Trois réserves, aucune ne tenant au code :
+
+1. **Le cycle complet avec un vrai brouillon Buffer n'a pas été exécuté.** La lecture du vrai Buffer est vérifiée (deux comptes), et le cycle brouillon → validation → programmation est vérifié de bout en bout avec le Buffer simulé. Créer un brouillon dans un compte Buffer réel est une écriture que cette mission n'autorisait pas. À faire une fois, juste après la bascule, avec un brouillon tagué.
+2. **Aucun e-mail ne part.** Les notifications sont enregistrées et l'interface le dit clairement aux deux publics ; un client n'est prévenu que s'il ouvre Cadence. L'envoi réel demande un service d'envoi et une décision.
+3. **Les comptes des utilisateurs clients se créent par un script serveur**, pas depuis l'interface.
+
+La bascule elle-même reste à autoriser : voir [DEPLOYMENT.md](DEPLOYMENT.md).
+
+## Ce qui a été fait
+
+| Sujet | Changement |
+| --- | --- |
+| Parcours de validation | Migration `0014` : un brouillon sans date est approuvable ; fixer sa date ensuite dans Buffer garde l'accord ; retirer le tag d'un brouillon approuvé ne retire plus l'accord. L'accord reste attaché au contenu et tombe s'il change. |
+| Tag de soumission | « À valider » et « À vérifier » sont acceptés par défaut (`BUFFER_REVIEW_TAG` pour en changer). |
+| Accueil de l'administrateur | Nouvelle rubrique « Prêtes à publier » : les brouillons approuvés qu'il reste à programmer dans Buffer. |
+| Simulations | Comptes simulés jamais listés sur un serveur réel ; visuels fictifs absents de l'image de production ; route du simulateur fermée (404) ; aucun libellé de simulation en mode réel. |
+| Notifications | Les écrans ne promettent plus d'e-mail quand le serveur n'en envoie pas. |
+| Code mort | Moteur Studio, sa page de redirection, la boucle de fond, le client Supabase du navigateur, les marges de programmation automatique : supprimés (environ 1 400 lignes d'application en moins). |
+| Interface | Libellés clients, fuseau horaire par client, états vides, messages d'erreur, dialogues en français, deux fautes, une colonne explicite sur toutes les grilles (mobile). |
+| Documentation | README, CLAUDE.md, AGENTS.md, DEPLOYMENT.md, NEXT_STEPS.md, docs/BUFFER.md réécrits ou complétés pour la V1. |
+
+## Tests exécutés
+
+| Vérification (Node 24, piles locales neuves) | Résultat |
+| --- | --- |
+| Lint, TypeScript, compilation de production | Réussis |
+| Unitaires et SQL/RLS (base en mémoire) | 595/595, 44 fichiers |
+| Intégration (vrais PostgreSQL, Auth, JWT ; deux clients, deux comptes Buffer simulés) | 73/73 |
+| E2E Chromium (administrateur et deux clients) | 62/62 |
+| Laboratoire de migrations (PostgreSQL 17 natif) | 42/42 : rejeu de `0014`, montées depuis `0008` à `0013` identiques à une installation neuve, 307 publications conservées |
+| Image candidate en mode réel, compte Buffer de test (lecture seule) | 30/31 ; le contrôle restant était une erreur du script de contrôle (le mot « simultanés » pris pour « simulé ») |
+| Client Buffer réel (`BufferProvider`) | Compte constaté, relevé complet, relecture, clé d'un autre compte refusée, clé invalide refusée, écriture refusée sans requête réseau |
+| Répétition sur une copie restaurée de la production | Voir DEPLOYMENT.md et le rapport de mission |
+
+Évolution par rapport à `68e1e85` : les suites passent de 691 à 595 tests unitaires/SQL et de 83 à 73 tests d'intégration. La baisse vient uniquement des tests **du moteur Studio, de la boucle de fond et des marges de programmation automatique, supprimés avec le code qu'ils testaient** (quatre fichiers unitaires du Studio, un fichier de marges, trois tests de boucle, dix scénarios d'intégration d'envoi Studio) ; six tests ont été ajoutés pour les règles de la migration `0014` et la rubrique « Prêtes à publier ». Le contre-test indépendant du Studio est archivé tel quel dans `tests/legacy-unit/`. Aucune assertion d'isolation, de lecture seule ou de multi-comptes n'a été retirée ni affaiblie. Les assertions modifiées le sont parce que la règle a changé volontairement (accord sans date, tag retiré, date proche) ou parce qu'un texte d'interface a été réécrit.
+
+### Parcours fonctionnels
+
+| Parcours | Buffer simulé (E2E, intégration) | Buffer réel |
+| --- | --- | --- |
+| Connexion administrateur et client | Vérifié | Vérifié (image candidate) |
+| Connexion d'un compte Buffer, clé chiffrée | Vérifié | Vérifié : clé vérifiée auprès de Buffer, absente en clair de la base et du navigateur |
+| Clé invalide ou d'un autre compte | Vérifié | Vérifié : refusée, rien n'est enregistré |
+| Synchronisation, sans doublon | Vérifié | Vérifié : 2 canaux, 2 publications, deux passages, aucun doublon |
+| Calendrier et consultation | Vérifié | Vérifié côté administrateur |
+| Commentaire, demande de modification, validation | Vérifié | **Non exécuté** (réserve 1) |
+| Statut « À valider » retiré après validation, historique conservé | Vérifié | **Non exécuté** (réserve 1) |
+| Isolation entre deux clients | Vérifié (RLS, JWT réels, adresses directes) | Vérifié : chaque client ne voit rien du compte d'un autre, espace de l'autre introuvable, administration fermée |
+| Erreurs Buffer (panne, quota, clé refusée) | Vérifié | Clé refusée vérifiée ; panne et quota non provoqués en réel |
+| État sans compte Buffer | Vérifié | Vérifié : bandeau, lien vers les intégrations, aucune donnée inventée |
+
+## Tests non exécutés, et pourquoi
+
+- **Validation d'un vrai brouillon Buffer** : demande d'écrire dans un compte Buffer réel (création d'un brouillon), non autorisé.
+- **Panne et quota du vrai Buffer** : non provoqués ; couverts par les tests avec fournisseur simulé.
+- **Vidéos, documents, publications sans texte** : le compte de test n'en contient pas.
+- **Restauration sur une machine distincte** et copie des sauvegardes hors du serveur : hors périmètre, non configurée.
+- **Envoi réel d'e-mails** : désactivé.
+
+## Bogues et défauts corrigés
+
+- Un brouillon sans date ne pouvait pas être approuvé, et dater un brouillon approuvé annulait l'accord.
+- Retirer le tag d'un brouillon approuvé annulait l'accord.
+- L'écran des notifications promettait un e-mail qui ne partait pas.
+- Les comptes Buffer simulés étaient listés sur un serveur réel ; les visuels fictifs étaient servis sans session.
+- « heure de Paris » affichée pour tous les clients, quel que soit leur fuseau.
+- Fautes produites par le code : « apparaîssent », « canalaux ».
+- États vides trompeurs (« ne correspond à ce filtre » sans filtre actif).
+- Libellés anglais des dialogues (« Close »), jargon technique visible (migrations, chemins de fichiers, points d'accès).
+- Textes de révocation décrivant des annulations que Cadence ne fait plus.
+
+## Problèmes encore ouverts
+
+| Sujet | Gravité | Détail |
+| --- | --- | --- |
+| Tag conservé dans Buffer après l'accord | Faible | Cadence n'écrit pas dans Buffer. L'agence peut le retirer à la main sans perdre l'accord. |
+| Publications programmées sans passer par la validation | À connaître | Toute publication programmée dans Buffer sans accord du client apparaît dans « Programmées sans validation », y compris celles qui n'ont jamais porté le tag. |
+| Révocation d'un compte Buffer | Faible | S'il reste des publications programmées, elle est d'abord « demandée », puis terminée par une confirmation explicite. |
+| Synchronisation planifiée | À installer | Sans tâche planifiée, Buffer n'est relu qu'à l'ouverture de Cadence par l'administrateur. |
+| Sauvegardes hors du serveur | À configurer | Signalée en avertissement par la supervision. |
+| Contrat d'écriture du fournisseur, tables du Studio | Dette | Sans appelant ; conservés (contre-tests de refus, données). |
+
+## Limites réelles de l'API Buffer
+
+Détail dans [docs/BUFFER.md](docs/BUFFER.md). En résumé : pas de statut de validation côté Buffer (l'état est interne à Cadence) ; pas de webhook (Buffer est relu périodiquement) ; quotas par clé (100 requêtes par quart d'heure, 250 à 500 par jour, 3 000 à 15 000 par mois) ; 3 canaux, 3 tags et 10 publications programmées sur l'offre gratuite ; lecture limitée à 500 publications actives par compte.
+
+## Risque résiduel
+
+**Modéré, concentré sur la mise en service et non sur le code.** Le risque le plus sérieux serait la perte de `CADENCE_CREDENTIALS_KEY` (toutes les clés Buffer à ressaisir) ; il se traite en la conservant hors du serveur. La migration `0014` ne modifie ni table ni donnée, et l'image actuelle fonctionne sur une base `0014` : le retour arrière du code reste possible à tout moment.
+
+---
+
+# Historique — états antérieurs
+
+Les sections ci-dessous décrivent les états précédents et sont conservées pour la traçabilité. Elles ne décrivent plus la branche courante.
 
 ## Lecture seule vis-à-vis de Buffer — état courant (branche `fix/cadence-read-only-buffer-2026-10-11`)
 
