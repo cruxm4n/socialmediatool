@@ -22,11 +22,9 @@ function summarize(result: Awaited<ReturnType<typeof syncNow>>): string {
   const parts = [`${result.fetched} post${result.fetched > 1 ? "s" : ""} lu${result.fetched > 1 ? "s" : ""} dans Buffer`];
   if (result.created) parts.push(`${result.created} nouveau${result.created > 1 ? "x" : ""}`);
   if (result.invalidated) parts.push(`${result.invalidated} validation${result.invalidated > 1 ? "s" : ""} annulée${result.invalidated > 1 ? "s" : ""}`);
-  if (result.scheduled) parts.push(`${result.scheduled} programmé${result.scheduled > 1 ? "s" : ""}`);
-  if (result.unscheduled) parts.push(`${result.unscheduled} déprogrammé${result.unscheduled > 1 ? "s" : ""}`);
+  if (result.unscheduled) parts.push(`${result.unscheduled} retour${result.unscheduled > 1 ? "s" : ""} en brouillon constaté${result.unscheduled > 1 ? "s" : ""}`);
   if (result.removed) parts.push(`${result.removed} supprimé${result.removed > 1 ? "s" : ""}`);
-  if (result.unscheduleFailures) parts.push(`${result.unscheduleFailures} échec${result.unscheduleFailures > 1 ? "s" : ""} de déprogrammation`);
-  if (result.scheduleFailures) parts.push(`${result.scheduleFailures} échec${result.scheduleFailures > 1 ? "s" : ""} de programmation`);
+  if (result.unscheduleFailures) parts.push(`${result.unscheduleFailures} programmée${result.unscheduleFailures > 1 ? "s" : ""} sans accord valable`);
   return parts.join(" · ");
 }
 

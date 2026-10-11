@@ -436,25 +436,48 @@ describe("T03 — compensation, reprise après crash, deux workers (horloge rée
   };
 
   const restoreMember = () => admin.rpc("admin_set_member", { p_organization_id: colibri, p_user_id: inesId, p_member: true });
+  /** Écritures de Cadence vers le faux Buffer. Doit rester à 0 en lecture seule (les écritures de l'ancien moteur, historiques, sont exclues par un relevé de référence). */
+  const writeCalls = () => ["createDraft", "updateDraft", "rescheduleDraft", "schedulePost", "unschedulePost"].reduce((sum, name) => sum + calls(name), 0);
+  /** L'agence agit À LA MAIN dans Buffer : le faux Buffer change de statut, sans passer par Cadence. */
+  const byHand = (key: string, status: "draft" | "scheduled") => {
+    const s = state();
+    s.posts[bufferId(key)].status = status;
+    writeState(FILE, s);
+  };
 
-  it("crash APRÈS l'acceptation de Buffer puis retrait de l'approbateur : la reprise urgente annule sans lire l'instantané général", async () => {
+  it("crash APRÈS l'acceptation de Buffer (état hérité) puis retrait de l'approbateur : le passage urgent constate sans écrire, la publication reste « à confirmer » tant qu'elle est programmée, puis le retour en brouillon fait à la main est constaté — lecture seule", async () => {
     const postId = await approvedPost("c3-revoked");
     crashAfterAccept(postId, "c3-revoked");
     expect(state().posts[bufferId("c3-revoked")].status).toBe("scheduled");
     expect(await post("c3-revoked")).toMatchObject({ schedule_state: "claimed" });
+    // Référence : l'écriture de l'ancien moteur (historique) est comptée ici ; rien de nouveau ne doit suivre.
+    const writesBefore = writeCalls();
 
     try {
       const removed = await admin.rpc("admin_set_member", { p_organization_id: colibri, p_user_id: inesId, p_member: false });
       expect(removed.error).toBeNull();
       // Le serveur « redémarre » : le traitement urgent est le seul à tourner (aucun poll général).
       const started = Date.now();
+      // Buffer indique encore « programmé » : le passage signale l'écart, sans annuler ni réécrire. (D'autres accords d'Inès
+      // des suites précédentes de la pile partagée peuvent être constatés en même temps : compteurs « au moins ».)
+      const first = await runUrgent();
+      expect(first.ok).toBe(false);
+      expect(first.compensationFailures).toBeGreaterThanOrEqual(1);
+      expect(calls("fetchSnapshot")).toBe(0);
+      expect(calls("unschedulePost")).toBe(0);
+      expect(writeCalls()).toBe(writesBefore);
+      expect(state().posts[bufferId("c3-revoked")].status).toBe("scheduled");
+      expect(await post("c3-revoked")).toMatchObject({ schedule_state: "unschedule_pending" });
+
+      // L'agence repasse la publication en brouillon à la main ; le passage suivant le constate.
+      byHand("c3-revoked", "draft");
       const result = await runUrgent();
-      // D'autres accords d'Inès (suites précédentes de la pile partagée) sont retirés en même temps : « au moins ».
       expect(result.ok).toBe(true);
       expect(result.compensated).toBeGreaterThanOrEqual(1);
       expect(Date.now() - started).toBeLessThan(60_000);
       expect(calls("fetchSnapshot")).toBe(0);
-      expect(calls("unschedulePost")).toBe(1);
+      expect(calls("unschedulePost")).toBe(0);
+      expect(writeCalls()).toBe(writesBefore);
       expect(state().posts[bufferId("c3-revoked")].status).toBe("draft");
       expect(await post("c3-revoked")).toMatchObject({ schedule_state: "idle", buffer_status: "draft", approval_status: "pending" });
     } finally {
@@ -474,27 +497,45 @@ describe("T03 — compensation, reprise après crash, deux workers (horloge rée
     expect(calls("unschedulePost")).toBe(0);
   });
 
-  it("crash après l'acceptation, contenu modifié dans Buffer entre-temps : programmation annulée dans le même passage", async () => {
+  it("crash après l'acceptation, contenu modifié dans Buffer entre-temps : le passage urgent ne programme ni n'annule rien ; la publication non conforme reste « à confirmer » jusqu'au retour en brouillon constaté — lecture seule", async () => {
     const postId = await approvedPost("c3-edited");
     crashAfterAccept(postId, "c3-edited");
     const s = state();
     s.posts[bufferId("c3-edited")].text = "Texte retouché dans Buffer après l'accord";
     writeState(FILE, s);
     owner(`update public.posts set schedule_claimed_at = now() - interval '3 minutes' where id = '${postId}'`);
+    const writesBefore = writeCalls();
+    // Réservation abandonnée et contenu différent : Cadence le constate, sans rien écrire. Buffer est toujours programmé.
+    const first = await runUrgent();
+    expect(first.ok).toBe(false);
+    expect(first.compensationFailures).toBeGreaterThanOrEqual(1);
+    expect(calls("unschedulePost")).toBe(0);
+    expect(writeCalls()).toBe(writesBefore);
+    expect(state().posts[bufferId("c3-edited")].status).toBe("scheduled");
+    expect(await post("c3-edited")).toMatchObject({ schedule_state: "unschedule_pending" });
+
+    // L'agence repasse en brouillon à la main ; le constat est enregistré au passage suivant.
+    byHand("c3-edited", "draft");
     const result = await runUrgent();
-    expect(result).toMatchObject({ ok: true, compensated: 1 });
+    expect(result).toMatchObject({ ok: true });
+    expect(result.compensated).toBeGreaterThanOrEqual(1);
+    expect(calls("unschedulePost")).toBe(0);
+    expect(writeCalls()).toBe(writesBefore);
     expect(state().posts[bufferId("c3-edited")].status).toBe("draft");
-    expect(await post("c3-edited")).toMatchObject({ schedule_state: "idle" });
+    expect(await post("c3-edited")).toMatchObject({ schedule_state: "idle", buffer_status: "draft" });
   });
 
-  it("deux workers simultanés : une seule annulation chez Buffer", async () => {
+  it("deux workers simultanés : aucune écriture chez Buffer, constat enregistré — lecture seule", async () => {
     const postId = await approvedPost("c3-two");
     crashAfterAccept(postId, "c3-two");
     try {
       await admin.rpc("admin_set_member", { p_organization_id: colibri, p_user_id: inesId, p_member: false });
+      byHand("c3-two", "draft");
+      const writesBefore = writeCalls();
       const [a, b] = await Promise.all([runUrgentCycle(provider), runUrgentCycle(provider)]);
-      expect(calls("unschedulePost")).toBe(1);
-      // Soit l'un a été écarté par le verrou, soit le second est passé après le premier : une seule annulation au total.
+      expect(calls("unschedulePost")).toBe(0);
+      expect(writeCalls()).toBe(writesBefore);
+      // Soit l'un a été écarté par le verrou, soit le second est passé après le premier, qui avait déjà constaté : au moins un constat.
       expect(a.compensated + b.compensated).toBeGreaterThanOrEqual(1);
       expect(await post("c3-two")).toMatchObject({ schedule_state: "idle", buffer_status: "draft" });
     } finally {
@@ -502,52 +543,69 @@ describe("T03 — compensation, reprise après crash, deux workers (horloge rée
     }
   });
 
-  it("refus de quota (429) : échec durable et visible, aucune tentative pendant la pause, reprise à l'échéance — jamais « annulé »", async () => {
+  it("quota de requêtes Buffer atteint (pause posée par le serveur) : échec durable et visible, aucune relecture pendant la pause, reprise à l'échéance, constat seulement une fois la publication repassée en brouillon — jamais « annulé » — lecture seule", async () => {
     const postId = await approvedPost("c3-429");
     crashAfterAccept(postId, "c3-429");
     try {
       await admin.rpc("admin_set_member", { p_organization_id: colibri, p_user_id: inesId, p_member: false });
-      const s = state();
-      s.faults = ["unschedulePost:429"];
-      writeState(FILE, s);
+      // Quota atteint : pause de 48 heures posée par le serveur (ce que faisait le refus 429 de Buffer).
+      const paused = await automation.rpc("set_sync_backoff", { p_secret: SECRET, p_mode: "mock", p_seconds: 172_800, p_reason: "Quota de requêtes Buffer atteint" });
+      expect(paused.error).toBeNull();
+      const pause = await automation.rpc("get_sync_pause", { p_secret: SECRET, p_mode: "mock" });
+      expect(Date.parse((pause.data as { until: string }).until) - Date.now()).toBeGreaterThan(47 * 3_600_000);
+
+      const getsBefore = calls("getPost");
+      const writesBefore = writeCalls();
       const first = await runUrgent();
-      expect(first).toMatchObject({ ok: false, compensated: 0 });
-      expect(calls("unschedulePost")).toBe(1);
+      expect(first.ok).toBe(false);
+      expect(first.compensated).toBe(0);
+      // Pendant la pause : aucune relecture, aucune écriture, et l'échec reste visible.
+      expect(calls("getPost")).toBe(getsBefore);
+      expect(writeCalls()).toBe(writesBefore);
       expect(await post("c3-429")).toMatchObject({ schedule_state: "unschedule_pending" });
       expect((await post("c3-429")).unschedule_attempts).toBeGreaterThanOrEqual(1);
 
-      // Pause demandée par Buffer : 48 h conservées, aucune boucle d'appels refusés.
-      const pause = await automation.rpc("get_sync_pause", { p_secret: SECRET, p_mode: "mock" });
-      expect(Date.parse((pause.data as { until: string }).until) - Date.now()).toBeGreaterThan(47 * 3_600_000);
-      const getsBefore = calls("getPost");
       const second = await runUrgent();
       expect(second.ok).toBe(false);
       expect(calls("getPost")).toBe(getsBefore);
-      expect(calls("unschedulePost")).toBe(1);
+      expect(calls("unschedulePost")).toBe(0);
       expect(await post("c3-429")).toMatchObject({ schedule_state: "unschedule_pending" });
 
-      // L'échéance de la pause passée : la reprise aboutit.
+      // L'échéance de la pause passée : la publication est relue ; elle est toujours programmée, donc rien n'est annoncé annulé.
       owner("update public.sync_state set backoff_until = now() - interval '1 second' where mode = 'mock'");
       const third = await runUrgent();
-      expect(third.ok).toBe(true);
+      expect(third.ok).toBe(false);
+      expect(state().posts[bufferId("c3-429")].status).toBe("scheduled");
+      expect(await post("c3-429")).toMatchObject({ schedule_state: "unschedule_pending" });
+
+      // L'agence repasse la publication en brouillon à la main ; le constat aboutit.
+      byHand("c3-429", "draft");
+      const fourth = await runUrgent();
+      expect(fourth.ok).toBe(true);
+      expect(calls("unschedulePost")).toBe(0);
+      expect(writeCalls()).toBe(writesBefore);
       expect(await post("c3-429")).toMatchObject({ schedule_state: "idle", buffer_status: "draft" });
     } finally {
       await restoreMember();
     }
   });
 
-  it("l'instantané général en échec ne bloque pas la compensation (la reprise ne dépend pas du poll)", async () => {
+  it("l'instantané général en échec ne bloque pas le constat (la reprise ne dépend pas du poll) — lecture seule", async () => {
     const postId = await approvedPost("c3-snapshot");
     crashAfterAccept(postId, "c3-snapshot");
     try {
       await admin.rpc("admin_set_member", { p_organization_id: colibri, p_user_id: inesId, p_member: false });
+      // L'agence a repassé la publication en brouillon à la main ; l'instantané général, lui, échoue.
       const s = state();
       s.snapshotFails = true;
+      s.posts[bufferId("c3-snapshot")].status = "draft";
       writeState(FILE, s);
       const result = await runUrgent();
       expect(result.ok).toBe(true);
-      expect(calls("unschedulePost")).toBe(1);
       expect(calls("fetchSnapshot")).toBe(0);
+      expect(calls("unschedulePost")).toBe(0);
+      expect(state().posts[bufferId("c3-snapshot")].status).toBe("draft");
+      expect(await post("c3-snapshot")).toMatchObject({ schedule_state: "idle", buffer_status: "draft" });
     } finally {
       await restoreMember();
     }

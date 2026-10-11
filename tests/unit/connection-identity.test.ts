@@ -2,6 +2,8 @@ import { randomBytes } from "node:crypto";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { BUFFER_READ_ONLY } from "@/server/publishing/provider";
+
 /*
  * Identité du compte Buffer derrière une clé (contrôle indépendant du 10 octobre 2026, P1-02).
  *
@@ -84,12 +86,13 @@ describe("BufferProvider — à quel compte appartient cette clé ?", () => {
     expect(error.message).not.toContain(KEY_A);
   });
 
-  it("avec une identité attendue, la première requête recontrôle le compte : une clé d'un AUTRE compte n'envoie RIEN d'autre", async () => {
+  it("avec une identité attendue, la première requête recontrôle le compte : une clé d'un AUTRE compte n'envoie RIEN d'autre — refusé, lecture seule", async () => {
     const { BufferProvider } = await load();
     const wrong = new BufferProvider(KEY_B, "À valider", fakeBuffer, "acct-A");
     await expect(wrong.getPost("p1")).rejects.toThrow(/n'appartient pas au compte Buffer de cette connexion/);
-    await expect(wrong.schedulePost({ id: "p1", channelId: "c", service: "linkedin", status: "draft", text: "t", dueAt: "2031-01-01T09:00:00.000Z", sentAt: null, updatedAt: null, externalLink: null, error: null, hasReviewTag: true, schedulingType: "automatic", assets: [] })).rejects.toThrow(/n'appartient pas/);
-    expect(requests.length).toBe(2);
+    // L'écriture est refusée avant toute requête : seule la lecture précédente (contrôle d'identité) a été envoyée.
+    await expect(wrong.schedulePost({ id: "p1", channelId: "c", service: "linkedin", status: "draft", text: "t", dueAt: "2031-01-01T09:00:00.000Z", sentAt: null, updatedAt: null, externalLink: null, error: null, hasReviewTag: true, schedulingType: "automatic", assets: [] })).rejects.toMatchObject({ message: BUFFER_READ_ONLY, refusal: "writes_disabled", outcome: "failed" });
+    expect(requests.length).toBe(1);
     expect(requests.every((request) => request.query.includes("account") && !request.query.includes("mutation"))).toBe(true);
 
     // Même compte : contrôlé une seule fois, puis les opérations passent.

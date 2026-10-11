@@ -82,7 +82,7 @@ active ──(révocation demandée, il reste des effets engagés)──▶ revo
 
 Hors production (`next dev`, tests), le Buffer simulé reste le défaut, et `BUFFER_MODE=real` est ignoré par `next dev` sauf `CADENCE_ALLOW_REAL_BUFFER_IN_DEV=1`.
 
-**Barrière d'activation des écritures.** En mode réel, connecter un compte et le lire ne suffit pas à publier : tant que `CADENCE_BUFFER_WRITES=enabled` n'est pas posé, aucune création, modification, programmation ni annulation n'est envoyée à Buffer. Rien n'est même réservé en base. L'interface l'indique (« lecture seule »).
+**Lecture seule.** Depuis le 11 octobre 2026, Cadence ne fait que lire Buffer : aucune création, modification, programmation ni annulation n'est envoyée, quelle que soit la configuration. La variable `CADENCE_BUFFER_WRITES` n'est plus lue. Voir docs/SYNCHRONISATION.md.
 
 ## Chiffrement et rotation
 

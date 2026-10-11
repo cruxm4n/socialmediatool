@@ -124,8 +124,8 @@ export default async function Page() {
             { label: "Comptes Buffer utilisables", value: usable === 0 ? "Aucun compte Buffer connecté : rien n'est lu ni envoyé" : `${usable} compte${usable > 1 ? "s" : ""} connecté${usable > 1 ? "s" : ""} et vérifié${usable > 1 ? "s" : ""}`, ok: usable > 0 },
             {
               label: "Envoi vers Buffer",
-              value: env.bufferWritesEnabled ? "Activé : brouillons, programmations et annulations sont envoyés à Buffer" : "Non activé : Buffer est lu, mais rien n'y est créé, programmé ni annulé",
-              note: env.bufferWritesEnabled ? undefined : "s'active côté serveur (CADENCE_BUFFER_WRITES), sur décision explicite",
+              value: "Jamais : Buffer est lu, mais rien n'y est créé, modifié, programmé ni annulé",
+              note: "lecture seule, sans réglage pour l'activer",
             },
           ]),
           { label: "Chiffrement des clés", value: credentialKeyAvailable() ? `Disponible (clé maître n° ${keyVersion ?? "?"}) : les clés sont chiffrées avant enregistrement` : "Indisponible : aucune clé Buffer ne peut être enregistrée", ok: credentialKeyAvailable() },
@@ -145,9 +145,9 @@ export default async function Page() {
 
       <Section id="publications" title="Publications" description="Règles appliquées à toute publication. Elles sont fixées par l'application et ne se désactivent pas.">
         <Rows rows={[
-          { label: "Validation", value: "Aucune programmation sans accord du client sur la version exacte" },
+          { label: "Validation", value: "Le client approuve une version exacte ; la programmation se fait ensuite à la main dans Buffer" },
           { label: "Tag de soumission", value: `« ${env.reviewTag} »`, note: "posé dans Buffer" },
-          { label: "Profil", value: env.profile === "pilot" ? "Pilote : échéance d'au moins 24 h à chaque programmation" : "Standard" },
+          { label: "Profil", value: env.profile === "pilot" ? "Pilote : notifications simulées et minimales" : "Standard" },
           { label: "Résultat inconnu", value: "Jamais de renvoi automatique : le brouillon est retrouvé, ou son absence confirmée par une personne" },
           { label: "Synchronisation", value: <Link href="/admin/synchronisation" className="font-medium text-foreground underline-offset-4 hover:underline">Dernière réussie : {dateTime(status.lastSuccessAt)}</Link>, ok: status.consecutiveFailures === 0 },
           { label: "Annulations à confirmer", value: `${status.urgent.pendingCancellations}`, ok: status.urgent.pendingCancellations === 0 },

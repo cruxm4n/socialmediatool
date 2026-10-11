@@ -4,8 +4,8 @@ import { ProviderError, type ProviderPost, type PublishingProvider } from "@/ser
 
 /*
  * La couche de service, isolée : la base et Buffer sont remplacés par des doublures.
- * On vérifie la règle centrale du produit : rien n'est programmé si le contenu présent
- * dans Buffer n'est pas exactement celui que le client a validé.
+ * Lecture seule vis-à-vis de Buffer : la synchronisation lit, constate et met la base à jour ; elle ne réserve,
+ * ne programme, ne déprogramme ni ne crée rien dans Buffer.
  */
 
 const rpcCalls: { name: string; params: Record<string, unknown> }[] = [];
@@ -14,7 +14,7 @@ let toUnschedule: unknown[] = [];
 /** true : la base n'a pas reçu la migration 0003 (fonctions « _in_mode » absentes). */
 let outdatedDatabase = false;
 let unresolved: string[] = [];
-/** Réponse de la base à une confirmation de programmation : « scheduled », « stale »… */
+/** Réponse de la base à une confirmation de programmation (inutilisée par la synchronisation en lecture seule). */
 let completeOutcome: string | null = null;
 /** Pause de quota renvoyée par get_sync_pause (migration 0010). null : aucune. */
 let pause: { until: string; reason: string | null } | null = null;
@@ -59,7 +59,8 @@ vi.mock("@/server/notifications", () => ({ dispatchNotifications }));
 const BOOKKEEPING = new Set(["begin_urgent_run", "finish_urgent_run", "renew_urgent_run", "renew_sync_run", "list_orphan_claims_in_mode", "get_sync_pause"]);
 const businessCalls = () => rpcCalls.map((call) => call.name).filter((name) => !BOOKKEEPING.has(name));
 
-const { runSync, scheduleApprovedPosts } = await import("@/server/sync");
+const { runSync } = await import("@/server/sync");
+const { STILL_SCHEDULED } = await import("@/server/compensation");
 
 const DUE = "2030-01-15T09:00:00.000Z";
 const live = (overrides: Partial<ProviderPost> = {}): ProviderPost => ({
@@ -67,7 +68,8 @@ const live = (overrides: Partial<ProviderPost> = {}): ProviderPost => ({
   updatedAt: null, externalLink: null, error: null, hasReviewTag: true, schedulingType: "automatic", assets: [], ...overrides,
 });
 const claim = (id = "p1", bufferId = "b1") => ({ id, buffer_post_id: bufferId, text: "Texte validé", assets: [], due_at: "2030-01-15T09:00:00+00:00", service: "twitter", token: `jeton-${id}` });
-const completions = () => rpcCalls.filter((call) => call.name === "complete_scheduling").map((call) => [call.params.p_post_id, call.params.p_ok]);
+const claimCalls = () => rpcCalls.filter((call) => call.name.startsWith("claim_posts_for_scheduling"));
+const unscheduleCompletions = () => rpcCalls.filter((call) => call.name === "complete_unscheduling").map((call) => call.params);
 
 beforeEach(() => {
   writesEnabled = true;
@@ -93,108 +95,64 @@ beforeEach(() => {
   };
 });
 
-describe("programmation des posts approuvés", () => {
-  it("la barrière fermée interdit une réservation et tout appel d'écriture en mode réel", async () => {
-    writesEnabled = false;
+describe("lecture seule : aucune réservation ni programmation", () => {
+  it("la barrière d'écriture ouverte ne change rien : en mode réel, la synchronisation ne réserve rien et n'écrit rien — lecture seule", async () => {
+    writesEnabled = true;
     provider = { ...provider, mode: "real" };
     claimed = [claim()];
-    expect(await scheduleApprovedPosts("p1")).toMatchObject({ scheduled: 0, writesDisabled: true });
-    expect(rpcCalls.some((call) => call.name.startsWith("claim_posts_for_scheduling"))).toBe(false);
+    const result = await runSync("test");
+    expect(result).toMatchObject({ ok: true, scheduled: 0, scheduleFailures: 0, unscheduled: 0, unscheduleFailures: 0 });
+    expect(claimCalls()).toHaveLength(0);
     expect(provider.getPost).not.toHaveBeenCalled();
     expect(provider.schedulePost).not.toHaveBeenCalled();
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 
-  it("programme un post dont le contenu Buffer est identique au contenu validé", async () => {
+  it("des publications approuvées sont réservables, runSync ne réserve et ne programme rien — lecture seule", async () => {
     claimed = [claim()];
-    const result = await scheduleApprovedPosts("p1");
-    expect(result).toMatchObject({ scheduled: 1, failures: 0, stale: false, rateLimited: null });
-    expect(provider.schedulePost).toHaveBeenCalledTimes(1);
-    expect(completions()).toEqual([["p1", true]]);
-    expect(rpcCalls.find((call) => call.name.startsWith("claim_posts_for_scheduling"))?.params).toMatchObject({ p_secret: "secret-de-test", p_post_id: "p1", p_mode: "mock" });
-  });
-
-  it("une pause de quota en cours empêche toute réservation depuis une action isolée", async () => {
-    pause = { until: "2030-01-01T00:00:00Z", reason: "Quota atteint" };
-    claimed = [claim()];
-    const result = await scheduleApprovedPosts("p1");
-    expect(result).toMatchObject({ scheduled: 0, paused: { reason: "Quota atteint" } });
-    expect(rpcCalls.some((call) => call.name.startsWith("claim_posts_for_scheduling"))).toBe(false);
+    const result = await runSync("test");
+    expect(result).toMatchObject({ ok: true, scheduled: 0, scheduleFailures: 0, unscheduled: 0, unscheduleFailures: 0 });
+    expect(claimCalls()).toHaveLength(0);
     expect(provider.schedulePost).not.toHaveBeenCalled();
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 
-  it.each([
-    ["le tag", { hasReviewTag: false }],
-    ["les secondes", { dueAt: "2030-01-15T09:00:30.000Z" }],
-    ["le texte", { text: "Texte changé dans Buffer" }],
-    ["la date", { dueAt: "2030-01-16T09:00:00.000Z" }],
-    ["les médias", { assets: [{ type: "image" as const, source: "https://img/nouveau.jpg", thumbnail: "" }] }],
-  ])("ne programme rien si %s a changé dans Buffer depuis la validation", async (_label, change) => {
-    claimed = [claim()];
-    provider.getPost.mockResolvedValue(live(change));
-    const result = await scheduleApprovedPosts("p1");
-    expect(provider.schedulePost).not.toHaveBeenCalled();
-    expect(result).toMatchObject({ scheduled: 0, failures: 1, stale: true, rateLimited: null });
-    expect(completions()).toEqual([["p1", false]]);
-  });
-
-  it("ne programme rien si le post a disparu de Buffer ou n'est plus un brouillon", async () => {
-    claimed = [claim("p1"), claim("p2", "b2")];
-    provider.getPost.mockResolvedValueOnce(null).mockResolvedValueOnce(live({ id: "b2", status: "sent" }));
-    const result = await scheduleApprovedPosts();
-    expect(provider.schedulePost).not.toHaveBeenCalled();
-    expect(result.failures).toBe(2);
-  });
-
-  it("ne reprogramme pas un post déjà programmé dans Buffer avec le bon contenu", async () => {
-    claimed = [claim()];
-    provider.getPost.mockResolvedValue(live({ status: "scheduled" }));
-    expect(await scheduleApprovedPosts("p1")).toMatchObject({ scheduled: 1, failures: 0 });
-    expect(provider.schedulePost).not.toHaveBeenCalled();
-  });
-
-  it("ne fait rien quand la base ne réserve aucun post (non approuvé, déjà réservé…)", async () => {
-    claimed = [];
-    expect(await scheduleApprovedPosts("p1")).toMatchObject({ scheduled: 0, failures: 0, stale: false });
-    expect(provider.getPost).not.toHaveBeenCalled();
-  });
-
-  it("cesse d'appeler Buffer dès que le quota est atteint, et libère les posts restants", async () => {
-    claimed = [claim("p1"), claim("p2", "b2"), claim("p3", "b3")];
+  it("cesse de lire Buffer dès que le quota est atteint, et ne tente pas les posts restants — lecture seule", async () => {
+    toUnschedule = [claim("p1", "b1"), claim("p2", "b2"), claim("p3", "b3")];
     provider.getPost.mockRejectedValue(new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", 600));
-    const result = await scheduleApprovedPosts();
+    const result = await runSync("test");
     expect(provider.getPost).toHaveBeenCalledTimes(1);
-    expect(result.failures).toBe(3);
-    expect(completions()).toEqual([["p1", false], ["p2", false], ["p3", false]]);
+    expect(result).toMatchObject({ ok: false, unscheduled: 0, unscheduleFailures: 3 });
+    expect(unscheduleCompletions().map((params) => [params.p_post_id, params.p_ok])).toEqual([["p1", false], ["p2", false], ["p3", false]]);
   });
 
-  it("un refus de Buffer sur un post n'empêche pas de traiter les suivants", async () => {
-    claimed = [claim("p1"), claim("p2", "b2")];
-    provider.getPost.mockImplementation(async (id: string) => live({ id }));
-    provider.schedulePost.mockRejectedValueOnce(new ProviderError("Buffer a refusé la modification")).mockImplementation(async (post: ProviderPost) => ({ ...post, status: "scheduled" as const }));
-    const result = await scheduleApprovedPosts();
-    expect(result).toMatchObject({ scheduled: 1, failures: 1 });
-    expect(completions()).toEqual([["p1", false], ["p2", true]]);
+  it("un refus de Buffer sur un post n'empêche pas de constater les suivants — lecture seule", async () => {
+    toUnschedule = [claim("p1", "b1"), claim("p2", "b2")];
+    provider.getPost.mockImplementation(async (id: string) => {
+      if (id === "b1") throw new ProviderError("Buffer a refusé la lecture");
+      return live({ id, status: "draft" });
+    });
+    const result = await runSync("test");
+    expect(result).toMatchObject({ ok: false, unscheduled: 1, unscheduleFailures: 1 });
+    expect(unscheduleCompletions().map((params) => [params.p_post_id, params.p_ok])).toEqual([["p1", false], ["p2", true]]);
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 });
 
 describe("synchronisation complète", () => {
-  it("enchaîne lecture, déprogrammation puis programmation", async () => {
+  it("la synchronisation lit, constate, et n'écrit rien : une publication encore programmée reste signalée — lecture seule", async () => {
     toUnschedule = [claim("p9", "b9")];
     claimed = [claim()];
     provider.getPost.mockImplementation(async (id: string) => live({ id, status: id === "b9" ? "scheduled" : "draft" }));
     const result = await runSync("test");
-    expect(result).toMatchObject({ ok: true, fetched: 1, unscheduled: 1, scheduled: 1 });
-    expect(provider.unschedulePost).toHaveBeenCalledTimes(1);
+    expect(result).toMatchObject({ ok: false, fetched: 1, unscheduled: 0, unscheduleFailures: 1, scheduled: 0 });
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+    expect(provider.schedulePost).not.toHaveBeenCalled();
+    expect(claimCalls()).toHaveLength(0);
     expect(businessCalls()).toEqual([
-      "sync_buffer_posts", "list_posts_to_unschedule_in_mode", "complete_unscheduling", "claim_posts_for_scheduling_in_mode", "complete_scheduling",
+      "sync_buffer_posts", "list_posts_to_unschedule_in_mode", "complete_unscheduling", "record_sync_failure",
     ]);
-  });
-
-  it("signale les échecs de programmation à un planificateur", async () => {
-    claimed = [claim()];
-    provider.schedulePost.mockRejectedValue(new ProviderError("Canal déconnecté"));
-    expect(await runSync("test")).toMatchObject({ ok: false, scheduleFailures: 1, scheduled: 0 });
-    expect(rpcCalls.some((call) => call.name === "record_sync_failure")).toBe(true);
+    expect(rpcCalls.find((call) => call.name === "complete_unscheduling")?.params).toMatchObject({ p_post_id: "p9", p_ok: false, p_error: STILL_SCHEDULED });
   });
 
   it("signale les échecs de déprogrammation et stoppe les appels après un quota", async () => {
@@ -207,19 +165,20 @@ describe("synchronisation complète", () => {
     expect(rpcCalls.some((call) => call.name === "claim_posts_for_scheduling_in_mode")).toBe(false);
   });
 
-  it("ne perd pas les compteurs du premier passage après une relecture", async () => {
-    claimed = [claim()];
-    provider.getPost.mockResolvedValue(live({ hasReviewTag: false }));
-    expect(await runSync("test")).toMatchObject({ ok: false, fetched: 1, updated: 2, scheduleFailures: 1 });
+  it("ne perd pas les compteurs du premier passage après une relecture des posts absents", async () => {
+    unresolved = ["b1"];
+    provider.getPost.mockResolvedValue(live({ status: "sent" }));
+    expect(await runSync("test")).toMatchObject({ ok: true, fetched: 1, updated: 2, removed: 1 });
   });
 
-  it("conserve les opérations réussies si la relecture échoue", async () => {
-    claimed = [claim("p1"), claim("p2", "b2")];
-    provider.getPost.mockResolvedValueOnce(live()).mockResolvedValueOnce(live({ text: "Changé" }));
-    (provider.fetchSnapshot as ReturnType<typeof vi.fn>)
-      .mockResolvedValueOnce({ channels: [], posts: [], complete: true, rateLimit: null })
-      .mockRejectedValueOnce(new ProviderError("Relecture impossible", "network"));
-    expect(await runSync("test")).toMatchObject({ ok: false, fetched: 1, updated: 1, scheduled: 1, scheduleFailures: 1 });
+  it("conserve les constats réussis si une lecture échoue ensuite — lecture seule", async () => {
+    toUnschedule = [claim("p1", "b1"), claim("p2", "b2")];
+    provider.getPost
+      .mockResolvedValueOnce(live({ status: "draft" }))
+      .mockRejectedValueOnce(new ProviderError("Buffer injoignable", "network"));
+    const result = await runSync("test");
+    expect(result).toMatchObject({ ok: false, fetched: 1, updated: 1, unscheduled: 1, unscheduleFailures: 1 });
+    expect(unscheduleCompletions().map((params) => [params.p_post_id, params.p_ok])).toEqual([["p1", true], ["p2", false]]);
   });
 
   it("mutualise les synchronisations simultanées", async () => {
@@ -228,13 +187,6 @@ describe("synchronisation complète", () => {
     expect(first).toBe(second);
     await Promise.all([first, second]);
     expect(provider.fetchSnapshot).toHaveBeenCalledTimes(1);
-  });
-
-  it("relit Buffer quand un contenu modifié est détecté au moment de programmer", async () => {
-    claimed = [claim()];
-    provider.getPost.mockResolvedValue(live({ text: "Changé" }));
-    await runSync("test");
-    expect(rpcCalls.filter((call) => call.name === "sync_buffer_posts")).toHaveLength(2);
   });
 
   it("enregistre l'échec et ne programme rien si Buffer est injoignable", async () => {
@@ -293,10 +245,10 @@ describe("exécutions concurrentes et pauses (migration 0006)", () => {
     expect(finish()).toMatchObject({ p_ok: false, p_backoff_seconds: 0 });
   });
 
-  it("consigne les anomalies : lecture incomplète et échecs de programmation", async () => {
+  it("consigne les anomalies : lecture incomplète et publications programmées sans accord", async () => {
     lock = { acquired: true, token: "jeton" };
-    claimed = [claim()];
-    provider.schedulePost.mockRejectedValue(new ProviderError("Canal déconnecté"));
+    toUnschedule = [claim()];
+    provider.getPost.mockResolvedValue(live({ status: "scheduled" }));
     (provider.fetchSnapshot as ReturnType<typeof vi.fn>).mockResolvedValue({ channels: [], posts: [], complete: false, rateLimit: null });
     const result = await runSync("planifié", { scheduled: true });
     expect(result.anomalies).toHaveLength(2);
@@ -323,28 +275,30 @@ describe("exécutions concurrentes et pauses (migration 0006)", () => {
 });
 
 describe("base sans la migration 0003", () => {
-  it("le mode réel se rabat sur les anciennes fonctions et la synchronisation aboutit", async () => {
+  it("le mode réel se rabat sur les anciennes fonctions, sans rien réserver ni programmer — lecture seule", async () => {
     outdatedDatabase = true;
     provider = { ...provider, mode: "real" };
     claimed = [claim()];
     const result = await runSync("test");
-    expect(result).toMatchObject({ ok: true, scheduled: 1, scheduleFailures: 0 });
+    expect(result).toMatchObject({ ok: true, scheduled: 0, scheduleFailures: 0 });
     expect(businessCalls()).toEqual([
       "sync_buffer_posts", "list_posts_to_unschedule_in_mode", "list_posts_to_unschedule",
-      "claim_posts_for_scheduling_in_mode", "claim_posts_for_scheduling", "complete_scheduling",
     ]);
+    expect(claimCalls()).toHaveLength(0);
+    expect(provider.schedulePost).not.toHaveBeenCalled();
   });
 
-  it("le mode réel n'envoie jamais un post simulé à Buffer et le libère", async () => {
+  it("le mode réel n'envoie jamais un post simulé à Buffer, ni en lecture ni en écriture — lecture seule", async () => {
     outdatedDatabase = true;
     provider = { ...provider, mode: "real" };
-    claimed = [claim("p1", "mock-dev-1"), claim("p2", "b2")];
-    provider.getPost.mockImplementation(async (id: string) => live({ id }));
-    const result = await scheduleApprovedPosts();
-    expect(result).toMatchObject({ scheduled: 1, failures: 0, stale: false, rateLimited: null });
+    toUnschedule = [claim("p1", "mock-dev-1"), claim("p2", "b2")];
+    provider.getPost.mockImplementation(async (id: string) => live({ id, status: "draft" }));
+    const result = await runSync("test");
+    expect(result).toMatchObject({ ok: true, unscheduled: 1, unscheduleFailures: 0 });
     expect(provider.getPost).toHaveBeenCalledTimes(1);
     expect(provider.getPost).toHaveBeenCalledWith("b2");
-    expect(completions()).toEqual([["p1", false], ["p2", true]]);
+    expect(unscheduleCompletions().map((params) => [params.p_post_id, params.p_ok])).toEqual([["p2", true]]);
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 
   it("le mode simulé refuse de continuer avec un message clair, sans rien réserver", async () => {
@@ -380,52 +334,41 @@ describe("posts programmés absents de la lecture de Buffer", () => {
   });
 });
 
-describe("réservation à jeton, compensation et quotas (audit B4)", () => {
-  const completeParams = () => rpcCalls.filter((call) => call.name === "complete_scheduling").map((call) => call.params);
-
-  it("la confirmation représente le jeton de la réservation", async () => {
-    claimed = [claim("p1")];
-    completeOutcome = "scheduled";
-    await scheduleApprovedPosts("p1");
-    expect(completeParams()).toMatchObject([{ p_post_id: "p1", p_ok: true, p_token: "jeton-p1" }]);
-  });
-
-  it("une confirmation refusée par la base (« stale ») n'est jamais comptée comme programmée", async () => {
-    claimed = [claim("p1")];
-    completeOutcome = "stale";
-    const result = await scheduleApprovedPosts("p1");
-    expect(result).toMatchObject({ scheduled: 0, failures: 1, stale: true });
-  });
-
-  it("un résultat incertain de Buffer est enregistré comme tel, jamais comme une programmation", async () => {
-    claimed = [claim("p1")];
-    provider.schedulePost.mockRejectedValueOnce(new ProviderError("Buffer ne répond pas (délai dépassé).", "network", undefined, "unknown"));
-    const result = await scheduleApprovedPosts("p1");
-    expect(result).toMatchObject({ scheduled: 0, failures: 1 });
-    const [params] = completeParams();
-    expect(params).toMatchObject({ p_ok: false, p_token: "jeton-p1" });
-    expect(String(params.p_error)).toContain("Résultat incertain");
-  });
-
-  it("un quota atteint pendant l'écriture est propagé avec son délai et enregistré comme pause", async () => {
-    claimed = [claim("p1"), claim("p2", "b2")];
-    provider.schedulePost.mockRejectedValueOnce(new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", 900));
-    const result = await scheduleApprovedPosts();
-    expect(result.rateLimited).toMatchObject({ kind: "rate_limit", retryAfterSeconds: 900 });
-    expect(result.failures).toBe(2);
-    // Le second post n'a même pas été tenté : Buffer n'est pas sollicité davantage.
-    expect(provider.schedulePost).toHaveBeenCalledTimes(1);
+describe("constat, compensation et quotas (audit B4)", () => {
+  it("un quota atteint pendant la constatation est propagé avec son délai et enregistré comme pause — lecture seule", async () => {
+    toUnschedule = [claim("p1", "b1")];
+    provider.getPost.mockRejectedValue(new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", 900));
+    const result = await runSync("test");
+    expect(result).toMatchObject({ ok: false, unscheduled: 0, unscheduleFailures: 1 });
     expect(rpcCalls.find((call) => call.name === "set_sync_backoff")?.params).toMatchObject({ p_seconds: 900 });
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 
-  it("la pause demandée par Buffer pendant la programmation est appliquée à la fin de la synchronisation", async () => {
+  it("la pause demandée par Buffer pendant la constatation est appliquée à la fin de la synchronisation — lecture seule", async () => {
     lock = { acquired: true, token: "t1" };
-    claimed = [claim("p1")];
-    provider.schedulePost.mockRejectedValueOnce(new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", 1200));
+    toUnschedule = [claim("p1")];
+    provider.getPost.mockRejectedValueOnce(new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", 1200));
     const result = await runSync("test");
     expect(result.ok).toBe(false);
     const finish = lockCalls.find((call) => call.name === "finish_sync_run");
     expect(finish?.params).toMatchObject({ p_backoff_seconds: 1200 });
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+  });
+
+  it("une publication encore programmée n'est jamais déprogrammée par Cadence : elle reste signalée — lecture seule", async () => {
+    toUnschedule = [{ id: "p1", buffer_post_id: "b1", text: "", assets: [], due_at: DUE, service: "twitter" }];
+    provider.getPost.mockResolvedValue(live({ status: "scheduled" }));
+    await runSync("test");
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+    expect(rpcCalls.find((entry) => entry.name === "complete_unscheduling")?.params).toMatchObject({ p_post_id: "p1", p_ok: false, p_error: STILL_SCHEDULED });
+  });
+
+  it("une publication repassée en brouillon à la main est enregistrée d'après le statut constaté — lecture seule", async () => {
+    toUnschedule = [{ id: "p1", buffer_post_id: "b1", text: "", assets: [], due_at: DUE, service: "twitter" }];
+    provider.getPost.mockResolvedValue(live({ status: "draft" }));
+    await runSync("test");
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+    expect(rpcCalls.find((entry) => entry.name === "complete_unscheduling")?.params).toMatchObject({ p_ok: true, p_observed_status: "draft" });
   });
 
   it("une déprogrammation d'un post déjà publié enregistre le statut réel, pas « brouillon »", async () => {
@@ -435,13 +378,5 @@ describe("réservation à jeton, compensation et quotas (audit B4)", () => {
     const call = rpcCalls.find((entry) => entry.name === "complete_unscheduling");
     expect(call?.params).toMatchObject({ p_post_id: "p1", p_ok: true, p_observed_status: "sent" });
     expect(provider.unschedulePost).not.toHaveBeenCalled();
-  });
-
-  it("une déprogrammation réussie enregistre le statut constaté après l'appel", async () => {
-    toUnschedule = [{ id: "p1", buffer_post_id: "b1", text: "", assets: [], due_at: DUE, service: "twitter" }];
-    provider.getPost.mockResolvedValue(live({ status: "scheduled" }));
-    await runSync("test");
-    expect(provider.unschedulePost).toHaveBeenCalledTimes(1);
-    expect(rpcCalls.find((entry) => entry.name === "complete_unscheduling")?.params).toMatchObject({ p_ok: true, p_observed_status: "draft" });
   });
 });

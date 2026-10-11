@@ -114,19 +114,28 @@ test.describe.serial("deux clients, deux comptes Buffer synthétiques", () => {
       expect(foreign?.status()).toBe(404);
     }
 
-    // 7-9. Approbation : la programmation part aussitôt, dans le compte du client.
+    // 7-9. Approbation : elle reste interne à Cadence, rien n'est envoyé au compte Buffer du client.
     for (const who of ["A", "B"] as const) {
       const page = pages[who];
       await page.goto(`/client/${client[who].slug}/a-valider`);
       await page.locator(`[data-post="${postId(who, "bienvenue-li")}"]`).click();
       await page.getByRole("button", { name: "Approuver" }).first().click();
       await page.getByRole("dialog").getByRole("button", { name: "Confirmer l'approbation" }).click();
-      await expect(page.getByText("Publication approuvée et programmée dans Buffer.")).toBeVisible();
+      await expect(page.getByText("Publication approuvée. Votre agence la programmera dans Buffer.")).toBeVisible();
     }
-    expect((await statusOf(request, "A", "bienvenue-li")).post?.status).toBe("scheduled");
-    expect((await statusOf(request, "B", "bienvenue-li")).post?.status).toBe("scheduled");
-    expect((await statusOf(request, "A", "bienvenue-li")).scheduleCalls).toBe(1);
-    expect((await statusOf(request, "B", "bienvenue-li")).scheduleCalls).toBe(1);
+    for (const who of ["A", "B"] as const) {
+      expect((await statusOf(request, who, "bienvenue-li")).post?.status).toBe("draft");
+      expect((await statusOf(request, who, "bienvenue-li")).scheduleCalls).toBe(0);
+    }
+    // L'agence programme à la main dans le compte Buffer de chaque client ; Cadence le constate en lisant.
+    for (const who of ["A", "B"] as const) {
+      await mockBuffer(request, { action: "setStatus", account: client[who].account, key: "bienvenue-li", status: "scheduled" });
+    }
+    await syncViaApi(request);
+    for (const who of ["A", "B"] as const) {
+      expect((await statusOf(request, who, "bienvenue-li")).post?.status).toBe("scheduled");
+      expect((await statusOf(request, who, "bienvenue-li")).scheduleCalls).toBe(0);
+    }
 
     // 8. B demande une modification de sa seconde publication : rien n'est programmé pour elle.
     await pages.B.goto(`/client/${client.B.slug}/a-valider`);
@@ -138,21 +147,24 @@ test.describe.serial("deux clients, deux comptes Buffer synthétiques", () => {
     expect((await statusOf(request, "B", "bienvenue-ig")).post?.status).toBe("draft");
   });
 
-  test("10-11. le compte A devient injoignable : l'approbation de A attend, le compte B est lu et reste sain", async ({ browser, request }) => {
+  test("10-11. le compte A devient injoignable : l'approbation de A aboutit quand même (rien n'est envoyé à Buffer), le compte B est lu et reste sain", async ({ browser, request }) => {
     await mockBuffer(request, { action: "setUnavailable", account: client.A.account, unavailable: true });
     const page = await as(browser, "A");
     await page.goto(`/client/${client.A.slug}/a-valider`);
     await page.locator(`[data-post="${postId("A", "bienvenue-ig")}"]`).click();
     await page.getByRole("button", { name: "Approuver" }).first().click();
     await page.getByRole("dialog").getByRole("button", { name: "Confirmer l'approbation" }).click();
-    // Aucun succès n'est annoncé : la programmation n'a pas abouti et le client en est informé.
-    await expect(page.getByText("La programmation dans Buffer n'a pas abouti")).toBeVisible();
-    expect((await statusOf(request, "A", "bienvenue-ig")).scheduleCalls).toBe(1);
+    // La décision est interne à Cadence : elle ne dépend pas de la disponibilité de Buffer, et n'y écrit rien.
+    await expect(page.getByText("Publication approuvée. Votre agence la programmera dans Buffer.")).toBeVisible();
+    await expect(page.getByText("La programmation dans Buffer n'a pas abouti")).toHaveCount(0);
+    expect((await statusOf(request, "A", "bienvenue-ig")).scheduleCalls).toBe(0);
 
     const response = await request.post("/api/automation/sync", { headers: automationHeaders() });
-    expect(response.status()).toBe(502);
     const sync = await response.json();
-    expect(sync).toMatchObject({ ok: false, scheduleFailures: 1 });
+    // Plus aucune programmation n'est tentée : la panne de lecture du compte A est signalée, rien d'autre. Le compte
+    // B a été lu : la synchronisation aboutit (200) et porte l'anomalie du compte A.
+    expect(response.status(), JSON.stringify(sync)).toBe(200);
+    expect(sync).toMatchObject({ ok: true, scheduled: 0, scheduleFailures: 0, unscheduleFailures: 0 });
     expect(JSON.stringify(sync)).toContain("non lu");
     const adminPage = await admin(browser);
     await adminPage.goto("/admin/parametres");
@@ -164,16 +176,18 @@ test.describe.serial("deux clients, deux comptes Buffer synthétiques", () => {
     expect((await statusOf(request, "B", "bienvenue-li")).post?.status).toBe("scheduled");
   });
 
-  test("12-13. le compte A est de nouveau joignable : sa programmation en attente est faite, une seule fois", async ({ browser, request }) => {
+  test("12-13. le compte A est de nouveau joignable : il est relu, et sa publication approuvée n'est toujours pas programmée par Cadence", async ({ browser, request }) => {
     await mockBuffer(request, { action: "setUnavailable", account: client.A.account, unavailable: false });
     await syncViaApi(request);
     const after = await statusOf(request, "A", "bienvenue-ig");
-    expect(after.post?.status).toBe("scheduled");
-    // Deux programmations au total sur le compte A (une par publication), aucune en double ; B n'a rien reçu de plus.
-    expect(after.scheduleCalls).toBe(2);
-    expect((await statusOf(request, "B", "bienvenue-li")).scheduleCalls).toBe(1);
+    // Approuvée pendant la panne : elle reste un brouillon dans Buffer tant que l'agence ne la programme pas.
+    expect(after.post?.status).toBe("draft");
+    // Aucune programmation n'est venue de Cadence, sur aucun des deux comptes.
+    expect(after.scheduleCalls).toBe(0);
+    expect((await statusOf(request, "B", "bienvenue-li")).scheduleCalls).toBe(0);
     await syncViaApi(request);
-    expect((await statusOf(request, "A", "bienvenue-ig")).scheduleCalls).toBe(2);
+    expect((await statusOf(request, "A", "bienvenue-ig")).scheduleCalls).toBe(0);
+    expect((await statusOf(request, "A", "bienvenue-ig")).post?.status).toBe("draft");
     const page = await admin(browser);
     await page.goto("/admin/parametres");
     await expect(card(page, `Buffer de ${NAME.A}`)).toContainText("Simulation active");

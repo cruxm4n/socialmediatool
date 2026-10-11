@@ -1,16 +1,7 @@
 /*
- * Démarrage du serveur : lance la boucle du traitement urgent (annulations à confirmer, réservations abandonnées).
- * Elle redémarre avec le serveur et rattrape donc, dès le démarrage, ce qu'un arrêt brutal avait laissé en cours.
- * URGENT_LOOP=off la désactive (suites de tests qui pilotent le traitement elles-mêmes).
+ * Démarrage du serveur. Cadence ne fait que LIRE Buffer : il n'y a plus de programmation à annuler ni de réservation
+ * à rattraper en urgence, donc aucune boucle de fond n'est lancée (elle interrogerait Buffer toutes les 30 secondes
+ * pour rien et consommerait le quota du compte). Les publications programmées sans accord valable sont constatées à
+ * chaque synchronisation, et à la demande par POST /api/automation/urgent.
  */
-export async function register() {
-  if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  if (process.env.URGENT_LOOP === "off") return;
-  // Sans configuration (image construite sans variables, aperçu) : rien à surveiller.
-  if (!process.env.AUTOMATION_SECRET || !process.env.NEXT_PUBLIC_SUPABASE_URL) return;
-  const { startUrgentLoop } = await import("@/server/urgent-loop");
-  const { runUrgent } = await import("@/server/urgent");
-  startUrgentLoop(() => runUrgent(), {
-    onError: (error) => console.error(`[urgent] passage en erreur : ${error instanceof Error ? error.message : "erreur inconnue"}`),
-  });
-}
+export async function register() {}

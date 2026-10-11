@@ -89,7 +89,7 @@ vi.mock("@/server/supabase/clients", () => ({ createSessionClient: async () => a
 vi.mock("@/server/publishing", () => ({ getProvider: (options: { scheduled?: boolean } = {}) => router(options.scheduled === true), emissionProblem: async () => null }));
 vi.mock("@/server/notifications", () => ({ dispatchNotifications: async () => ({}) }));
 const { pushDraftToBuffer, reconcileDraftPush } = await import("@/server/studio");
-const { scheduleApprovedPosts, runSync } = await import("@/server/sync");
+const { runSync } = await import("@/server/sync");
 const { runUrgentCycle } = await import("@/server/urgent");
 
 const post = (id: string, channelId: string, status: ProviderPost["status"] = "draft", text = "Texte indépendant") =>
@@ -128,6 +128,14 @@ async function approved(which: "A" | "B") {
 const stable = (item: Record<string, unknown>) => Object.fromEntries(Object.entries(item).filter(([key]) => key !== "synced_at"));
 const status = (id: string) => owner(`select status from public.provider_connections where id='${id}'`);
 const fingerprint = (text: string) => createHash("sha256").update(text).digest("hex");
+/** Écritures de Cadence vers un faux Buffer (toutes les méthodes qui modifient Buffer). Doit rester à 0 en lecture seule. */
+const writeCalls = (fake: FileProvider) => ["createDraft", "updateDraft", "rescheduleDraft", "schedulePost", "unschedulePost"].reduce((sum, name) => sum + fake.calls(name), 0);
+/** L'agence agit À LA MAIN dans Buffer : le faux Buffer change de statut, sans passer par Cadence. */
+function byHand(file: string, id: string, statusValue: ProviderPost["status"]) {
+  const state = readState(file);
+  state.posts[id] = { ...state.posts[id], status: statusValue };
+  writeState(file, state);
+}
 
 beforeAll(async () => {
   automation = client();
@@ -227,57 +235,97 @@ describe("contrôle indépendant multi-comptes — PostgreSQL natif et deux faux
     expect(providerB.calls("createDraft")).toBe(1);
   });
 
-  it("N06 — deux workers de programmation sur deux comptes : une programmation par post", async () => {
+  it("N06 — deux workers de synchronisation sur deux comptes, publications programmées à la main dans Buffer : Cadence n'écrit rien, chaque constat reste dans son compte — lecture seule", async () => {
     const pa = await approved("A"), pb = await approved("B");
-    await Promise.all([scheduleApprovedPosts(pa.localId), scheduleApprovedPosts(pa.localId), scheduleApprovedPosts(pb.localId)]);
-    expect(providerA.calls("schedulePost")).toBe(1);
-    expect(providerB.calls("schedulePost")).toBe(1);
-    expect((await row(pa.id)).schedule_state).toBe("scheduled");
-    expect((await row(pb.id)).schedule_state).toBe("scheduled");
+    // L'agence programme à la main, dans Buffer, les deux publications approuvées.
+    byHand(fileA, pa.id, "scheduled");
+    byHand(fileB, pb.id, "scheduled");
+    const [first, second] = await Promise.all([runSync("independent-w1"), runSync("independent-w2")]);
+    // Les DEUX passages : aucune programmation, aucun échec de programmation.
+    expect(first.scheduled).toBe(0);
+    expect(second.scheduled).toBe(0);
+    expect(first.scheduleFailures + second.scheduleFailures).toBe(0);
+    // Cadence n'a rien programmé, sur aucun compte.
+    expect(writeCalls(providerA)).toBe(0);
+    expect(writeCalls(providerB)).toBe(0);
+    expect(readState(fileA).posts[pa.id].status).toBe("scheduled");
+    expect(readState(fileB).posts[pb.id].status).toBe("scheduled");
+    // Le constat est enregistré pour chaque compte ; aucune réservation de Cadence, accord intact.
+    expect(await row(pa.id)).toMatchObject({ buffer_status: "scheduled", approval_status: "approved", schedule_state: "idle" });
+    expect(await row(pb.id)).toMatchObject({ buffer_status: "scheduled", approval_status: "approved", schedule_state: "idle" });
   });
 
-  it("N07 — programmation A à réponse perdue, reprise urgente avec B disponible : compte et jeton conservés", async () => {
+  it("N07 — réservation héritée de l'ancien moteur (réponse jamais confirmée), programmation A constatée à la main, reprise urgente avec B disponible : compte et jeton conservés — lecture seule", async () => {
     const pa = await approved("A"), pb = await approved("B");
-    const state = readState(fileA);
-    state.faults.push("schedulePost:lose");
-    writeState(fileA, state);
-    await scheduleApprovedPosts(pa.localId);
-    await scheduleApprovedPosts(pb.localId);
+    // État hérité : l'ancien moteur a réservé A (jeton) ; la confirmation locale n'a jamais été enregistrée.
+    const claimed = (await auto("claim_posts_for_scheduling_in_mode", { p_mode: "mock", p_post_id: pa.localId })) as { token: string }[];
+    expect(claimed).toHaveLength(1);
     expect((await row(pa.id)).schedule_state).toBe("claimed");
+    // Buffer a accepté cette réservation (programmée à la main ou par l'ancien moteur) ; B est programmé à la main.
+    byHand(fileA, pa.id, "scheduled");
+    byHand(fileB, pb.id, "scheduled");
+    // Réservation fraîche (moins de 2 minutes) : rien à rapprocher encore, et rien n'est écrit.
+    await runUrgentCycle(router());
+    expect((await row(pa.id)).schedule_state).toBe("claimed");
+    expect((await row(pb.id)).schedule_state).toBe("idle");
+    // Réservation abandonnée : le rapprochement lit A, confirme AVEC LE JETON, et n'écrit rien.
     owner(`update public.posts set schedule_claimed_at=now()-interval '3 minutes' where id='${pa.localId}'`);
     await runUrgentCycle(router());
     expect((await row(pa.id)).schedule_state).toBe("scheduled");
-    expect(providerA.calls("schedulePost")).toBe(1);
-    expect(providerB.calls("schedulePost")).toBe(1);
+    // Une seule lecture, par le compte de A ; le compte de B n'est pas sollicité.
+    expect(providerA.calls("getPost")).toBe(1);
+    expect(providerB.calls("getPost")).toBe(0);
+    expect(writeCalls(providerA)).toBe(0);
+    expect(writeCalls(providerB)).toBe(0);
   });
 
-  it("N08 — quota A 48 heures : annulation urgente B confirmée, pause persistante limitée à A", async () => {
+  it("N08 — quota A 48 heures : constat du retour en brouillon de B, A reste « à confirmer » sans aucune requête, pause persistante limitée à A — lecture seule", async () => {
     const pa = await approved("A"), pb = await approved("B");
-    await scheduleApprovedPosts(pa.localId);
-    await scheduleApprovedPosts(pb.localId);
+    byHand(fileA, pa.id, "scheduled");
+    byHand(fileB, pb.id, "scheduled");
+    // Les deux accords ne valent plus : publications « à confirmer » (état que pose la synchronisation après invalidation).
     owner(`update public.posts set schedule_state='unschedule_pending' where id in ('${pa.localId}','${pb.localId}')`);
-    const state = readState(fileA);
-    state.faults.push("unschedulePost:429");
-    writeState(fileA, state);
-    await runUrgentCycle(router());
+    // Quota de A : pause de 48 heures, enregistrée comme le fait le routeur après un refus de quota.
+    await auto("record_provider_connection_state", { p_connection_id: A, p_ok: false, p_pause_seconds: 172800, p_pause_reason: "Quota" });
+    // L'agence repasse B en brouillon à la main ; A reste programmé dans Buffer.
+    byHand(fileB, pb.id, "draft");
+    const result = await runUrgentCycle(router());
+    // B : retour en brouillon CONSTATÉ, état « à confirmer » levé.
+    expect(result.compensated).toBeGreaterThanOrEqual(1);
+    expect(await row(pb.id)).toMatchObject({ schedule_state: "idle", buffer_status: "draft" });
+    // A : aucune requête pendant la pause, rien d'annoncé annulé, échec visible.
+    expect(providerA.calls("getPost")).toBe(0);
+    expect(writeCalls(providerA)).toBe(0);
+    expect(readState(fileA).posts[pa.id].status).toBe("scheduled");
     expect((await row(pa.id)).schedule_state).toBe("unschedule_pending");
-    expect(readState(fileB).posts[pb.id].status).toBe("draft");
+    expect(result.compensationFailures).toBeGreaterThanOrEqual(1);
     const rows = await auto("provider_connections_for_run", { p_mode: "mock" });
     expect(Date.parse(rows.find((x: ConnectionRow) => x.id === A).pausedUntil) - Date.now()).toBeGreaterThan(172000000);
     expect(rows.find((x: ConnectionRow) => x.id === B).pausedUntil).toBeNull();
+    expect(writeCalls(providerB)).toBe(0);
   });
 
-  it("N09 — invariant : une annulation A bloquée ne suspend pas la programmation approuvée de B", async () => {
+  it("N09 — invariant : un constat A bloqué par la pause de quota ne suspend ni la lecture ni le constat de B — lecture seule", async () => {
     const pa = await approved("A");
-    await scheduleApprovedPosts(pa.localId);
-    const pb = await approved("B");
+    byHand(fileA, pa.id, "scheduled");
     owner(`update public.posts set schedule_state='unschedule_pending' where id='${pa.localId}'`);
+    const pb = await approved("B");
+    // B est programmé à la main, dans Buffer, pendant que A est en pause.
+    byHand(fileB, pb.id, "scheduled");
     await auto("record_provider_connection_state", { p_connection_id: A, p_ok: false, p_pause_seconds: 172800, p_pause_reason: "Quota" });
-    await runSync("independent-starvation");
+    const result = await runSync("independent-starvation");
+    // B est lu et constaté ; aucune pause ne lui est imposée ; Cadence n'écrit rien chez lui.
     expect(readState(fileB).posts[pb.id].status).toBe("scheduled");
-    // Complément : A n'a reçu aucune requête d'annulation pendant sa pause, et reste « à confirmer ».
+    expect(await row(pb.id)).toMatchObject({ buffer_status: "scheduled", approval_status: "approved", schedule_state: "idle" });
+    expect(providerB.calls("fetchSnapshot")).toBeGreaterThan(0);
+    expect(writeCalls(providerB)).toBe(0);
+    // Complément : A n'a reçu aucune requête pendant sa pause, ni écriture ; son annulation reste « à confirmer » et signalée.
     expect(providerA.calls("unschedulePost")).toBe(0);
+    expect(providerA.calls("getPost")).toBe(0);
+    expect(providerA.calls("fetchSnapshot")).toBe(0);
+    expect(writeCalls(providerA)).toBe(0);
     expect((await row(pa.id)).schedule_state).toBe("unschedule_pending");
+    expect(result.unscheduleFailures).toBeGreaterThanOrEqual(1);
   });
 
   it("N10 — invariant : routeur déjà chargé, révocation normale confirmée, aucune nouvelle écriture sur A", async () => {
@@ -366,19 +414,21 @@ describe("contrôle indépendant multi-comptes — PostgreSQL natif et deux faux
     expect((await row(id)).removed_at).toBeNull();
   });
 
-  it("N17 — invariant : révocation normale et réservation concurrentes ne laissent jamais une programmation sans clé", async () => {
+  it("N17 — invariant : une révocation normale concurrente à un passage de synchronisation ne laisse jamais une programmation sans clé — lecture seule", async () => {
     const pa = await approved("A");
     // La révocation a validé « aucun effet », mais sa transaction n'a pas encore été rendue visible.
     // Le rôle anon de la pile Supabase a un statement_timeout de 3 s : maintenir le verrou 2 s
     // suffit après le signal ready, sans confondre ce délai de sécurité avec une corruption d'état.
     const revoking = transaction(`begin; select set_config('request.jwt.claim.sub','${adminId}',false); set role authenticated; select public.admin_revoke_provider_connection('${A}',false); select pg_sleep(2); commit;`, '"revoked": true');
     await revoking.ready;
-    await scheduleApprovedPosts(pa.localId);
+    // Passage de synchronisation pendant la révocation : lecture seule, il ne programme rien.
+    await runSync("independent-revocation");
     await revoking.done();
     expect(status(A) === "revoked" && readState(fileA).posts[pa.id].status === "scheduled").toBe(false);
-    // Compléments : la réservation a attendu la révocation, puis n'a rien réservé ni envoyé.
+    // Compléments : rien n'a été programmé ni envoyé sur A, la publication approuvée est restée brouillon.
     expect(status(A)).toBe("revoked");
-    expect(providerA.calls("schedulePost")).toBe(0);
+    expect(writeCalls(providerA)).toBe(0);
+    expect(readState(fileA).posts[pa.id].status).toBe("draft");
     expect((await row(pa.id)).schedule_state).toBe("idle");
   });
 
@@ -407,55 +457,73 @@ describe("variantes ajoutées après correction (N19 et suivants)", () => {
     expect((await row(pa.id)).schedule_state).toBe("claimed");
   });
 
-  it("N20 — SIGKILL après l'effet externe sur A (programmée chez le fournisseur, jamais confirmée) : révocation refusée tant que rien n'est rapproché, reprise sur le BON compte", async () => {
+  it("N20 — SIGKILL après l'effet externe sur A (état hérité : programmée chez le fournisseur, jamais confirmée) : révocation refusée tant que rien n'est rapproché, reprise sur le BON compte, sans nouvelle écriture — lecture seule", async () => {
     const pa = await approved("A"), pb = await approved("B");
+    // Historique : l'ancien moteur a réservé A, Buffer a accepté, puis le processus s'est arrêté (SIGKILL).
     const result = spawnSync(process.execPath, [resolve("tests/support/crash-worker.mjs"), JSON.stringify({ action: "schedule-then-die", url: URL, anon: ANON, secret: SECRET, postId: pa.localId, bufferPostId: pa.id, file: fileA })], { stdio: "pipe" });
     expect(result.signal).toBe("SIGKILL");
     expect(readState(fileA).posts[pa.id].status).toBe("scheduled");
     expect((await row(pa.id)).schedule_state).toBe("claimed");
+    // Référence : l'écriture de l'ancien moteur est déjà comptée ; seules les écritures de Cadence À PARTIR d'ici comptent.
+    const writesBefore = writeCalls(providerA);
     // L'effet est engagé chez le fournisseur : une révocation normale est refusée, la clé reste.
     expect(await rpc(admin, "admin_revoke_provider_connection", { p_connection_id: A, p_force: false })).toMatchObject({ revoked: false });
     expect(status(A)).toBe("active");
-    // B n'est pas concerné.
-    await scheduleApprovedPosts(pb.localId);
-    expect((await row(pb.id)).schedule_state).toBe("scheduled");
-    // Reprise urgente (nouveau processus) : la réservation abandonnée est rapprochée par le compte A, sans nouvelle programmation.
+    // B n'est pas concerné : programmé à la main, le passage urgent ne lit ni n'écrit rien chez B.
+    byHand(fileB, pb.id, "scheduled");
+    await runUrgentCycle(router());
+    expect((await row(pb.id)).schedule_state).toBe("idle");
+    expect(writeCalls(providerB)).toBe(0);
+    expect(providerB.calls("getPost")).toBe(0);
+    // Reprise urgente (nouveau processus) : la réservation abandonnée est rapprochée par le compte A, sans nouvelle écriture.
     owner(`update public.posts set schedule_claimed_at=now()-interval '3 minutes' where id='${pa.localId}'`);
     providerA = new FileProvider(fileA, `mock-${A}`);
     await runUrgentCycle(router());
     expect((await row(pa.id)).schedule_state).toBe("scheduled");
-    expect(providerA.calls("schedulePost")).toBe(1);
-    expect(providerB.calls("schedulePost")).toBe(1);
-    expect(providerB.calls("getPost")).toBeGreaterThan(0);
+    expect(writeCalls(providerA)).toBe(writesBefore);
+    expect(providerA.calls("getPost")).toBeGreaterThan(0);
+    expect(writeCalls(providerB)).toBe(0);
+    expect(providerB.calls("getPost")).toBe(0);
     expect(Object.keys(readState(fileB).posts)).not.toContain(pa.id);
   });
 
-  it("N21 — révocation DEMANDÉE avec une publication programmée : plus aucun nouvel effet sur A, mais l'annulation passe encore par SA clé ; puis révocation définitive", async () => {
+  it("N21 — révocation DEMANDÉE avec une publication programmée à la main : plus aucun nouvel effet sur A, la constatation passe encore par SA clé ; puis révocation définitive — lecture seule", async () => {
     const programmed = await approved("A");
-    await scheduleApprovedPosts(programmed.localId);
+    // L'agence programme cette publication à la main ; la synchronisation le constate.
+    byHand(fileA, programmed.id, "scheduled");
+    await runSync("independent-before-revocation");
     const waiting = await approved("A");
     const pb = await approved("B");
     const requested = await rpc(admin, "admin_request_provider_revocation", { p_connection_id: A });
     expect(requested).toMatchObject({ revoked: false, revoking: true, unresolved: { scheduled: 1 } });
     expect(status(A)).toBe("revoking");
 
-    // Nouveaux effets : aucun (programmation approuvée en attente, création Studio).
-    await scheduleApprovedPosts(waiting.localId);
-    await scheduleApprovedPosts(pb.localId);
+    // Nouveaux effets de Cadence : aucun. L'accord en attente reste idle ; A ne reçoit aucune écriture.
+    const writesOnA = writeCalls(providerA);
+    await runSync("independent-revoking-sync");
     expect((await row(waiting.id)).schedule_state).toBe("idle");
-    expect(providerA.calls("schedulePost")).toBe(1);
-    expect((await row(pb.id)).schedule_state).toBe("scheduled");
+    expect(writeCalls(providerA)).toBe(writesOnA);
+    // B : programmé à la main, constaté ; Cadence n'écrit rien chez lui.
+    byHand(fileB, pb.id, "scheduled");
+    await runSync("independent-b-during-revocation");
+    expect(await row(pb.id)).toMatchObject({ buffer_status: "scheduled", schedule_state: "idle" });
+    expect(writeCalls(providerB)).toBe(0);
     const da = await draft("A");
     await pushDraftToBuffer(da);
     expect(providerA.calls("createDraft")).toBe(0);
     await expect(router().createDraft(content(chA))).rejects.toThrow(/Révocation demandée/);
 
-    // Compensation de l'effet engagé : elle part par le compte A, qui a toujours sa clé.
+    // Constatation de l'effet engagé : l'agence repasse la publication en brouillon à la main ; le constat part par le compte A, qui a toujours sa clé.
     owner(`update public.posts set schedule_state='unschedule_pending' where id='${programmed.localId}'`);
-    await runUrgentCycle(router());
+    byHand(fileA, programmed.id, "draft");
+    const urgent = await runUrgentCycle(router());
+    expect(urgent.compensated).toBeGreaterThanOrEqual(1);
     expect(readState(fileA).posts[programmed.id].status).toBe("draft");
-    expect((await row(programmed.id)).schedule_state).not.toBe("unschedule_pending");
-    expect(providerB.calls("unschedulePost")).toBe(0);
+    expect((await row(programmed.id)).schedule_state).toBe("idle");
+    expect(providerA.calls("getPost")).toBeGreaterThan(0);
+    expect(providerA.calls("unschedulePost")).toBe(0);
+    expect(providerB.calls("getPost")).toBe(0);
+    expect(writeCalls(providerB)).toBe(0);
 
     // Plus rien en attente : la révocation devient définitive.
     await runSync("independent-revoking");
@@ -464,15 +532,17 @@ describe("variantes ajoutées après correction (N19 et suivants)", () => {
     expect(status(B)).toBe("active");
   });
 
-  it("N22 — vrai runSync : compte A injoignable (lecture et relecture en panne), B approuvé → B est programmé, aucune pause ni erreur portée sur B", async () => {
+  it("N22 — vrai runSync : compte A injoignable (lecture et relecture en panne), B approuvé → B reste brouillon (Cadence ne programme pas), aucune pause ni erreur portée sur B — lecture seule", async () => {
     const pa = await approved("A"), pb = await approved("B");
     const state = readState(fileA);
     state.snapshotFails = true;
     state.faults.push("getPost:fail", "getPost:fail");
     writeState(fileA, state);
     const result = await runSync("independent-outage");
-    expect(readState(fileB).posts[pb.id].status).toBe("scheduled");
-    expect((await row(pb.id)).schedule_state).toBe("scheduled");
+    // B n'est pas programmé par Cadence : il reste brouillon, sans écriture, sans état de programmation.
+    expect(readState(fileB).posts[pb.id].status).toBe("draft");
+    expect(writeCalls(providerB)).toBe(0);
+    expect((await row(pb.id)).schedule_state).toBe("idle");
     expect(readState(fileA).posts[pa.id].status).toBe("draft");
     expect(result.anomalies?.some((line) => /non lu/.test(line))).toBe(true);
     const rows = await auto("provider_connections_for_run", { p_mode: "mock" });

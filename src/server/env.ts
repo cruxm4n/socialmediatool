@@ -41,8 +41,8 @@ export function bufferModeProblem(): string | null {
   return "BUFFER_MODE doit valoir « real » en production : aucune opération vers Buffer n'a lieu tant qu'il n'est pas défini.";
 }
 
-/** Phrase affichée quand une écriture est refusée par la barrière d'activation. */
-export const BUFFER_WRITES_DISABLED = "Les écritures vers Buffer ne sont pas activées sur ce serveur (CADENCE_BUFFER_WRITES) : rien n'a été envoyé.";
+/** Phrase affichée quand une écriture vers le vrai Buffer est refusée (toujours : Cadence ne fait que le lire). */
+export const BUFFER_WRITES_DISABLED = "Cadence est en lecture seule vis-à-vis de Buffer : rien n'y est créé, modifié, programmé ni déprogrammé. Faites l'opération dans Buffer.";
 
 export const env = {
   get supabaseUrl() {
@@ -68,12 +68,13 @@ export const env = {
     return simulatedBufferAllowed() && (process.env.NODE_ENV !== "production" || process.env.BUFFER_MODE === "mock") ? "mock" : "real";
   },
   /**
-   * Barrière d'activation des ÉCRITURES vers le vrai Buffer (créer, modifier, programmer, déprogrammer). Fermée par
-   * défaut : connecter un compte et le lire ne suffit pas à autoriser la moindre publication. Elle ne s'ouvre que par
-   * CADENCE_BUFFER_WRITES=enabled, décision explicite de l'exploitant. Sans objet pour le Buffer simulé.
+   * Écritures vers le fournisseur. Cadence est en LECTURE SEULE vis-à-vis du vrai Buffer : toujours `false` en mode
+   * réel, quelle que soit la configuration. L'ancienne variable CADENCE_BUFFER_WRITES n'est plus lue : la renseigner
+   * (même à « enabled ») n'ouvre rien. Seul le Buffer simulé (tests, démonstration) accepte des écritures, qui ne
+   * quittent pas ce serveur et servent à jouer le rôle de la personne qui travaille dans Buffer.
    */
   get bufferWritesEnabled(): boolean {
-    return this.bufferMode === "mock" || process.env.CADENCE_BUFFER_WRITES === "enabled";
+    return this.bufferMode === "mock";
   },
   get bufferApiKey() {
     return required("BUFFER_API_KEY");
@@ -81,10 +82,14 @@ export const env = {
   get reviewTag() {
     return process.env.BUFFER_REVIEW_TAG || "À valider";
   },
-  /** Intervalle du planificateur, en minutes : sert à dire si les données sont « en retard ». */
+  /**
+   * Intervalle du planificateur, en minutes : sert à dire si les données sont « en retard ». Défaut prudent de
+   * 60 minutes : une lecture par compte et par passage reste alors très en deçà des quotas Buffer les plus bas connus
+   * (250 requêtes par jour, 3 000 par 30 jours sur l'offre gratuite). À ne réduire qu'après mesure du quota réel.
+   */
   get syncIntervalMinutes() {
     const value = Number(process.env.SYNC_INTERVAL_MINUTES);
-    return Number.isFinite(value) && value >= 1 ? Math.round(value) : 5;
+    return Number.isFinite(value) && value >= 1 ? Math.round(value) : 60;
   },
   /**
    * Profil du déploiement. « pilot » (premier client) impose la simulation des notifications et leur contenu minimal,
