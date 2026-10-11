@@ -10,7 +10,10 @@ export function Brand({ href, className }: { href: string; className?: string })
           <path d="M5 16V8M10 18V6M15 15V9M20 13v-2" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" fill="none" />
         </svg>
       </span>
-      <span className="font-display text-xl font-medium">Cadence</span>
+      <span className="flex flex-col leading-none">
+        <span className="font-display text-xl font-medium leading-none">Cadence</span>
+        <span className="mt-1 text-[11px] leading-none text-muted-foreground">by LouisR</span>
+      </span>
     </Link>
   );
 }
