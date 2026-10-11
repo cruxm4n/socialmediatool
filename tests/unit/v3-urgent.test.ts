@@ -225,6 +225,24 @@ describe("réservations abandonnées (crash entre l'acceptation par Buffer et la
     expect(result).toMatchObject({ ok: false, compensated: 0, compensationFailures: 1 });
   });
 
+  // Toute différence avec ce que le client a validé invalide une programmation constatée : tag retiré, texte, date
+  // (jusqu'à la seconde) ou médias. Aucune n'est confirmée, et rien n'est écrit dans Buffer.
+  it.each<[string, Partial<ProviderPost>]>([
+    ["le tag de validation a été retiré", { hasReviewTag: false }],
+    ["la date diffère de quelques secondes", { dueAt: "2030-01-15T09:00:30.000Z" }],
+    ["le texte a changé", { text: "Texte retouché dans Buffer" }],
+    ["la date a changé", { dueAt: "2030-01-16T09:00:00.000Z" }],
+    ["les médias ont changé", { assets: [{ type: "image", source: "https://img/autre.jpg", thumbnail: "https://img/autre-t.jpg" }] }],
+  ])("programmé mais %s : jamais confirmé, annulation demandée, aucune écriture — lecture seule", async (_what, difference) => {
+    orphans = [orphan()];
+    provider.getPost.mockResolvedValue(live({ status: "scheduled", ...difference }));
+    await runUrgentCycle(provider);
+    expect(of("mark_unschedule_needed")).toEqual([expect.objectContaining({ p_post_id: "p1" })]);
+    expect(of("complete_scheduling")).toEqual([]);
+    expect(provider.schedulePost).not.toHaveBeenCalled();
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+  });
+
   it("confirmation refusée par la base (« stale ») : aucune déprogrammation, constat immédiat — lecture seule", async () => {
     orphans = [orphan()];
     completeSchedulingAnswer = "stale";

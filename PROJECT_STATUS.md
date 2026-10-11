@@ -13,13 +13,13 @@ Branche créée depuis `origin/main` (`e637c8d`, fusion de la PR #2). Elle est l
 
 | Vérification (Node 24.21.0, Buffer simulé, piles locales neuves) | Résultat |
 | --- | --- |
-| Unitaires + SQL/RLS | 685/685, zéro ignoré |
+| Unitaires + SQL/RLS | 691/691, zéro ignoré |
 | Dont nouvelle suite `tests/unit/buffer-read-only.test.ts` | 28/28 |
 | Intégration native (pile neuve) | 83/83, dont multi-comptes 26/26 |
 | E2E Chromium (pile neuve) | 62/62, zéro ignoré |
 | Lint, TypeScript, build isolé | Réussis |
 
-Évolution des tests par rapport à `e637c8d` (815 tests) : 16 tests unitaires de l'ancienne programmation automatique sont **supprimés** parce que la fonction qu'ils appelaient n'existe plus (14 dans `sync.test.ts`, 1 dans `contre-audit-sync.test.ts`, 1 dans `v3-urgent.test.ts`) ; 31 sont ajoutés ; les autres tests concernés sont réécrits pour vérifier le refus ou le constat en lecture seule. Deux contre-tests indépendants (`audit-independent-provider`, `audit-independent-sync`) ont dû changer avec le comportement : leurs empreintes dans `tests/audit-independent.sha256` sont actualisées, les six autres sont inchangées. Certaines assertions d'intégration réécrites comptent « au moins un » constat, la base étant partagée entre fichiers.
+Évolution des tests par rapport à `e637c8d` (815 tests, 836 désormais) : 16 tests unitaires de l'ancienne programmation automatique sont **supprimés** parce que la fonction qu'ils appelaient n'existe plus (14 dans `sync.test.ts`, 1 dans `contre-audit-sync.test.ts`, 1 dans `v3-urgent.test.ts`) ; 37 sont ajoutés (dont six après une revue de non-régression : rapprochement d'une réservation héritée quand le tag, le texte, la date ou les médias diffèrent, et lecture d'une réponse illisible) ; les autres tests concernés sont réécrits pour vérifier le refus ou le constat en lecture seule. Deux contre-tests indépendants (`audit-independent-provider`, `audit-independent-sync`) ont dû changer avec le comportement : leurs empreintes dans `tests/audit-independent.sha256` sont actualisées, les six autres sont inchangées. Certaines assertions d'intégration réécrites comptent « au moins un » constat, la base étant partagée entre fichiers.
 
 Limites inchangées : tout repose sur un Buffer simulé ; aucun compte Buffer réel, aucune base distante ni la production n'ont été sollicités. L'ancien moteur du Studio (`src/server/studio*.ts`) reste présent mais n'est importé par aucun écran, et ses écritures sont refusées par le client Buffer. Planificateur non activé ; voir [docs/SYNCHRONISATION.md](docs/SYNCHRONISATION.md). **NOT READY pour la production.**
 

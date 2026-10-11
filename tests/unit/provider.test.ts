@@ -327,6 +327,16 @@ describe("résultat d'une écriture Buffer : certain ou inconnu (audit B6)", () 
     expect(calls.filter((query) => query.includes("createPost"))).toHaveLength(0);
   });
 
+  it("lecture : une réponse 2xx illisible est une erreur signalée, jamais un résultat vide ni une disparition", async () => {
+    const fetchImpl = vi.fn(async () => new Response("<html>passerelle</html>", { status: 200, headers: { "content-type": "text/html" } })) as unknown as typeof fetch;
+    const provider = new BufferProvider("cle", "À valider", fetchImpl);
+    const error = await provider.getPost("p1").then(() => null, (failure: unknown) => failure);
+    expect(error).toBeInstanceOf(ProviderError);
+    expect(error).toMatchObject({ kind: "api", message: "Réponse de Buffer illisible : l'opération a peut-être été appliquée." });
+    // Une lecture en erreur ne doit jamais être prise pour « ce post n'existe plus ».
+    await expect(provider.fetchSnapshot()).rejects.toMatchObject({ kind: "api" });
+  });
+
   it("une erreur 5xx pendant une création est inconnue ; une réponse 2xx illisible aussi — refusé, lecture seule", async () => {
     const five = withWrite(() => new Response("oups", { status: 502 }));
     await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", five.fetchImpl).createDraft(CONTENT), five.fetchImpl);

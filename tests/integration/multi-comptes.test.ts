@@ -240,8 +240,11 @@ describe("contrôle indépendant multi-comptes — PostgreSQL natif et deux faux
     // L'agence programme à la main, dans Buffer, les deux publications approuvées.
     byHand(fileA, pa.id, "scheduled");
     byHand(fileB, pb.id, "scheduled");
-    const [first] = await Promise.all([runSync("independent-w1"), runSync("independent-w2")]);
+    const [first, second] = await Promise.all([runSync("independent-w1"), runSync("independent-w2")]);
+    // Les DEUX passages : aucune programmation, aucun échec de programmation.
     expect(first.scheduled).toBe(0);
+    expect(second.scheduled).toBe(0);
+    expect(first.scheduleFailures + second.scheduleFailures).toBe(0);
     // Cadence n'a rien programmé, sur aucun compte.
     expect(writeCalls(providerA)).toBe(0);
     expect(writeCalls(providerB)).toBe(0);
@@ -269,7 +272,8 @@ describe("contrôle indépendant multi-comptes — PostgreSQL natif et deux faux
     owner(`update public.posts set schedule_claimed_at=now()-interval '3 minutes' where id='${pa.localId}'`);
     await runUrgentCycle(router());
     expect((await row(pa.id)).schedule_state).toBe("scheduled");
-    expect(providerA.calls("getPost")).toBeGreaterThan(0);
+    // Une seule lecture, par le compte de A ; le compte de B n'est pas sollicité.
+    expect(providerA.calls("getPost")).toBe(1);
     expect(providerB.calls("getPost")).toBe(0);
     expect(writeCalls(providerA)).toBe(0);
     expect(writeCalls(providerB)).toBe(0);
@@ -317,6 +321,8 @@ describe("contrôle indépendant multi-comptes — PostgreSQL natif et deux faux
     expect(writeCalls(providerB)).toBe(0);
     // Complément : A n'a reçu aucune requête pendant sa pause, ni écriture ; son annulation reste « à confirmer » et signalée.
     expect(providerA.calls("unschedulePost")).toBe(0);
+    expect(providerA.calls("getPost")).toBe(0);
+    expect(providerA.calls("fetchSnapshot")).toBe(0);
     expect(writeCalls(providerA)).toBe(0);
     expect((await row(pa.id)).schedule_state).toBe("unschedule_pending");
     expect(result.unscheduleFailures).toBeGreaterThanOrEqual(1);
