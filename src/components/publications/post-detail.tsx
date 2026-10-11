@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, Ban, PenLine as EditIcon, CircleCheckBig, CircleDot, Clock, ExternalLink, MessageSquareWarning, PenLine, Rocket, Trash2 } from "lucide-react";
+import { ArrowLeft, Ban, CircleCheckBig, CircleDot, Clock, ExternalLink, MessageSquareWarning, PenLine, Rocket, Trash2 } from "lucide-react";
 
 import { ActivityTimeline } from "@/components/publications/activity";
 import { CommentThread } from "@/components/publications/comments";
@@ -22,7 +22,6 @@ export function PostDetail({
   now,
   reviewTag,
   versions = [],
-  studioDraftId = null,
   organizations = [],
 }: {
   post: PostView;
@@ -32,8 +31,6 @@ export function PostDetail({
   now: string;
   reviewTag: string;
   versions?: PostVersion[];
-  /** Contenu du Studio dont cette publication est issue, s'il y en a un. */
-  studioDraftId?: string | null;
   /** Clients actifs : sert à attribuer une publication importée de façon ambiguë. */
   organizations?: Organization[];
 }) {
@@ -70,15 +67,6 @@ export function PostDetail({
         <h1 className="mt-2 font-display text-[1.6rem] leading-tight font-medium sm:text-[1.9rem]">{post.title}</h1>
         <div className="mt-3 flex flex-wrap items-center gap-3">
           <StatusBadge status={post.status} />
-          {studioDraftId && !post.removedAt && post.status !== "published" && (
-            <Link
-              href={`/admin/studio/${studioDraftId}`}
-              data-testid="studio-link"
-              className="inline-flex h-8 items-center gap-1.5 rounded-lg border bg-card px-3 text-sm font-medium outline-none transition-colors hover:bg-muted focus-visible:ring-3 focus-visible:ring-ring/50"
-            >
-              <EditIcon className="size-3.5" /> Modifier dans le Studio
-            </Link>
-          )}
           {bufferLink && (
             <a
               href={bufferLink}
@@ -115,7 +103,7 @@ export function PostDetail({
 
       {!post.removedAt && post.status === "draft" && (
         <StatusBanner tone="neutral" icon={PenLine} title="Brouillon non soumis au client">
-          Pour le soumettre à validation, ajoutez le tag « {reviewTag} » à ce brouillon dans Buffer, puis synchronisez — ou préparez vos prochains contenus dans le Studio, qui s&apos;en charge.
+          Pour le soumettre à validation, ajoutez le tag « {reviewTag} » à ce brouillon dans Buffer, puis synchronisez.
           {!post.organization && " Rattachez aussi son canal à un client (page Clients), sinon personne ne pourra le valider."}
         </StatusBanner>
       )}
@@ -135,9 +123,7 @@ export function PostDetail({
             </blockquote>
           )}
           <p className="mt-2">
-            {studioDraftId
-              ? "Corrigez le contenu dans le Studio puis renvoyez-le en validation : le client recevra la nouvelle version."
-              : "Modifiez le brouillon dans Buffer : la nouvelle version sera soumise automatiquement à la prochaine synchronisation."}
+            Modifiez le brouillon dans Buffer : la nouvelle version sera soumise automatiquement à la prochaine synchronisation.
           </p>
         </StatusBanner>
       )}

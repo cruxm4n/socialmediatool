@@ -6,7 +6,6 @@ import {
   FileText,
   History,
   LayoutDashboard,
-  PenLine,
   RefreshCw,
   Settings,
   type LucideIcon,
@@ -22,7 +21,6 @@ export interface NavItem {
 
 export const ADMIN_NAV: NavItem[] = [
   { label: "Vue d'ensemble", href: "/admin", icon: LayoutDashboard, exact: true },
-  { label: "Studio", href: "/admin/studio", icon: PenLine },
   { label: "Calendrier", href: "/admin/calendrier", icon: CalendarDays },
   { label: "Publications", href: "/admin/publications", icon: FileText },
   { label: "Clients", href: "/admin/clients", icon: Building2 },

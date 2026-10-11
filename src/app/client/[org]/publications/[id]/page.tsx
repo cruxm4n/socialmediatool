@@ -6,7 +6,7 @@ import { canDecide } from "@/lib/domain/status";
 import { requireClientSpace } from "@/server/auth";
 import { loadClientSpace } from "@/server/client-space";
 import { listComments, listEvents, listProfiles } from "@/server/data";
-import { listPostVersions } from "@/server/studio";
+import { listPostVersions } from "@/server/post-versions";
 
 export const metadata: Metadata = { title: "Publication" };
 

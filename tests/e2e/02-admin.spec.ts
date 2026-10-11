@@ -57,7 +57,8 @@ test.describe("espace administrateur", () => {
     await expect(page.getByRole("button", { name: /Créer une publication|Nouvelle publication/ })).toHaveCount(0);
     await page.goto("/admin/calendrier");
     await expect(page.getByRole("button", { name: /Créer une publication/ })).toHaveCount(0);
-    await expect(page.getByText("Glissez un brouillon sur un autre jour pour changer sa date.")).toBeVisible();
+    await expect(page.getByText("Les dates se modifient dans Buffer.", { exact: true })).toBeVisible();
+    await expect(page.locator('[draggable="true"], [data-movable="true"]')).toHaveCount(0);
   });
 
   test("le bouton Synchroniser relit Buffer et l'enregistre au journal", async ({ page }) => {

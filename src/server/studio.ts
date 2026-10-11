@@ -2,7 +2,7 @@ import "server-only";
 
 import { errorCodeIn } from "@/lib/domain/errors";
 import { composeText, hasBlockingIssue, STUDIO_ERRORS, validateDraft, type StudioMedia } from "@/lib/domain/studio";
-import { toNetwork, type MediaAsset, type PostVersion, type StudioDraft } from "@/lib/types";
+import { toNetwork, type MediaAsset, type StudioDraft } from "@/lib/types";
 import { listChannels } from "@/server/data";
 import { emissionProblem, getProvider } from "@/server/publishing";
 import { ProviderError, type DraftContent, type ProviderPost } from "@/server/publishing/provider";
@@ -137,14 +137,8 @@ export async function listMedia(organizationId: string | null, includeIds: strin
   return rows.map((row) => toMedia(row, urls.get(row.storage_path) ?? null));
 }
 
-/** Versions successives d'une publication, la plus récente d'abord. Vide si la base n'a pas la migration 0008. */
-export async function listPostVersions(postId: string): Promise<PostVersion[]> {
-  const supabase = await createSessionClient();
-  const { data, error } = await supabase.from("post_versions").select("version, text, due_at, assets, created_at").eq("post_id", postId).order("version", { ascending: false });
-  if (isMissingSchema(error)) return [];
-  if (error) throw new Error(`Lecture impossible (versions) : ${error.message}`);
-  return data.map((row) => ({ version: row.version, text: row.text, dueAt: row.due_at, assets: row.assets ?? [], createdAt: row.created_at }));
-}
+// Compatibilité pour les tests historiques du Studio ; le portail importe le module partagé.
+export { listPostVersions } from "@/server/post-versions";
 
 /** Contenu du Studio dont est issue une publication Buffer, s'il y en a un. */
 export async function findDraftForPost(bufferPostId: string): Promise<{ draftId: string; revision: number } | null> {
