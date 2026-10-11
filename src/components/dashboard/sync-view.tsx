@@ -207,8 +207,8 @@ export function SyncView({
 
       <p className="rounded-2xl border border-dashed p-4 text-sm leading-relaxed text-muted-foreground">
         <span className="font-medium text-foreground">Automatiser :</span> Buffer ne prévient d&apos;aucun changement, il faut donc l&apos;interroger
-        régulièrement. Le planificateur appelle <code className="font-mono text-xs">POST /api/automation/sync</code> toutes les {intervalMinutes} minutes ; son
-        activation est décrite dans <code className="font-mono text-xs">docs/PLANIFICATEUR.md</code>. Deux déclenchements simultanés ne se gênent pas : un seul s&apos;exécute.
+        régulièrement. Une tâche planifiée sur le serveur relit Buffer toutes les {intervalMinutes} minutes ; tant qu&apos;elle n&apos;est pas installée, Buffer n&apos;est relu
+        qu&apos;à l&apos;ouverture de Cadence par un administrateur ou par le bouton « Synchroniser ». Deux lectures en même temps ne se gênent pas : une seule s&apos;exécute.
       </p>
     </div>
   );

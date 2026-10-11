@@ -270,14 +270,14 @@ export async function revokeConnection(input: { connectionId: string; force?: bo
     return {
       ok: true,
       message: result.forced
-        ? "Connexion révoquée de force : sa clé est effacée. Les opérations qui restaient en attente ne sont PAS annulées chez Buffer : traitez-les dans Buffer."
+        ? "Connexion révoquée : sa clé est effacée. Les publications encore programmées dans Buffer y restent programmées ; Cadence ne les suit plus."
         : "Connexion révoquée : sa clé est effacée, son historique est conservé.",
     };
   }
   const open = openOf(result.unresolved);
   return {
     ok: false, revoking: true, unresolved: open,
-    message: `Révocation demandée : plus aucune nouvelle opération ne part par ce compte. Restent à annuler ou à rapprocher : ${open.scheduled} publication(s) programmée(s), ${open.pending} opération(s) en cours, ${open.uncertain} envoi(s) incertain(s).`,
+    message: `Révocation demandée : ${open.scheduled} publication(s) de ce compte sont encore programmées dans Buffer${open.pending + open.uncertain > 0 ? ` et ${open.pending + open.uncertain} opération(s) héritée(s) restent à rapprocher` : ""}. Cadence garde la clé pour les suivre ; terminez la révocation pour l'effacer tout de suite.`,
   };
 }
 

@@ -196,7 +196,7 @@ export function ConnectionsPanel({
                     {connection.lastError && live && <p className="mt-1 text-xs text-tone-red" role="status">Dernière erreur : {connection.lastError}</p>}
                     {waiting > 0 && (
                       <p className="mt-1 text-xs text-tone-amber">
-                        En attente sur ce compte : {connection.unresolved.scheduled} programmée(s), {connection.unresolved.pending} opération(s) en cours, {connection.unresolved.uncertain} envoi(s) non résolu(s).
+                        Encore suivi sur ce compte : {connection.unresolved.scheduled} publication(s) programmée(s) dans Buffer{connection.unresolved.pending + connection.unresolved.uncertain > 0 ? `, ${connection.unresolved.pending + connection.unresolved.uncertain} opération(s) héritée(s) à rapprocher` : ""}.
                       </p>
                     )}
                     {connection.mode === "real" && live && serverMode === "real" && !writesEnabled && (
@@ -368,7 +368,7 @@ export function ConnectionsPanel({
                 <Label htmlFor="connection-key">Clé d&apos;API Buffer</Label>
                 <Input id="connection-key" className="min-h-11 sm:min-h-8" type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} autoComplete="off" spellCheck={false} />
                 <p className="text-xs text-muted-foreground">
-                  Elle se crée dans Buffer, par le titulaire du compte : Settings → API. Chiffrée par le serveur avant enregistrement, jamais réaffichée.{" "}
+                  Elle se crée dans Buffer, par le titulaire du compte, dans les réglages (Settings → API). Chiffrée par le serveur avant enregistrement, jamais réaffichée.{" "}
                   {simulated
                     ? "Le serveur est en simulation : aucun appel à Buffer n'a lieu, la clé sera enregistrée « non vérifiée » et restera inutilisable."
                     : "Avant de l'enregistrer, Cadence demande à Buffer à quel compte elle appartient (lecture seule). Une clé refusée n'est pas enregistrée."}
@@ -429,7 +429,7 @@ export function ConnectionsPanel({
       <ConfirmDialog
         open={revoking !== null}
         onOpenChange={(next) => { if (!next) setRevoking(null); }}
-        title={revoking?.forced ? "Révoquer malgré des opérations en attente ?" : `Révoquer « ${revoking?.connection.label ?? ""} » ?`}
+        title={revoking?.forced ? "Révoquer malgré des publications encore suivies ?" : "Révoquer cette connexion ?"}
         confirmLabel={revoking?.forced ? "Révoquer quand même" : "Révoquer la connexion"}
         destructive
         phrase={revoking?.forced ? "révoquer" : undefined}
@@ -456,13 +456,13 @@ export function ConnectionsPanel({
       >
         {revoking?.forced ? (
           <p>
-            Des publications programmées, des opérations en cours ou des envois non résolus dépendent encore de ce compte. La révocation efface sa clé : Cadence ne pourra plus ni les annuler ni les vérifier dans Buffer,
-            et ne les déclarera pas annulées. Vous devrez les traiter vous-même dans Buffer. Cette décision est consignée au journal.
+            Des publications de ce compte sont encore programmées dans Buffer. La révocation efface sa clé : Cadence ne pourra plus les suivre (publication, modification, retour en brouillon).
+            Rien ne change dans Buffer : elles y restent programmées. Cette décision est consignée au journal.
           </p>
         ) : (
           <p>
-            Plus aucune nouvelle opération ne partira par ce compte. S&apos;il reste des publications programmées ou des envois non résolus, la révocation sera d&apos;abord « demandée » : la clé est conservée le temps de les annuler ou de les rapprocher,
-            puis effacée. Les canaux et l&apos;historique des publications restent visibles. Une connexion révoquée ne se réactive pas.
+            Cadence cessera de lire ce compte Buffer. S&apos;il y reste des publications programmées, la révocation sera d&apos;abord « demandée » : la clé est conservée pour continuer à les suivre jusqu&apos;à leur publication,
+            puis effacée ; vous pourrez aussi la terminer tout de suite. Rien ne change dans Buffer. Les canaux et l&apos;historique des publications restent visibles. Une connexion révoquée ne se réactive pas.
           </p>
         )}
       </ConfirmDialog>

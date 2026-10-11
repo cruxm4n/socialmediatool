@@ -315,13 +315,14 @@ describe("actions serveur — la clé n'est enregistrée qu'avec une identité c
     outcomes.admin_request_provider_revocation = { revoked: false, revoking: true, unresolved: { scheduled: 2, pending: 1, uncertain: 0 } };
     const requested = await revokeConnection({ connectionId: CONNECTION });
     expect(requested).toMatchObject({ ok: false, revoking: true, unresolved: { scheduled: 2, pending: 1, uncertain: 0 } });
-    expect(requested.message).toMatch(/Révocation demandée.*2 publication\(s\) programmée\(s\)/);
+    expect(requested.message).toMatch(/Révocation demandée : 2 publication\(s\) de ce compte sont encore programmées dans Buffer et 1 opération\(s\) héritée\(s\) restent à rapprocher/);
     expect(sessionCalls.map((call) => call.name)).toEqual(["admin_request_provider_revocation"]);
 
     outcomes.admin_revoke_provider_connection = { revoked: true, forced: true };
     const forced = await revokeConnection({ connectionId: CONNECTION, force: true });
     expect(forced.ok).toBe(true);
-    expect(forced.message).toMatch(/ne sont PAS annulées chez Buffer/);
+    // Le message dit toujours ce qui reste vrai chez Buffer : rien n'y est annulé.
+    expect(forced.message).toMatch(/encore programmées dans Buffer y restent programmées/);
     expect(sessionCalls.at(-1)).toMatchObject({ name: "admin_revoke_provider_connection", params: { p_force: true } });
   });
 

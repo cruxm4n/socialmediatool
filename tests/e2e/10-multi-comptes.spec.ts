@@ -201,17 +201,17 @@ test.describe.serial("deux clients, deux comptes Buffer synthétiques", () => {
     await expect(connection.getByTestId("detail-connexion")).toContainText("Programmations en attente (1)");
     await connection.getByRole("button", { name: "Révoquer" }).click();
     await page.getByRole("button", { name: "Révoquer la connexion" }).click();
-    await expect(page.getByText(/Révocation demandée : plus aucune nouvelle opération/)).toBeVisible();
+    await expect(page.getByText(/Révocation demandée : \d+ publication\(s\) de ce compte sont encore programmées dans Buffer/)).toBeVisible();
     await expect(connection).toContainText("Révocation demandée");
     await expect(connection).toHaveAttribute("data-status", "revoking");
 
     // Décision explicite : la phrase de confirmation est exigée, et le message dit ce qui reste à faire dans Buffer.
     await connection.getByRole("button", { name: "Révoquer quand même" }).click();
     const dialog = page.getByRole("dialog");
-    await expect(dialog).toContainText("ne les déclarera pas annulées");
+    await expect(dialog).toContainText("Rien ne change dans Buffer");
     await dialog.getByRole("textbox").fill("révoquer");
     await dialog.getByRole("button", { name: "Révoquer quand même" }).click();
-    await expect(page.getByText(/Connexion révoquée de force/)).toBeVisible();
+    await expect(page.getByText(/Connexion révoquée : sa clé est effacée\. Les publications encore programmées/)).toBeVisible();
     await expect(connection).toHaveAttribute("data-status", "revoked");
 
     // Le compte de A continue de fonctionner ; les publications de B restent visibles, rien n'est déclaré retiré.
