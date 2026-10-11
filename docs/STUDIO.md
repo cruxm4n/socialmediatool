@@ -1,3 +1,5 @@
+> **Fonction abandonnée pour le nouveau produit, 11 octobre 2026.** L’interface Studio est retirée de la branche de nettoyage. Ce document décrit le fonctionnement historique conservé pour comprendre les données, migrations et tests. Ne pas appliquer de suppression SQL sur sa seule lecture. Voir [CLEANUP_REPORT.md](../CLEANUP_REPORT.md).
+
 # Content Studio
 
 **État : développé et testé localement. Rien n'est activé : la base n'a pas la migration `0008`, aucun fichier n'a été déposé dans Supabase, aucun brouillon n'a été créé dans Buffer.** Sans la migration, les écrans du Studio affichent « Le Studio n'est pas encore activé » et le reste de Cadence fonctionne comme avant.

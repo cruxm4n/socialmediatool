@@ -1,3 +1,5 @@
+> **Référence du 11 octobre 2026 :** résultats réellement exécutés et limites dans [PROJECT_STATUS.md](PROJECT_STATUS.md). Utiliser le dépôt `/home/ubuntu/cadence`. Pour éviter la contamination, une pile neuve distincte pour chaque famille de suites qui écrit. Les anciens parcours Studio sont conservés dans `tests/legacy-e2e/`, hors suite active. Le nettoyage `test-stack.mjs down` supprime des volumes : ne pas l’utiliser dans la mission de récupération ; arrêter uniquement les ressources neuves identifiées, sans suppression.
+
 # Tests
 
 ## Lancer les tests

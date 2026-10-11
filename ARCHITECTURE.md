@@ -1,140 +1,103 @@
-# Architecture
+# Architecture Cadence
 
-## Qui fait quoi
+Référence : récupération du 11 octobre 2026, base `09cdeb1`, branche de nettoyage. Voir [PROJECT_STATUS.md](PROJECT_STATUS.md) pour les preuves et [CLEANUP_REPORT.md](CLEANUP_REPORT.md) pour les autres versions.
 
-```
-            crée, modifie, date, publie
-Vous ─────────────────────────────────────────► Buffer ──► réseaux sociaux
-                                                  ▲  │
-                              programme / déprogramme │ lit
-                                                  │  ▼
-Client ──► Cadence (Next.js) ◄──────────────► couche de service (serveur)
-            valide, commente        │
-                                    ▼
-                               Supabase : comptes, clients, canaux,
-                               validations, commentaires, historique
-```
+## Architecture constatée et architecture cible
 
-- **Buffer** est la source de vérité du contenu : texte, médias, date, statut de publication.
-- **Supabase** est la source de vérité de la validation : qui a approuvé quoi, quand, quelle version.
-- **Cadence** prépare les contenus (Studio), recueille la décision du client, et demande à Buffer de programmer. Il ne publie jamais lui-même.
-- **n8n** n'est pas indispensable. Il peut déclencher la synchronisation et sert de passerelle d'envoi des e-mails de notification. Voir [docs/PLANIFICATEUR.md](docs/PLANIFICATEUR.md), [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md) et [docs/N8N.md](docs/N8N.md).
+| Élément | Constat sur la base récupérée | Cible minimale | Décision |
+| --- | --- | --- | --- |
+| Next.js / React | Pages serveur, composants client, actions, endpoints, instrumentation | Un même backend et portail | CONSERVER |
+| Content Studio | Éditeur et bibliothèque retirés de cette branche ; moteur, schéma et tests historiques encore présents | Aucune création interne | SUPPRIMER progressivement les dépendances exclusives restantes |
+| Calendrier | Consultation, filtres, mois/semaine ; déplacement retiré | Lecture seule admin et client | CONSERVER |
+| Supabase | Auth, PostgreSQL/RLS, Storage ; actuellement services auto-hébergés en production | Même responsabilité ; éviter une migration d'hébergement pendant le nettoyage | CONSERVER |
+| Buffer | Adaptateur GraphQL, routeur multi-comptes, lecture et écritures optionnelles | Source de contenu et publication ; lecture seulement depuis Cadence au MVP | SIMPLIFIER sans retirer l'isolation |
+| Jobs | Verrous/baux SQL, état durable, boucle urgente, déclenchement HTTP/cron optionnel | Un planificateur léger, jobs idempotents dans PostgreSQL | RÉUTILISER |
+| n8n | Instance VPS indépendante ; deux templates dans le dépôt | Hors du parcours critique | CONSERVER l'instance, RETIRER progressivement la dépendance applicative éventuelle |
+| Notifications | File SQL, simulation par défaut, webhook possible | Notifications internes ; e-mail facultatif plus tard | SIMPLIFIER |
+| Docker / proxy | Image Next autonome, Supabase auto-hébergé, passerelle, Caddy existant | Réutiliser l'exploitation existante après validation | CONSERVER sans intervention pendant cette mission |
 
-## Organisation du code
-
-```
-src/
-  app/                     Pages (rendues côté serveur à chaque requête)
-    connexion/             Connexion e-mail + mot de passe
-    admin/                 Espace administrateur
-    client/[org]/          Espace d'un client
-    api/automation/        Points d'entrée serveur à serveur, protégés par secret
-  proxy.ts                 Avant chaque page : session Supabase, renvoi vers la connexion
-  components/              Interface (calendrier, fiches, aperçus par réseau, coque)
-  lib/                     Code partagé, sans accès réseau
-    types.ts               Types métier
-    view.ts                Post enrichi pour l'affichage
-    dates.ts               UTC en stockage, fuseau du client à l'affichage
-    domain/status.ts       Statut affiché, alertes, droit de décider
-  server/                  Tout ce qui ne doit jamais atteindre le navigateur
-    env.ts                 Lecture de la configuration
-    auth.ts                Session, contrôle du rôle et de l'organisation
-    data.ts                Lectures, toujours avec la session de l'utilisateur
-    actions.ts             Actions : connexion, décision, commentaire, synchronisation
-    sync.ts                COUCHE DE SERVICE : lien entre Buffer et la base
-    automation-rpc.ts      Appel des fonctions SQL protégées par le secret
-    notifications.ts       Remise des notifications (simulation ou webhook)
-    publishing/
-      provider.ts          Contrat du fournisseur de publication
-      buffer-provider.ts   Buffer réel (GraphQL)
-      mock-provider.ts     Buffer simulé
-supabase/migrations/       Schéma, règles RLS et fonctions SQL
-tests/                     unit/ (règles), integration/ (base), e2e/ (parcours)
+```mermaid
+flowchart LR
+  Admin[Administrateur] -->|crée, corrige, programme| Buffer
+  Buffer -->|lecture périodique| Backend[Backend Cadence]
+  Backend -->|instantanés et jobs durables| DB[Supabase / PostgreSQL]
+  Clients -->|session autorisée| Portail[Portail Cadence]
+  Portail -->|décisions, commentaires, historique| DB
+  Admin -->|consulte les décisions| Portail
 ```
 
-## La couche de service, remplaçable par n8n
+Ce diagramme représente la **cible**. Le moteur historique de programmation automatique existe encore dans le backend récupéré et ne doit pas être activé pour le MVP manuel.
 
-`src/server/sync.ts` ne connaît que deux choses : le contrat `PublishingProvider` et des fonctions SQL protégées par un secret. Une synchronisation enchaîne :
+Point métier à trancher avant la transition : la date entre actuellement dans l’empreinte validée. Programmer après l’accord un brouillon auparavant sans date ajouterait une date et pourrait invalider cet accord au passage suivant. Définir si l’accord porte sur le contenu seul ou aussi sur une date proposée, puis tester cette règle explicitement ; une simple désactivation des écritures ne suffit pas. Si la date fait partie de l’engagement validé, un changement doit être resoumis.
 
-1. **Lire** Buffer, puis `sync_buffer_posts` : une transaction qui crée et met à jour les posts, calcule leur empreinte et annule les validations devenues périmées.
-2. **Déprogrammer** les posts modifiés après validation (`list_posts_to_unschedule`, `complete_unscheduling`).
-3. **Programmer** les posts approuvés (`claim_posts_for_scheduling`, `complete_scheduling`).
+Buffer est la source du texte, des médias, des dates et du statut externe. Cadence est la source des versions observées, commentaires et décisions locales. Le client approuve une empreinte/version précise ; une modification du contenu ou de la date invalide l'accord. Les instantanés et l'historique persistent dans PostgreSQL après une panne du VPS ; la disponibilité des médias externes n'est pas garantie par cet historique.
 
-Avant de commencer, elle demande un **verrou** à la base (`begin_sync_run`) : une seule synchronisation s'exécute à la fois, quel que soit le déclencheur. Elle le rend avec son résultat (`finish_sync_run`), ce qui alimente l'état affiché dans l'administration : dernier succès, dernier échec, anomalies, pause après un quota Buffer atteint. Elle termine en remettant les notifications en attente.
+## Organisation à préserver
 
-Le planificateur (toutes les 5 minutes) est préparé mais non activé : [docs/PLANIFICATEUR.md](docs/PLANIFICATEUR.md). En attendant, l'ouverture de l'espace admin déclenche une synchronisation si la dernière date de plus de quinze minutes.
+- `src/server/auth.ts`, `src/proxy.ts`, `src/server/supabase/` : session et accès.
+- `src/server/client-space.ts`, `workspace.ts`, `data.ts` : lectures filtrées, diagnostics techniques masqués aux clients.
+- `src/server/post-versions.ts` : historique partagé indépendant du Studio.
+- `src/server/actions.ts` et fonctions SQL : validations et commentaires, gestion client ; programmation encore couplée à l'approbation.
+- `src/server/publishing/buffer-provider.ts`, `router.ts`, `connections.ts`, `credentials.ts` : adaptation, association compte/canal, état durable et chiffrement. Ces responsabilités restent distinctes et utiles.
+- `src/server/sync.ts`, `urgent.ts`, `notifications.ts` et migrations : reprise, verrous, erreurs, files persistantes.
+- `src/components/publications/`, `calendar/`, `shared/` : aperçus, médias, décisions, échanges.
 
-L'interface ne lit que la base. Remplacer ce fichier par des workflows n8n qui appellent les mêmes fonctions SQL ne demande aucun changement d'écran.
+Ne pas remplacer les contrôles SQL par de simples filtres d'interface. Ne pas supprimer les RLS, jetons de réservation ou protections contre les réponses tardives sous prétexte de simplifier.
 
-## Modèle de données
+## Buffer : limites documentées et limites locales
 
-Un **post** correspond à une publication Buffer sur un canal. Trois états distincts sont stockés :
+La [documentation d'authentification Buffer](https://developers.buffer.com/guides/authentication.html) distingue clés personnelles et OAuth. Les clés personnelles sont des secrets serveur ; le cloisonnement client doit être imposé dans Cadence, pas supposé à partir d'une clé. La rotation doit vérifier l'identité distante avant remplacement.
 
-| Champ | Qui le fixe | Valeurs |
+Le schéma officiel [EditPostInput](https://developers.buffer.com/types/EditPostInput.html) expose l'édition d'un post existant par `id`, `saveToDraft`, `mode`, `dueAt`, texte et médias. [ShareMode](https://developers.buffer.com/types/ShareMode.html) et le [guide de programmation](https://developers.buffer.com/guides/posts-and-scheduling.html) documentent les modes de programmation. La compatibilité effective de chaque réseau, droits, forfait et type de média reste **NON VÉRIFIÉE sur des comptes réels pendant cette mission**. Aucune mutation Buffer n'a été déclenchée.
+
+| Option | Fiabilité et exploitation | Complexité / sécurité | Avis |
+| --- | --- | --- | --- |
+| A : décision locale, programmation humaine dans Buffer | Fonctionne malgré une indisponibilité temporaire du job ; demande un contrôle humain de la dernière version | Pas de clé d'écriture nécessaire ; risque d'erreur de procédure | MVP recommandé, après découplage métier/SQL |
+| B : programmation après approbation | Exige relecture, réservation, reprise après réponse perdue et compensation | Plus de courses, droits d'écriture et maintenance ; moteur existant à conserver en attente | Phase future séparée |
+
+Une validation locale n'est pas une approbation native Buffer. Le MVP doit éviter de dépendre du workflow d'approbation natif et de son éventuel forfait. Les détails des droits/forfaits natifs restent à confirmer pour les deux comptes concernés. Le propriétaire peut programmer directement dans Buffer avant validation : Cadence n'impose aucun verrou technique à cette action. Conserver les contenus en brouillon jusqu'à accord, vérifier la version avant programmation et signaler localement les posts programmés sans accord. Une alerte ou une procédure humaine ne garantit pas l'absence de publication prématurée.
+
+### Multi-comptes et synchronisation
+
+`0012` introduit les connexions chiffrées ; `0013` ajoute contrôles d'identité, état de révocation durable et verrou commun avec les réservations. Le routeur relit cet état avant les effets. Les tests natifs vérifient les collisions entre comptes et l'indépendance des quotas. Deux clés distinctes ne constituent pas à elles seules une autorisation de partager un canal.
+
+Le schéma actuel lie une connexion à une organisation cliente et interdit de changer la connexion d'un canal. **Un même compte Buffer partagé par plusieurs clients ne doit pas être déclaré pris en charge sans examen du schéma et test d'une liste explicite de canaux autorisés.** Le cas testé est deux clients/deux connexions. Pour deux ou trois clients, privilégier ce modèle existant tant que le partage n'est pas démontré sûr.
+
+L'adaptateur récupère les organisations du compte, les canaux, les posts actifs (100/page, plafond 5 pages par organisation) et 50 derniers posts publiés. Une réponse partielle n'autorise pas à effacer l'historique ; les suppressions sont archivées localement, et les cas incertains nécessitent des relectures. À vérifier réellement : brouillons sans date, modifications/déplacements, médias expirés, pagination au plafond et reprise après interruption. Les identifiants externes ne doivent jamais réattribuer une publication d'un autre compte.
+
+Limite de fidélité : `POST_FIELDS` lit texte et assets, mais pas les threads ni toutes les métadonnées propres aux réseaux. Le portail ne peut pas garantir que le client a validé ces éléments non affichés. Définir les formats acceptés au pilote et tester la fidélité de chaque format ; ne pas réintroduire un éditeur pour résoudre cette lecture. Des URLs CDN publiques Buffer ne fournissent pas un contrôle d’accès Cadence ; le RLS protège les références stockées, pas une URL déjà connue ou transférée.
+
+### Budget d'appels par compte
+
+Les [limites officielles Buffer](https://developers.buffer.com/guides/api-limits.html), consultées le 11 octobre 2026, sont par client API : Free 100/15 min, 250/jour, 3 000/30 jours ; Essentials 100, 250, 7 500 ; Team 100, 500, 15 000. Mesurer les en-têtes de chaque compte ; ne pas additionner les budgets ni multiplier les clés pour contourner une limite.
+
+| Intervalle | Passages/jour | Passages/30 jours | Appels/30 jours si q=2 |
+| --- | ---: | ---: | ---: |
+| 5 min | 288 | 8 640 | 17 280 |
+| 15 min | 96 | 2 880 | 5 760 |
+| 30 min | 48 | 1 440 | 2 880 |
+| 60 min | 24 | 720 | 1 440 |
+| Manuel, 10/jour | 10 | 300 | 600 |
+
+Calcul : appels = passages × q, hors reprises et actions. Ici q=2 illustre identité + une page d'une organisation ; le code peut consommer davantage. Mesurer q et réserver une marge. À q=2, 30 min laisse trop peu de marge Free ; commencer à 60 min ou manuel. À q=3, 30 min dépasse Free. Cette recommandation est un calcul, pas une mesure réelle des comptes.
+
+Les quotas Codex/Claude n'ont aucun rapport avec Buffer.
+
+## n8n : dépendances constatées
+
+| Élément | Preuve | Décision / substitution |
 | --- | --- | --- |
-| `buffer_status` | Buffer | `draft`, `scheduled`, `sending`, `sent`, `error`, `needs_approval` |
-| `approval_status` | Le client, via Cadence | `none`, `pending`, `changes_requested`, `approved` |
-| `schedule_state` | La couche de service | `idle`, `claimed`, `scheduled`, `failed`, `unschedule_pending` |
+| `docs/n8n/cadence-synchronisation.json` | Template désactivé : timer puis POST `/api/automation/sync` | Remplacer son déclenchement éventuel par un seul cron/timer appelant le backend |
+| `docs/n8n/cadence-notifications.json` | Template désactivé : webhook puis e-mail | Conserver temporairement si réellement utilisé ; e-mail facultatif, migration ultérieure |
+| `/api/automation/sync`, `/urgent` | Endpoints backend avec secret, utilisables sans n8n | CONSERVER et sécuriser |
+| `NOTIFICATIONS_WEBHOOK_URL/SECRET` | Dépendance seulement en mode webhook ; simulation en production constatée | Ne retirer aucun secret réel avant inventaire d'exploitation |
+| `AUTOMATION_SECRET` | Protège les RPC et déclenchements internes | CONSERVER, il n'est pas spécifique à n8n |
+| Instance VPS n8n | Conteneur existant constaté ; workflows internes non inspectés | Aucune modification ; inventaire réel des workflows NON VÉRIFIÉ |
 
-L'écran en déduit un statut unique (`src/lib/domain/status.ts`) : brouillon, à valider, modifications demandées, approuvé, programmé, publié, erreur. Ce que dit Buffer l'emporte, car c'est lui qui publie.
+Sans n8n, seules des tâches effectivement confiées à son instance pourraient s'arrêter : déclenchement périodique et remise d'e-mails notamment. Les validations, commentaires et moteur de synchronisation existent dans Cadence. Un cron léger et PostgreSQL suffisent ; aucun besoin démontré de Redis/RabbitMQ. Ne pas activer deux planificateurs concurrents même si les verrous protègent la base.
 
-Autres tables : `organizations`, `profiles`, `organization_members`, `channels` (canal Buffer ↔ client), `approval_decisions`, `comments`, `post_events` (historique), `sync_runs` (journal), `sync_state` (verrou et état de la synchronisation, une ligne par mode), `notifications` (file d'attente et historique) et `notification_preferences`.
+## Maintenance et exploitation
 
-### Notifications
+L'objectif retire les quatre pages Studio et leurs composants de composition, le chargement des brouillons Studio dans le calendrier et le glisser-déposer. Il ne retire aucun service actif dans cette mission. n8n reste sur le VPS, Supabase conserve ses services existants ; ne pas annoncer un pourcentage de gain opérationnel inventé. Les coûts dépendent des forfaits Buffer, de l'hébergement Supabase/VPS et de la sauvegarde hors site, non vérifiés commercialement.
 
-Un déclencheur sur `post_events` met une notification en file d'attente pour chaque fait qui le mérite ; une clé unique empêche les doublons. Le serveur réserve les notifications (`claim_notifications`), les regroupe en un message par destinataire, puis les marque simulées ou les remet à un webhook. Détail : [docs/NOTIFICATIONS.md](docs/NOTIFICATIONS.md).
-
-### Empreinte et versions
-
-Chaque post a une **empreinte** calculée sur son texte, sa date, son canal et ses médias. Une décision porte toujours sur une empreinte précise.
-
-- Le contenu change dans Buffer → nouvelle empreinte, version + 1.
-- Il était approuvé → la validation est annulée ; s'il était programmé, il est repassé en brouillon dans Buffer.
-- Le client décide sur une page affichée avant le changement → la base refuse (`stale_version`).
-
-### Cas traités
-
-| Situation | Comportement |
-| --- | --- |
-| Deux utilisateurs du client valident en même temps | Verrou de ligne : une seule décision retenue |
-| Deux programmations simultanées | Réservation atomique : le post n'est programmé qu'une fois |
-| Contenu modifié entre la validation et la programmation | Relu dans Buffer juste avant : rien n'est programmé |
-| Buffer refuse ou est injoignable | État « Erreur », détail pour l'admin, nouvelle tentative à la synchronisation suivante (cinq au plus) |
-| Post programmé à la main dans Buffer sans validation | Alerte pour l'admin ; Cadence n'y touche pas |
-| Tag retiré d'un brouillon en attente | Retiré de la validation, invisible pour le client |
-| Post supprimé dans Buffer | Marqué supprimé, jamais effacé |
-| Date prévue absente ou dépassée | Approbation refusée (base et interface) ; le client peut demander une modification |
-| Quota Buffer atteint ou Buffer injoignable | Arrêt immédiat des appels, posts repris à la synchronisation suivante |
-| Quota Buffer atteint ou presque épuisé | Exécutions planifiées suspendues un temps ; bouton manuel toujours disponible |
-| Deux synchronisations déclenchées en même temps | Verrou en base : une seule s'exécute, l'autre répond « déjà en cours » |
-| Serveur arrêté en pleine synchronisation | Le verrou expire seul au bout de cinq minutes |
-| Cinq échecs de programmation de suite | Nouvel essai au plus une fois par heure, sans abandon définitif |
-| Session expirée pendant une action | Rien n'est enregistré, renvoi vers la connexion |
-| Canal déconnecté dans Buffer | Alerte sur la fiche de la publication |
-| Canal rattaché à aucun client | Alerte pour l'admin ; personne ne peut valider |
-
-## Content Studio
-
-Les contenus peuvent être préparés dans Cadence : tables `studio_drafts` (un contenu : client, date, hashtags, médias ordonnés) et `studio_variants` (son texte pour un canal, et l'identifiant du brouillon Buffer une fois envoyé), bibliothèque `media_assets` et espace de stockage privé `media`. `post_versions` garde le contenu de chaque version d'une publication.
-
-« Envoyer en validation » (`pushDraftToBuffer`, dans `src/server/studio.ts`) crée un brouillon tagué par canal dans Buffer, puis relit Buffer : la publication entre alors dans le circuit décrit plus haut, inchangé. Le Studio ne programme jamais. Détail, garde-fous et activation : [docs/STUDIO.md](docs/STUDIO.md).
-
-## Sécurité
-
-- **Isolation entre clients : dans la base.** Les règles RLS décident de chaque lecture. Un client ne reçoit que les posts soumis des canaux de son organisation. L'interface n'ajoute aucun filtre de confidentialité.
-- **Aucune écriture directe.** Les tables sont en lecture seule pour l'API. Les modifications passent par des fonctions SQL qui vérifient l'identité (`decide_post`, `add_comment`) ou le secret d'automatisation.
-- **La clé Buffer reste sur le serveur.** Elle n'est lue que dans `src/server/`, marqué `server-only` : l'importer depuis un composant navigateur fait échouer la compilation.
-- **Secret d'automatisation.** Seule son empreinte est en base, dans un schéma non exposé par l'API.
-- **Détails techniques cachés au client.** Il voit « incident technique ». Les événements techniques de l'historique lui sont fermés par la base elle-même.
-- **En-têtes de sécurité** sur toutes les réponses (`next.config.ts`) : pas d'affichage dans un cadre tiers, pas de détection de type, référent limité.
-- **Liens externes** : seule une adresse `http(s)` renvoyée par Buffer est rendue cliquable.
-
-### Points de vigilance connus
-
-- Les fonctions d'automatisation sont appelables sans session, protégées par le seul secret. C'est un choix : le projet n'utilise pas la clé « service role » de Supabase. Le conseiller de sécurité Supabase le signale en avertissement ; voir DECISIONS.md, D12.
-- Les colonnes `schedule_error` et `buffer_error` d'un post restent lisibles par un client qui interrogerait l'API directement sur ses propres posts (l'historique, lui, est protégé). Les masquer demanderait une vue dédiée.
-- La protection contre les mots de passe compromis de Supabase Auth est désactivée (réglage du projet).
-
-## Rendu Next.js 16
-
-`cacheComponents` est désactivé : toutes les pages dépendent de la session, elles sont rendues à chaque requête. La documentation de cette version de Next.js est dans `node_modules/next/dist/docs/`.
+Points de défaillance : Buffer indisponible ou quota épuisé, perte de clé maître, PostgreSQL indisponible, VPS/disque, média externe expiré, planificateur absent et notifications webhook défaillantes. La base conserve les décisions et jobs ; les sauvegardes doivent couvrir DB/Auth/Storage et clé maître séparément. Les scripts de restauration existent, mais une restauration complète actuelle n'a pas été exécutée ici. Le moins de maintenance sur deux ans : un portail Next, Supabase existant, lecture Buffer, un timer, décisions locales, notifications internes ; programmation manuelle et aucun Studio.

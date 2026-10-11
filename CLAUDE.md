@@ -1,3 +1,13 @@
+# Référence de travail — 11 octobre 2026
+
+Utiliser `/home/ubuntu/cadence`, branche `chore/cadence-recovery-cleanup-2026-10-11`, pour Claude Code ET Codex. Vérifier `git status --short --branch` avant de modifier. Les anciens dossiers sont conservés ; ne pas y poursuivre le développement ni les supprimer. Lire README.md, PROJECT_STATUS.md et NEXT_STEPS.md avant de reprendre.
+
+La cible est un portail client : création et programmation dans Buffer, décisions/commentaires locaux. Studio retiré de l’interface ; backend automatique encore présent et flux manuel incomplet. Ne pas réintroduire un éditeur ni activer `CADENCE_BUFFER_WRITES` pour achever ce nettoyage.
+
+Aucun push, merge main, déploiement, modification Supabase réelle/Buffer/n8n/Caddy ni suppression de volumes sans nouvelle autorisation. Les essais réels décrits historiquement ci-dessous ne sont pas autorisés par cette mission. Le disque a été vérifié au début de cette mission (environ 21 Go libres), et doit être recontrôlé avant une installation lourde. Node 24 est utilisé pour les validations.
+
+---
+
 # Instructions pour Claude Code
 
 @AGENTS.md
