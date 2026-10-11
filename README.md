@@ -1,6 +1,6 @@
 # Cadence — portail de validation client
 
-État de référence au **11 octobre 2026** : `/home/ubuntu/cadence`, branche `chore/cadence-recovery-cleanup-2026-10-11`, issue de `09cdeb1974f13301790d17fa2ab6a7150f6e8fab`. Ce dépôt est indépendant, restauré depuis un Git bundle vérifié. La production exécute encore **2f51602**, avec Buffer et notifications simulés. Aucun déploiement n'a été réalisé par cette mission.
+État de référence au **11 octobre 2026** : `/home/ubuntu/cadence`, branche `chore/cadence-consolidation-2026-10-11`, issue de `09cdeb1974f13301790d17fa2ab6a7150f6e8fab`. Ce dépôt est indépendant, restauré depuis un Git bundle vérifié puis consolidé depuis `c0af3a0`. Les historiques divergents sont conservés sous les tags `archive/consolidation-2026-10-11/*` ; voir la section « Consolidation du dépôt canonique » de [CLEANUP_REPORT.md](CLEANUP_REPORT.md#consolidation-du-dépôt-canonique). La production exécute encore **2f51602**, avec Buffer et notifications simulés. Aucun déploiement n'a été réalisé par cette mission.
 
 ## Produit et état réel
 

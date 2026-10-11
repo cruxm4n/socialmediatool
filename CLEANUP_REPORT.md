@@ -209,3 +209,132 @@ Identité Git locale de l'agent : `Codex <codex@local.invalid>`, configurée uni
 Les six documents demandés sont présents. Les travaux d'origine ont été comparés à leurs manifests : zéro fichier de travail changé dans les quatre implantations initiales. Les images/ID/états des 23 conteneurs préexistants sont inchangés. Cinq piles de test indépendantes ont été créées au fil des vérifications ; elles sont arrêtées, avec conteneurs, volumes, réseaux et données conservés conformément à l'interdiction de suppression. Aucun nettoyage des ressources anciennes.
 
 Le bundle final `cadence-cleanup-final.bundle` sauvegarde les commits de la nouvelle branche et est vérifié puis restauré dans un clone de contrôle privé. Référence, sauvegardes, inventaire final et statut des services sont aussi récapitulés dans le terminal. L'objectif de récupération est atteint sur les emplacements accessibles ; le nettoyage est volontairement progressif et le produit manuel reste à finaliser. La production et les anciennes branches sont préservées.
+
+## Consolidation du dépôt canonique
+
+Mission de consolidation du 11 octobre 2026. Référence recommandée : **`/home/ubuntu/cadence`**, branche **`chore/cadence-consolidation-2026-10-11`**, issue de **`c0af3a02f15857f3cd8fdd723361ef55e56d27b4`**. Le commit documentaire de consolidation est identifiable par `git log -1` et le bundle final ; son SHA n’est pas inclus dans son propre contenu. Aucun push, déploiement, changement de données, déplacement ni suppression d’ancien dossier.
+
+### Inventaire et classement
+
+Tailles approximatives relevées avant consolidation, incluant caches et dépendances ; elles ne mesurent pas le volume de travail unique. Hôte `instance-20260905-1836`, utilisateur `ubuntu` ; environ 19 Gio disponibles avant les sauvegardes.
+
+| Chemin absolu | Taille | Classe | État constaté / décision |
+| --- | ---: | --- | --- |
+| `/home/ubuntu/cadence` | 1,1 Gio | Canonique | `c0af3a0`, propre avant travaux, dépendances autonomes ; seule base de développement recommandée |
+| `/home/ubuntu/cadence-prod` | 13 Mio | Production | Services et outillage en usage ; conserver intégralement |
+| `/home/ubuntu/cadence-prod/build/2f51602` | Inclus ci-dessus | Production | Dépôt propre, HEAD détachée `2f51602` ; source correspondant aux métadonnées de l’image active |
+| `/home/ubuntu/cadence-prod/build/rc-4e132cb` | Inclus ci-dessus | Candidat historique | Copie sans `.git`, 307/307 fichiers identiques à `4e132cb` ; rien à récupérer |
+| `/home/ubuntu/cadence-refactor` | 17 Mio | Potentiellement archivable après autorisation | `release/cadence-clean-multibuffer-v1`, `09cdeb1`, propre ; contenu déjà repris dans le canonique |
+| `/home/ubuntu/cadence-stabilisation-v3` | 8,7 Mio | Ancienne référence, archivage conditionnel | `cadence/stabilisation-v3`, `2f51602`, propre ; worktree de `social-media-dashboard`, encore référencé par des scripts d’exploitation |
+| `/home/ubuntu/social-media-dashboard` | 2,5 Gio | Historique sauvegardé, encore utilisé | `stabilisation/v2-contre-audit`, `b26560c` ; 52 changements suivis + 52 fichiers non suivis en mode détaillé ; sessions et dépendances d’outils encore présentes |
+| `/home/ubuntu/cadence-supabase-test` | 48 Kio | Test en usage | Configuration CLI, pile Supabase locale active sur 54321/54322 ; ne pas déplacer |
+| `/home/ubuntu/cadence-backups-test` | 440 Kio | Sauvegarde de test | Archive de restauration historique ; préserver |
+| `/home/ubuntu/cadence-recovery-backups` | 254 Mio avant cette mission | Sauvegarde | Sauvegardes initiales et nouveaux états récupérables ; conserver |
+| `/home/ubuntu/.cadence-audit-v2-private` | 246 Mio | Audit historique potentiellement archivable | Copie sans dépôt actif : 177 fichiers src/tests/migrations correspondent à des blobs Git déjà préservés ; 3 196 empreintes de sauvegarde reconfirmées |
+| `/home/ubuntu/.cadence-v3-backups` | 536 Kio | Sauvegarde de test | Sauvegardée à nouveau ; ne pas confondre avec une sauvegarde actuelle de production |
+| `/home/ubuntu/.cadence-test-stack` | 4 Kio | Test, vide | Aucun état de pile présent ; aucune suppression effectuée |
+
+Les quatre implantations Git initiales représentent trois magasins indépendants ; le canonique en ajoute un quatrième. `cadence-stabilisation-v3` partage le magasin de `social-media-dashboard`. Aucun dépôt Git supplémentaire n’a été découvert dans les copies examinées. Le sous-dossier `audit-git` de l’audit privé contient des diffs et rapports, pas un dépôt bare.
+
+### Comparaison réelle et choix
+
+- **Historique et code ne sont pas équivalents.** Les anciens correctifs ont été repris dans `826c171` depuis la branche officielle, avec les tests dans `981d308`, puis la documentation dans `2f51602`. Plusieurs commits des branches historiques ne sont donc pas ancêtres de HEAD, bien que leurs fonctions et migrations soient reprises. Une fusion globale réintroduirait des versions obsolètes.
+- Tous les fichiers de migrations présents dans les branches candidates ont le même blob que leur homologue canonique. Les migrations 0001 à 0013 restent intactes ; aucune migration ajoutée, supprimée ou appliquée. Le schéma distant n’a pas été interrogé.
+- Les 104 fichiers modifiés/non suivis détaillés du checkout historique donnent **87 correspondances exactes avec `2f51602` et 17 documents uniques**. Face à `c0af3a0` : 59 identiques, 28 anciennes versions déjà commitées, 17 documents. Aucun correctif applicatif inédit à importer. Les documents uniques restent dans le dossier d’origine et sa sauvegarde privée.
+- Les fichiers exclusivement absents des anciennes variantes sont des écrans Studio volontairement retirés, deux parcours E2E conservés dans `tests/legacy-e2e`, d’anciens rapports ou du squelette UI retiré lors de `07b1ced`. Rien n’est réintroduit par supposition.
+- La copie candidate `rc-4e132cb` est exactement son arbre Git : 307 fichiers identiques, zéro différence. Elle précède le cycle de vie des connexions de `09cdeb1`.
+- La copie d’audit privée ne fournit aucun blob src/tests/migrations nouveau : ses 177 fichiers utiles sont déjà dans l’historique consolidé. Ses neuf migrations sont identiques. Les contre-tests indépendants restent protégés par leur manifeste.
+- `main` de la copie de production pointe sur `2bbd79a`, un merge de publication dont **l’arbre est exactement celui de `2f51602`** ; aucun ajout fonctionnel. Ce commit manquait comme objet dans le canonique, il est désormais conservé par une référence d’archive.
+- Contrôle distant **en lecture seule** par `git ls-remote --heads` : GitHub annonce seulement `main=2bbd79a` et `cadence/stabilisation-v3=2f51602`. Les références `origin/*` des anciens dossiers ne prouvent pas leur présence actuelle sur GitHub. Les huit commits de la ligne canonique depuis `2f51602` restent locaux au regard de ces branches distantes. Aucun fetch réseau, push ou modification du dépôt distant.
+
+**Décision : conserver le code de `c0af3a0`. Zéro fonctionnalité récupérée ou développée pendant cette consolidation, zéro cherry-pick applicatif, zéro dépendance retirée.** Le gain est la préservation explicite et vérifiable de l’historique, la référence commune et une nouvelle qualification locale. Les fonctionnalités multi-comptes, revocation, isolation, décisions, commentaires, versions et consultation étaient déjà présentes. Le Studio et les calendriers éditables restent retirés.
+
+### Historique consolidé sans fusion incompatible
+
+- Branche de travail créée depuis l’arbre propre : `chore/cadence-consolidation-2026-10-11`. L’ancienne branche et tous les anciens checkouts restent intacts.
+- **16 tags d’archive** sous `archive/consolidation-2026-10-11/` : deux références du canonique avant travaux, dix branches historiques, trois branches refactor et la branche main de la copie de production. Importés uniquement depuis les bundles locaux vérifiés, sans copie massive de fichiers.
+- **52 commits accessibles** après récupération des références, dont **34 hors de l’ascendance active** (33 historiques et le merge officiel). Ces chiffres précèdent le nouveau commit documentaire. Chaque commit accessible depuis une référence des trois sources indépendantes est accessible depuis le canonique ; zéro manquant.
+- `git fsck --full --no-reflogs --unreachable` : aucun commit inaccessible, aucune corruption sur les quatre magasins examinés. Les anciens historiques restent consultables sans les fusionner.
+
+Commandes de consultation :
+
+```bash
+cd /home/ubuntu/cadence
+git status --short --branch
+git for-each-ref --format='%(refname:short) %(objectname:short)' refs/tags/archive/consolidation-2026-10-11
+git log --all --graph --oneline --decorate
+```
+
+Les tags préservent les anciens commits dans un clone/bundle complet. Les fichiers non commités, configurations privées et rapports internes restent dans les archives privées, jamais ajoutés à Git. La conservation d’anciens dossiers n’en fait pas des bases de développement recommandées.
+
+### Sauvegardes nouvelles et restauration
+
+Racine privée : **`/home/ubuntu/cadence-recovery-backups/consolidation-20261011T103558Z`**, permissions 0700 ; fichiers créés sous umask 077. Elle n’est sous aucun bind mount Docker inventorié.
+
+- Dix archives nouvelles : six sources de code (canonique, historique, refactor, worktree, build actif, build candidat) et quatre états locaux de test/sauvegarde. Les dix archives ont été relues ; chaque fichier a été comparé à son empreinte. L’archive du dossier vide est volontairement vide.
+- Cinq bundles initiaux `--all` vérifiés, dont ceux du canonique et du build de production. Archives de travail et bundles sont complémentaires ; les fichiers ignorés utiles sont conservés, dont les configurations locales et anciennes sessions synthétiques, dans cette racine privée uniquement.
+- `node_modules`, caches Next, artefacts de compilation, rapports Playwright et répertoires `.git` sont exclus des nouvelles archives de travail ; historique préservé séparément par bundle. Les captures et documents historiques sont conservés.
+- Sauvegarde précédente : `/home/ubuntu/cadence-recovery-backups/20261011T093314Z` ; **135/135 empreintes conformes, quatre bundles vérifiés**. Les 3 196 fichiers hashés de la copie privée d’audit sont toujours conformes à cette sauvegarde.
+- Le bundle final `cadence-consolidation-final.bundle` et sa restauration de contrôle, après commit, sont consignés dans `final-verification.json`. Les empreintes finales sont dans `SHA256SUMS`.
+
+Restauration de l’historique dans un **nouveau chemin inexistant**, jamais dans un service actif :
+
+```bash
+umask 077
+git clone --mirror /home/ubuntu/cadence-recovery-backups/consolidation-20261011T103558Z/cadence-consolidation-final.bundle /home/ubuntu/cadence-consolidation-restauration.git
+git --git-dir=/home/ubuntu/cadence-consolidation-restauration.git fsck --full
+```
+
+Pour les fichiers non commités : extraire l’archive pertinente dans un autre dossier privé neuf, comparer les manifests, puis sélectionner les seuls fichiers nécessaires. Ne pas recopier en bloc l’ancien Studio ni activer d’anciennes configurations. Aucune DB, aucun volume actif, aucun service distant n’a été sauvegardé par cette consolidation : les archives Git/configurations ne remplacent pas un test de restauration des données de production.
+
+### Services et chemins à préserver
+
+- Caddy chargé : `sociallr.duckdns.org` → `cadence-prod-web:3000` ; chemins Auth/REST/Storage → `cadence-prod-gw:8000`. Ports hôte 80/443 ; passerelle accessible aussi sur `127.0.0.1:18000`. Configuration montée depuis `/home/ubuntu/stack/caddy/Caddyfile`.
+- Production : image `cadence-web:v1-2f51602`, ID `sha256:affb99671211c72265ee9f4aff16e7e7c7c402721cf32d108f60134f03f7027a` ; aucun montage de source dans web. Passerelle montée en lecture seule depuis `cadence-prod/tools/scripts/lib/gateway.mjs`. Volumes DB et Storage distincts, inchangés.
+- Timers utilisateur `cadence-backup.timer` et `cadence-monitor.timer` actifs, avec scripts dans `cadence-prod/bin`. Leur présence n’atteste pas d’un backup récent réussi. Le Compose de la pile Caddy/n8n est `/home/ubuntu/stack/docker-compose.yml`. Le Compose racine de chaque dépôt est un modèle applicatif ; aucune pile nouvelle n’a été lancée depuis ces fichiers.
+- `cadence-prod/node_modules`, `cadence-prod/tools/node_modules`, `cadence-refactor/node_modules` et `cadence-stabilisation-v3/node_modules` pointent vers `social-media-dashboard/node_modules`. Le canonique possède ses propres dépendances, sans ce lien.
+- Les sessions tmux `cadence-stabilisation` et `codex-nuit`, ainsi que plusieurs processus d’agent, conservent leur cwd dans `social-media-dashboard`. Aucune session déplacée, arrêtée ou reconfigurée. Aucun fichier PM2 de dump trouvé aux emplacements usuels.
+- Une configuration Supabase distante existe dans l’ancien environnement local, inventoriée sans valeur secrète et non utilisée. La pile Supabase CLI locale existante reste active et intacte ; les nouvelles suites utilisent deux piles indépendantes, nouveaux secrets et ports locaux.
+- n8n et sa base restent dans la pile `stack`, sans intervention. Les références applicatives restantes et templates demeurent tels quels ; aucun workflow réel inspecté ni modifié.
+
+### Tests réexécutés et limites
+
+| Suite | Résultat nouveau | Comparaison / portée |
+| --- | --- | --- |
+| Lint | Réussi | Node 24.21.0 |
+| Build Next isolé | Réussi | `.next-test`, Buffer simulé, aucune configuration réelle |
+| TypeScript | Réussi | Types Next régénérés |
+| Calendrier navigateur | Réussi | Aucun réseau ; navigation, filtres, lecture seule et largeurs |
+| Unitaires | 430/456 ; 26 échecs | Mêmes scénarios en échec qu’avant consolidation |
+| SQL/RLS PGlite | 208/210 ; 2 échecs | Base en mémoire ; fixtures de modes incompatibles |
+| Total unitaires + SQL | 638/666 ; 28 échecs | Liste d’échecs identique au JSON antérieur |
+| Intégration PostgreSQL/Auth/REST/Storage | 76/83 ; 7 échecs | Database 38/38, multi-comptes 26/26, V3 12/19 ; mêmes échecs |
+| E2E Chromium | 62/62 ; zéro échec/ignoré | Deuxième pile neuve ; Buffer simulé |
+| Intégrité des contre-tests | 8/8 | Aucun test ni fixture modifié |
+| Recherche de secrets consolidée | Aucun motif détecté | 315 fichiers de travail et 764 blobs historiques ; contrôle par motifs, sans valeur affichée |
+
+Les 28 échecs U/S sont ceux déjà expliqués dans PROJECT_STATUS.md : mocks Studio incomplets (23), configuration sync (2), ancien message Provider (1), fixtures SQL réel/mock (2). Les sept échecs natifs V3 restent liés au mock Studio incomplet. Ils ne sont ni exclus, ni corrigés artificiellement, ni assimilés à des réussites. Les assertions des contre-tests indépendants restent intactes.
+
+Les suites natives et E2E vérifient localement les sessions A/B, RLS, décisions et commentaires croisés, retrait d’accès, version/empreinte périmée, collision d’identifiants, révocation/rotation, quotas séparés et concurrence. Les médias externes Buffer privés, les deux comptes réels, le schéma distant et la restauration de production restent **NON VÉRIFIÉS**. Les appels Buffer sont remplacés par des fournisseurs synthétiques ; aucun succès local ne certifie l’API réelle. Les tests unitaires de verrouillage utilisent des commandes système simulées, pas le pare-feu réel.
+
+Les logs/JSON et runners privés sont sous `/home/ubuntu/cadence-recovery-backups/consolidation-20261011T103558Z/validation`. Deux nouvelles piles de quatre conteneurs ont été arrêtées en conservant conteneurs, volumes, réseaux et fichiers ; seules leurs passerelles locales et leur serveur navigateur ont été terminés. Les 43 conteneurs préexistants sont inchangés lors du contrôle par ID/image/état/montages, consigné dans `final-verification.json`. Les fichiers de travail des cinq anciennes sources contrôlées sont identiques à leurs manifests.
+
+### Liste précise d’archivage après autorisation
+
+**Aucun dossier déplacé ou supprimé.**
+
+| Dossier | Archivage envisageable | Conditions |
+| --- | --- | --- |
+| `/home/ubuntu/cadence-refactor` | Oui, après autorisation | Aucun conteneur/processus inventorié ne l’utilise ; historique, rapports ignorés et fichiers de travail sauvegardés ; mettre à jour les liens documentaires lors de l’archivage |
+| `/home/ubuntu/.cadence-audit-v2-private` | Oui, après autorisation | Copie de laboratoire, aucun montage/cwd actif inventorié ; conserver sa sauvegarde vérifiée et ses preuves |
+| `/home/ubuntu/cadence-stabilisation-v3` | Conditionnel, pas maintenant | Réviser les références des scripts d’exploitation et le lien worktree ; ne pas déplacer ce worktree comme un dépôt autonome |
+| `/home/ubuntu/social-media-dashboard` | Conditionnel, pas maintenant | Sortir les agents/tmux de l’ancien dossier et rendre l’outillage production indépendant de ses node_modules, sous une autre autorisation ; préserver aussi le worktree associé |
+| `/home/ubuntu/cadence-supabase-test` | Non tant que la pile est utilisée | Configuration d’un environnement local encore actif |
+| `/home/ubuntu/cadence-prod` et ses builds | Exclu de cette consolidation | Production et retour arrière ; ne pas archiver dans ce cadre |
+| Dossiers de sauvegardes, dont `.cadence-v3-backups` et `cadence-backups-test` | Conserver | Classer et indexer, sans effacer les chemins de restauration |
+
+### Verdict et suite
+
+**GO pour utiliser le dépôt canonique consolidé ; NOT READY pour la production.** Aucun invariant critique n’est déclaré validé par simple simulation. Le flux manuel reste partiellement couplé à la programmation, les suites héritées ne sont pas vertes, l’intégration réelle et la restauration actuelle ne sont pas qualifiées. Il n’y a pas de nouvelle fonctionnalité ni de régression applicative introduite : l’arbre src/tests/migrations/lockfile est identique à `c0af3a0`.
+
+Prochaines actions : (1) réparer les pilotes/mocks et fixtures sans affaiblir les assertions ; (2) terminer la validation locale sans écriture Buffer et la règle des dates ; (3) qualifier les lectures réelles des deux comptes dans un cadre autorisé ; (4) préparer la compatibilité schéma/image et une restauration isolée ; (5) décider séparément de l’archivage des deux dossiers sans usage actif, puis seulement des dossiers encore dépendants.

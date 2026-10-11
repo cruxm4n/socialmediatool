@@ -1,6 +1,6 @@
 # Architecture Cadence
 
-Référence : récupération du 11 octobre 2026, base `09cdeb1`, branche de nettoyage. Voir [PROJECT_STATUS.md](PROJECT_STATUS.md) pour les preuves et [CLEANUP_REPORT.md](CLEANUP_REPORT.md) pour les autres versions.
+Référence : récupération du 11 octobre 2026, base `09cdeb1`, branche de nettoyage initiale. La branche de travail courante est `chore/cadence-consolidation-2026-10-11`, consolidée sans changement applicatif depuis `c0af3a0`. Voir [PROJECT_STATUS.md](PROJECT_STATUS.md) pour les preuves et [CLEANUP_REPORT.md](CLEANUP_REPORT.md) pour les autres versions.
 
 ## Architecture constatée et architecture cible
 

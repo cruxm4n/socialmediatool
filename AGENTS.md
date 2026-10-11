@@ -1,6 +1,6 @@
 # Cadence — référence commune
 
-Répertoire : `/home/ubuntu/cadence`. Branche : `chore/cadence-recovery-cleanup-2026-10-11`. Lire les six documents racine référencés dans README.md. Ne pas confondre ce dépôt de développement avec la production `2f51602` ni les anciens checkouts.
+Répertoire : `/home/ubuntu/cadence`. Branche : `chore/cadence-consolidation-2026-10-11`. Lire les six documents racine référencés dans README.md, dont la section de consolidation de CLEANUP_REPORT.md. Les tags archive/consolidation-2026-10-11/* préservent les variantes historiques ; ne pas les fusionner globalement. Ne pas confondre ce dépôt de développement avec la production `2f51602` ni les anciens checkouts.
 
 La cible abandonne le Studio et privilégie Buffer → décision locale → programmation humaine. Le backend historique conserve des écritures Buffer : ne pas les activer. Préserver les migrations, données, fixtures et contre-tests indépendants. Documenter les échecs hérités sans affaiblir leurs assertions pour obtenir du vert.
 

@@ -1,6 +1,6 @@
 # Prochaines étapes — Cadence simplifié
 
-Référence commune : `/home/ubuntu/cadence`, branche `chore/cadence-recovery-cleanup-2026-10-11`. Ne pas reprendre dans les anciennes sessions sans changer explicitement de dossier. La récupération et le retrait de l'interface Studio sont réalisés ; les tâches ci-dessous ne sont pas présentées comme terminées.
+Référence commune : `/home/ubuntu/cadence`, branche `chore/cadence-consolidation-2026-10-11`. Ne pas reprendre dans les anciennes sessions sans changer explicitement de dossier. La récupération et le retrait de l'interface Studio sont réalisés ; les tâches ci-dessous ne sont pas présentées comme terminées.
 
 ## Les cinq prochaines actions
 

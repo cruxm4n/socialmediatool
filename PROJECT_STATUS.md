@@ -4,7 +4,7 @@
 
 **NOT READY pour le pilote réel du nouveau périmètre. GO AVEC PRÉREQUIS pour poursuivre sur la référence récupérée.** Le portail et une grande partie de sa sécurité sont développés et testables localement. Le flux manuel préféré n'est pas encore le comportement complet du backend. La production est une ancienne version en simulation.
 
-Référence : `/home/ubuntu/cadence`, branche `chore/cadence-recovery-cleanup-2026-10-11`, base `09cdeb1974f13301790d17fa2ab6a7150f6e8fab`. Production constatée : image `cadence-web:v1-2f51602`. Les commits locaux de nettoyage ne sont pas déployés.
+Référence : `/home/ubuntu/cadence`, branche `chore/cadence-consolidation-2026-10-11`, base `09cdeb1974f13301790d17fa2ab6a7150f6e8fab`. Production constatée : image `cadence-web:v1-2f51602`. Les commits locaux de nettoyage ne sont pas déployés.
 
 ## Estimation structurée du nouveau périmètre
 
@@ -109,3 +109,18 @@ Résultat retenu sur deux piles neuves distinctes :
 - **Lint, types, build, calendrier navigateur et empreintes indépendantes : réussis.**
 
 Les quatre passages E2E successifs et la répétition d'intégration restent documentés, y compris leurs échecs intermédiaires. Le dernier passage E2E a été exécuté après correction de tous les tests concernés, sans édition de ceux-ci pendant la suite. Les services créés pour ces vérifications ont été arrêtés en conservant conteneurs, volumes et données ; aucun service préexistant n'a été arrêté. La simulation n'est pas une validation en production.
+
+## Nouvelle vérification de consolidation
+
+Base applicative inchangée : `c0af3a0`. La nouvelle branche `chore/cadence-consolidation-2026-10-11` conserve le même code, les mêmes migrations, dépendances et assertions. Les références d’archive préservent l’historique divergent sans le fusionner. Aucun gain fonctionnel ni hausse des pourcentages n’est revendiqué.
+
+| Vérification réexécutée | Résultat | Portée |
+| --- | --- | --- |
+| Lint, build isolé, TypeScript | Réussis | Node 24.21.0, configuration propre |
+| Calendrier navigateur sans réseau | Réussi | Lecture seule, navigation, filtres, mobile |
+| Unitaires + SQL/RLS PGlite | 638/666, 28 échecs | Ensemble des échecs identique au passage antérieur, pas seulement le nombre |
+| Intégration native | 76/83, 7 échecs | Database 38/38 ; multi-comptes 26/26 ; V3 12/19 ; mêmes échecs |
+| E2E Chromium | 62/62, zéro échec ou ignoré | Deuxième pile neuve, Buffer simulé |
+| Empreintes indépendantes | 8/8 conformes | Aucun test modifié |
+
+Deux nouvelles piles exclusivement locales ont été créées puis arrêtées, avec conteneurs, volumes et réseaux conservés. Supabase distant, Buffer réel, n8n et production n’ont pas été sollicités par ces suites. Les limites et prérequis précédents restent applicables : **NOT READY pour la production**. Preuves privées : `/home/ubuntu/cadence-recovery-backups/consolidation-20261011T103558Z/validation`.
