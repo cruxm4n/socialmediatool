@@ -74,7 +74,7 @@ export function ClientOverview({ organization, posts, now, profile }: SpaceProps
           <h2 id="pending-title" className="mb-3 font-display text-xl font-medium">
             À valider
           </h2>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {pending.slice(0, 6).map((post) => (
               <PostCard key={post.id} post={post} href={`${basePath}/publications/${post.id}`} />
             ))}
@@ -131,7 +131,7 @@ export function ApprovalsView({ organization, posts, now }: SpaceProps) {
   const basePath = basePathOf(organization);
   const router = useRouter();
   const pending = posts.filter(canDecide);
-  // Seules les publications dont la date est encore à venir peuvent être approuvées (même règle que la base).
+  // Une publication dont la date est déjà dépassée ne peut pas être approuvée (même règle que la base).
   const approvable = pending.filter((post) => hasUsableDueDate(post, now));
   const [selection, setSelection] = useState<string[]>([]);
   const [confirming, setConfirming] = useState(false);
@@ -191,13 +191,13 @@ export function ApprovalsView({ organization, posts, now }: SpaceProps) {
               </Button>
             </div>
           )}
-          <ul className="grid gap-4">
+          <ul className="grid grid-cols-1 gap-4">
             {pending.map((post) => {
               const canApprove = approvable.includes(post);
               return (
                 <li key={post.id} className="flex items-stretch gap-3">
                   {approvable.length > 1 && (
-                    <label className={cn("flex w-6 shrink-0 items-center justify-center", canApprove ? "cursor-pointer" : "opacity-40")} title={canApprove ? undefined : "Date absente ou dépassée : à corriger par votre agence."}>
+                    <label className={cn("flex w-6 shrink-0 items-center justify-center", canApprove ? "cursor-pointer" : "opacity-40")} title={canApprove ? undefined : "Date dépassée : à corriger par votre agence."}>
                       <input
                         type="checkbox"
                         className="size-4 accent-[var(--brand)]"
@@ -248,14 +248,14 @@ export function ApprovalsView({ organization, posts, now }: SpaceProps) {
         onConfirm={approveSelection}
       >
         <p>Vous validez chacune telle qu&apos;elle est affichée ici ; votre agence les programmera ensuite :</p>
-        <ul className="mt-2 grid list-disc gap-1 pl-5">
+        <ul className="mt-2 grid grid-cols-1 list-disc gap-1 pl-5">
           {selected.map((post) => (
             <li key={post.id}>
               {NETWORK_LABELS[post.network]} · {post.dueAt ? formatDateTime(post.dueAt, post.timezone) : ""} — {post.title}
             </li>
           ))}
         </ul>
-        <p className="mt-2">Si l&apos;une d&apos;elles a été modifiée depuis l&apos;affichage de cette page, elle ne sera pas approuvée et vous sera représentée.</p>
+        <p className="mt-2">Si l&apos;une d&apos;elles a été modifiée depuis l&apos;affichage de cette page, elle ne sera pas approuvée : vous la retrouverez dans la liste, à valider de nouveau.</p>
       </ConfirmDialog>
     </div>
   );
@@ -288,9 +288,9 @@ export function ClientPostsView({ organization, posts }: SpaceProps) {
         ))}
       </div>
       {filtered.length === 0 ? (
-        <EmptyState icon={FileSearch} title="Aucune publication" description="Aucune proposition ne correspond à ce filtre." />
+        <EmptyState icon={FileSearch} title="Aucune publication" description={status === "all" ? "Votre agence n'a encore proposé aucune publication." : "Aucune proposition ne correspond à ce filtre."} />
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((post) => (
             <PostCard key={post.id} post={post} href={`${basePath}/publications/${post.id}`} />
           ))}

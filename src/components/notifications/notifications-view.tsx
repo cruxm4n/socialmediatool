@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import Link from "next/link";
-import { BellOff, FlaskConical, Send } from "lucide-react";
+import { BellOff, MailX, Send } from "lucide-react";
 import { toast } from "sonner";
 
 import { EmptyState, PageHeader } from "@/components/shared/page-header";
@@ -74,6 +74,7 @@ export function NotificationsView({
   preferences,
   rows,
   delivery,
+  emailEnabled,
 }: {
   audience: "admin" | "client";
   preferences: NotificationPreferences;
@@ -81,6 +82,8 @@ export function NotificationsView({
   rows: NotificationRow[] | null;
   /** Mode de remise, affiché à l'administrateur uniquement. */
   delivery?: "simulate" | "webhook";
+  /** Les e-mails partent-ils réellement de ce serveur ? Sinon, l'écran le dit au lieu de promettre un envoi. */
+  emailEnabled: boolean;
 }) {
   return (
     <div className="grid animate-rise grid-cols-1 gap-6">
@@ -89,7 +92,9 @@ export function NotificationsView({
         description={
           audience === "admin"
             ? "Les e-mails envoyés aux clients et à vous-même, et ce dont vous souhaitez être prévenu."
-            : "Choisissez d'être prévenu par e-mail quand une publication attend votre validation."
+            : emailEnabled
+              ? "Choisissez d'être prévenu par e-mail quand une publication attend votre validation."
+              : "Les alertes de votre agence sont listées ici. L'envoi par e-mail n'est pas encore activé."
         }
       />
 
@@ -102,12 +107,12 @@ export function NotificationsView({
               data-testid="notification-mode"
               className={cn("flex items-start gap-3 rounded-2xl px-4 py-3 text-sm", delivery === "simulate" ? "bg-tone-neutral-soft text-tone-neutral" : "bg-tone-green-soft text-tone-green")}
             >
-              {delivery === "simulate" ? <FlaskConical className="mt-0.5 size-4 shrink-0" /> : <Send className="mt-0.5 size-4 shrink-0" />}
+              {delivery === "simulate" ? <MailX className="mt-0.5 size-4 shrink-0" /> : <Send className="mt-0.5 size-4 shrink-0" />}
               <span>
-                <span className="font-semibold">{delivery === "simulate" ? "Mode simulation." : "Envoi réel activé."}</span>{" "}
+                <span className="font-semibold">{delivery === "simulate" ? "Envoi d'e-mails désactivé." : "Envoi d'e-mails activé."}</span>{" "}
                 {delivery === "simulate"
-                  ? "Aucun e-mail ne part : chaque notification est enregistrée ci-dessous comme « simulée », pour voir ce qui serait envoyé."
-                  : "Chaque message est remis au webhook configuré, qui expédie l'e-mail."}
+                  ? "Aucun e-mail ne part de ce serveur : chaque notification est seulement enregistrée ci-dessous. Vos clients ne sont pas prévenus par e-mail."
+                  : "Chaque message est remis au service d'envoi configuré sur le serveur, qui expédie l'e-mail."}
               </span>
             </p>
           )}

@@ -95,8 +95,8 @@ test.describe("espace administrateur", () => {
     await postLink(page, "coldbrew-ig").click();
     await expect(page).toHaveURL(DETAIL_URL);
     await expect(page.locator('[data-status="draft"]')).toBeVisible();
-    await expect(page.getByText("ajoutez le tag « À valider » à ce brouillon dans Buffer")).toBeVisible();
-    await expect(page.getByText("Aperçu simulé")).toBeVisible();
+    await expect(page.getByText("ajoutez le tag « À valider » ou « À vérifier » à ce brouillon dans Buffer")).toBeVisible();
+    await expect(page.getByText("Aperçu indicatif")).toBeVisible();
   });
 
   test("signale une publication programmée dans Buffer sans validation et une erreur Buffer", async ({ page }) => {

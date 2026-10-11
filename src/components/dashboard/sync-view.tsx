@@ -106,7 +106,7 @@ export function SyncView({
                 ? `${status.urgent.pendingCancellations} publication${status.urgent.pendingCancellations > 1 ? "s" : ""} programmée${status.urgent.pendingCancellations > 1 ? "s" : ""} dans Buffer sans accord valable — à repasser en brouillon dans Buffer`
                 : `${status.urgent.staleClaims} programmation${status.urgent.staleClaims > 1 ? "s" : ""} en cours depuis longtemps`}
             </p>
-            <ul className="mt-2 grid gap-1 text-foreground">
+            <ul className="mt-2 grid grid-cols-1 gap-1 text-foreground">
               {status.urgent.pendingCancellations > 0 && (
                 <>
                   <li>En attente {status.urgent.oldestSince ? formatRelative(status.urgent.oldestSince, now) : "depuis un instant"}.</li>
@@ -127,7 +127,7 @@ export function SyncView({
           </div>
         )}
         {status.anomalies.length > 0 && (
-          <ul className="mt-4 grid gap-1.5 border-t pt-4" data-testid="sync-anomalies">
+          <ul className="mt-4 grid grid-cols-1 gap-1.5 border-t pt-4" data-testid="sync-anomalies">
             {status.anomalies.map((anomaly) => (
               <li key={anomaly} className="flex items-start gap-2 text-sm text-tone-amber">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
@@ -145,7 +145,7 @@ export function SyncView({
         )}
       </section>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
         <div className="rounded-2xl border bg-card p-5">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Source</p>
           <p className="mt-2 font-semibold">{mode === "real" ? "Buffer (API réelle)" : "Buffer simulé"}</p>
@@ -155,13 +155,13 @@ export function SyncView({
         </div>
         <div className="rounded-2xl border bg-card p-5">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Soumission au client</p>
-          <p className="mt-2 font-semibold">Tag Buffer « {reviewTag} »</p>
+          <p className="mt-2 font-semibold">Tag Buffer {reviewTag}</p>
           <p className="mt-1 text-sm text-muted-foreground">Un brouillon portant ce tag est proposé au client du canal concerné.</p>
         </div>
         <div className="rounded-2xl border bg-card p-5">
           <p className="text-xs font-medium tracking-wide text-muted-foreground uppercase">Quota de requêtes Buffer restant</p>
           {lastQuota ? (
-            <ul className="mt-2 grid gap-0.5 text-sm">
+            <ul className="mt-2 grid grid-cols-1 gap-0.5 text-sm">
               {Object.entries(lastQuota).map(([window, remaining]) => (
                 <li key={window} className="flex justify-between gap-3">
                   <span className="text-muted-foreground">{QUOTA_LABELS[window] ?? window}</span>

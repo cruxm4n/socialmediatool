@@ -102,7 +102,7 @@ export function EditorialCalendar({
   const undated = posts.filter((post) => !post.dueAt && !hiddenNetworks.includes(post.network) && (status === "all" || post.status === status)).length;
 
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-3">
         <div className="flex items-center gap-1">
           <Button variant="outline" size="icon-lg" aria-label="Période précédente" onClick={() => move(-1)}>
@@ -227,7 +227,7 @@ export function EditorialCalendar({
                 Aucune publication ce jour-là.
               </p>
             ) : (
-              <div className="grid gap-2">
+              <div className="grid grid-cols-1 gap-2">
                 {(eventsByDay.get(selectedDay) ?? []).map((event) => (
                   <EventCard key={event.post.id} event={event} showOrg={showOrg} compact />
                 ))}
@@ -236,7 +236,7 @@ export function EditorialCalendar({
           </section>
         </>
       ) : (
-        <div className="grid gap-3 md:grid-cols-7 md:gap-2">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-7 md:gap-2">
           {weekDays(cursor).map((day) => (
             <WeekColumn key={day} day={day} past={day < today}>
               <div className="flex items-center gap-2 px-1 pt-0.5 md:flex-col md:items-start md:gap-0.5">
@@ -261,12 +261,12 @@ export function EditorialCalendar({
       {visibleCount === 0 && (
         <p className="flex items-center justify-center gap-2 rounded-xl border border-dashed px-4 py-5 text-sm text-muted-foreground">
           <CalendarX2 className="size-4" />
-          Aucune publication sur cette période avec les filtres actuels.
+          {status === "all" && hiddenNetworks.length === 0 ? "Aucune publication sur cette période." : "Aucune publication sur cette période avec les filtres actuels."}
         </p>
       )}
       {undated > 0 && (
         <p className="text-xs text-muted-foreground">
-          {undated} publication{undated > 1 ? "s" : ""} sans date prévue dans Buffer n&apos;apparaî{undated > 1 ? "ssent" : "t"} pas dans le calendrier.
+          {undated} publication{undated > 1 ? "s" : ""} sans date prévue dans Buffer n&apos;appar{undated > 1 ? "aissent" : "aît"} pas dans le calendrier.
         </p>
       )}
     </div>
@@ -352,7 +352,7 @@ function MonthCell({
             </PopoverTrigger>
             <PopoverContent align="start" className="w-64 p-2">
               <p className="px-1 pb-2 text-xs font-semibold">{capitalize(formatDayLong(day))}</p>
-              <div className="grid gap-1">
+              <div className="grid grid-cols-1 gap-1">
                 {events.map((event) => (
                   <EventChip key={event.post.id} event={event} showOrg={showOrg} />
                 ))}

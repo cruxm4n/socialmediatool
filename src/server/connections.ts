@@ -41,7 +41,9 @@ export async function listProviderConnections(): Promise<ProviderConnection[] | 
   const { data, error } = await supabase.rpc("admin_provider_connections");
   if (error?.code === "PGRST202") return null;
   if (error) throw new Error(`Lecture impossible (connexions) : ${error.message}`);
-  return (data ?? []).map(toConnection);
+  const connections: ProviderConnection[] = (data ?? []).map(toConnection);
+  // Serveur relié au vrai Buffer : les comptes simulés (pile de test, démonstration) n'ont rien à y faire.
+  return env.bufferMode === "real" ? connections.filter((connection) => connection.mode === "real") : connections;
 }
 
 /** Journal des connexions : création, clé remplacée, révocation. Ne contient jamais de valeur secrète. */

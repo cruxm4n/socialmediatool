@@ -24,7 +24,7 @@ function summarize(result: Awaited<ReturnType<typeof syncNow>>): string {
   if (result.invalidated) parts.push(`${result.invalidated} validation${result.invalidated > 1 ? "s" : ""} annulée${result.invalidated > 1 ? "s" : ""}`);
   if (result.unscheduled) parts.push(`${result.unscheduled} retour${result.unscheduled > 1 ? "s" : ""} en brouillon constaté${result.unscheduled > 1 ? "s" : ""}`);
   if (result.removed) parts.push(`${result.removed} supprimé${result.removed > 1 ? "s" : ""}`);
-  if (result.unscheduleFailures) parts.push(`${result.unscheduleFailures} programmée${result.unscheduleFailures > 1 ? "s" : ""} sans accord valable`);
+  if (result.unscheduleFailures) parts.push(`${result.unscheduleFailures} publication${result.unscheduleFailures > 1 ? "s" : ""} programmée${result.unscheduleFailures > 1 ? "s" : ""} sans accord valable`);
   return parts.join(" · ");
 }
 

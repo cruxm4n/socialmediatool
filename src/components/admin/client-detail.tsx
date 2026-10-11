@@ -99,9 +99,9 @@ function MembersPanel({ organization, users, candidates, emails }: { organizatio
           </ul>
         )}
 
-        <div className="grid gap-4 border-t bg-muted/40 px-4 py-4">
+        <div className="grid grid-cols-1 gap-4 border-t bg-muted/40 px-4 py-4">
           {candidates.length > 0 && (
-            <div className="grid gap-1.5">
+            <div className="grid grid-cols-1 gap-1.5">
               <Label htmlFor="member-existing">Associer un utilisateur déjà connu</Label>
               <div className="flex flex-wrap gap-2">
                 <Select value={existing} onValueChange={setExisting}>
@@ -124,7 +124,7 @@ function MembersPanel({ organization, users, candidates, emails }: { organizatio
             </div>
           )}
 
-          <form onSubmit={addByEmail} className="grid gap-2">
+          <form onSubmit={addByEmail} className="grid grid-cols-1 gap-2">
             <Label htmlFor="member-email">Donner accès à un nouveau compte</Label>
             <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
               <Input id="member-email" type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="adresse@exemple.fr" required className="h-9 bg-card sm:col-span-2" />
@@ -273,7 +273,7 @@ export function ClientDetail({
               </ul>
             )}
             {!archived && (
-              <div className="grid gap-1.5 border-t bg-muted/40 px-4 py-4">
+              <div className="grid grid-cols-1 gap-1.5 border-t bg-muted/40 px-4 py-4">
                 <Label htmlFor="channel-add">Attribuer un canal libre</Label>
                 {freeChannels.length === 0 ? (
                   <p className="text-xs text-muted-foreground">Tous les canaux Buffer sont déjà attribués. Pour en transférer un, utilisez la liste des canaux de la page Clients.</p>

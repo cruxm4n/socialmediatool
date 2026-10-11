@@ -49,7 +49,7 @@ export function ClientFormDialog({ organization, open, onOpenChange }: { organiz
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
-        <form onSubmit={submit} className="grid gap-4">
+        <form onSubmit={submit} className="grid grid-cols-1 gap-4">
           <DialogHeader>
             <DialogTitle>{organization ? "Modifier le client" : "Nouveau client"}</DialogTitle>
             <DialogDescription>
@@ -59,7 +59,7 @@ export function ClientFormDialog({ organization, open, onOpenChange }: { organiz
 
           <div className="flex items-center gap-3">
             <OrgAvatar organization={{ name, color, initials: initialsFor(name) || "?" }} size="lg" />
-            <div className="grid min-w-0 flex-1 gap-1.5">
+            <div className="grid grid-cols-1 min-w-0 flex-1 gap-1.5">
               <Label htmlFor="client-name">Nom</Label>
               <Input id="client-name" value={name} onChange={(event) => setName(event.target.value)} maxLength={80} required autoFocus />
             </div>
@@ -70,12 +70,12 @@ export function ClientFormDialog({ organization, open, onOpenChange }: { organiz
             </p>
           )}
 
-          <div className="grid gap-1.5">
+          <div className="grid grid-cols-1 gap-1.5">
             <Label htmlFor="client-sector">Secteur d&apos;activité</Label>
             <Input id="client-sector" value={sector} onChange={(event) => setSector(event.target.value)} maxLength={80} placeholder="Facultatif" />
           </div>
 
-          <div className="grid gap-1.5">
+          <div className="grid grid-cols-1 gap-1.5">
             <Label htmlFor="client-timezone">Fuseau horaire d&apos;affichage</Label>
             <Select value={timezone} onValueChange={setTimezone}>
               <SelectTrigger id="client-timezone" className="w-full">
@@ -91,14 +91,14 @@ export function ClientFormDialog({ organization, open, onOpenChange }: { organiz
             </Select>
           </div>
 
-          <fieldset className="grid gap-1.5">
+          <fieldset className="grid grid-cols-1 gap-1.5">
             <legend className="mb-1.5 text-sm font-medium">Couleur</legend>
             <div className="flex flex-wrap gap-2">
-              {colors.map((item) => (
+              {colors.map((item, index) => (
                 <button
                   key={item}
                   type="button"
-                  aria-label={`Couleur ${item}`}
+                  aria-label={`Couleur ${index + 1}`}
                   aria-pressed={color === item}
                   onClick={() => setColor(item)}
                   style={{ backgroundColor: item }}

@@ -103,7 +103,7 @@ export function PostDetail({
 
       {!post.removedAt && post.status === "draft" && (
         <StatusBanner tone="neutral" icon={PenLine} title="Brouillon non soumis au client">
-          Pour le soumettre à validation, ajoutez le tag « {reviewTag} » à ce brouillon dans Buffer, puis synchronisez.
+          Pour le soumettre à validation, ajoutez le tag {reviewTag} à ce brouillon dans Buffer, puis synchronisez.
           {!post.organization && " Rattachez aussi son canal à un client (page Clients), sinon personne ne pourra le valider."}
         </StatusBanner>
       )}

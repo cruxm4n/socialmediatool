@@ -19,7 +19,7 @@ export function SectionError({ error, reset }: { error: Error & { digest?: strin
     <EmptyState
       icon={CloudOff}
       title="Cette page n'a pas pu être chargée"
-      description={`Le plus souvent, la base de données n'a pas répondu à temps. Rien n'est perdu : réessayez dans un instant.${error.digest ? ` Référence : ${error.digest}.` : ""}`}
+      description={`Le chargement n'a pas abouti. Réessayez dans un instant. Si le problème persiste, signalez-le.${error.digest ? ` Référence : ${error.digest}.` : ""}`}
       action={
         <Button size="lg" onClick={reset}>
           Réessayer

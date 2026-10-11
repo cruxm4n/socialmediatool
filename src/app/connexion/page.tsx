@@ -19,7 +19,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/connexion"
       <p className="mt-2 mb-8 text-sm text-muted-foreground">Accédez à vos publications et à leur validation.</p>
       {noOrganization && (
         <p role="alert" className="mb-4 rounded-lg bg-tone-amber-soft px-3 py-2 text-sm text-tone-amber">
-          Votre compte n&apos;est rattaché à aucune organisation. Contactez votre agence.
+          Votre compte n&apos;est encore rattaché à aucun espace client. Contactez votre agence.
         </p>
       )}
       <LoginForm />

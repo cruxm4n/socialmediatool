@@ -50,11 +50,11 @@ export function ConfirmDialog({
         <DialogHeader>
           <DialogTitle>{title}</DialogTitle>
           <DialogDescription asChild>
-            <div className="grid gap-2 text-sm text-muted-foreground">{children}</div>
+            <div className="grid grid-cols-1 gap-2 text-sm text-muted-foreground">{children}</div>
           </DialogDescription>
         </DialogHeader>
         {phrase && (
-          <div className="grid gap-1.5">
+          <div className="grid grid-cols-1 gap-1.5">
             <Label htmlFor="confirm-phrase">
               Pour confirmer, saisissez <span className="font-semibold text-foreground">{phrase}</span>
             </Label>

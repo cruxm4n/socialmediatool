@@ -47,13 +47,13 @@ export function CommentThread({
   };
 
   return (
-    <div className="grid gap-4">
+    <div className="grid grid-cols-1 gap-4">
       {comments.length === 0 ? (
         <p className="flex items-center gap-2 text-sm text-muted-foreground">
           <MessageSquare className="size-4" /> Aucun commentaire pour le moment.
         </p>
       ) : (
-        <ul className="grid gap-4">
+        <ul className="grid grid-cols-1 gap-4">
           {comments.map((comment) => {
             const author = profiles.find((profile) => profile.id === comment.authorId);
             return (
@@ -63,7 +63,7 @@ export function CommentThread({
                   <p className="flex flex-wrap items-baseline gap-x-2 text-sm">
                     <span className="font-medium">{author?.fullName ?? "Utilisateur"}</span>
                     <span className="text-xs text-muted-foreground">
-                      v{comment.version} · {formatDateTime(comment.createdAt, timezone)}
+                      version {comment.version} · {formatDateTime(comment.createdAt, timezone)}
                     </span>
                   </p>
                   <p
@@ -84,7 +84,7 @@ export function CommentThread({
         </ul>
       )}
 
-      <form onSubmit={submit} className="grid gap-2">
+      <form onSubmit={submit} className="grid grid-cols-1 gap-2">
         <label htmlFor={`comment-${postId}`} className="sr-only">
           Ajouter un commentaire
         </label>

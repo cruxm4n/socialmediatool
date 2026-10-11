@@ -4,6 +4,7 @@ import { NotificationsView } from "@/components/notifications/notifications-view
 import { requireClientSpace } from "@/server/auth";
 import { loadClientSpace } from "@/server/client-space";
 import { getNotificationPreferences, listNotifications } from "@/server/data";
+import { notificationMode } from "@/server/notifications";
 
 export const metadata: Metadata = { title: "Notifications" };
 
@@ -28,5 +29,5 @@ export default async function Page({ params }: PageProps<"/client/[org]/notifica
         href: titles.has(item.postId) ? `/client/${org}/publications/${item.postId}` : null,
         recipientName: null,
       })) ?? null;
-  return <NotificationsView audience="client" preferences={preferences} rows={rows} />;
+  return <NotificationsView audience="client" preferences={preferences} rows={rows} emailEnabled={notificationMode() === "webhook"} />;
 }

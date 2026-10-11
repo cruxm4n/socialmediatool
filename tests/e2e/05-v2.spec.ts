@@ -38,7 +38,7 @@ test.describe("administrateur", () => {
 
   test("les notifications sont en mode simulation et les préférences s'enregistrent", async ({ page }) => {
     await page.goto("/admin/notifications");
-    await expect(page.getByTestId("notification-mode")).toContainText("Mode simulation");
+    await expect(page.getByTestId("notification-mode")).toContainText("Envoi d'e-mails désactivé");
     const approved = page.getByTestId("notification-preferences").getByLabel(/Publication approuvée/);
     const before = await approved.isChecked();
     await approved.click();

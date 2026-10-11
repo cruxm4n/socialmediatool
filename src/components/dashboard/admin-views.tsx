@@ -143,7 +143,7 @@ export function AdminOverview({
                       {dayNumber(day)}
                     </span>
                   </p>
-                  <ul className="mt-2 grid gap-1.5">
+                  <ul className="mt-2 grid grid-cols-1 gap-1.5">
                     {items.map(({ post, time }) => (
                       <li key={post.id}>
                         <Link
@@ -176,7 +176,7 @@ export function AdminOverview({
           {toHandle.length === 0 ? (
             <EmptyState icon={PartyPopper} title="Rien à reprendre" description="Aucune erreur, aucun retard, aucune demande de modification." />
           ) : (
-            <div className="grid gap-4 sm:grid-cols-2 2xl:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 2xl:grid-cols-3">
               {toHandle.slice(0, 6).map((post) => (
                 <PostCard key={post.id} post={post} href={`/admin/publications/${post.id}`} showOrg />
               ))}

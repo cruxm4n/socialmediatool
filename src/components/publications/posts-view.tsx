@@ -189,7 +189,7 @@ export function PostsView({
                       <span className="font-medium text-tone-amber">Canal non rattaché à un client</span>
                     )}
                     <span aria-hidden="true">·</span>
-                    <span>v{post.version}</span>
+                    <span>version {post.version}</span>
                   </p>
                   <div className="mt-2 flex items-center gap-3 md:hidden">
                     <StatusBadge status={post.status} />

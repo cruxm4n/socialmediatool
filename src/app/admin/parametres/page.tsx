@@ -116,7 +116,7 @@ export default async function Page() {
         <Rows rows={[
           {
             label: "Mode du serveur",
-            value: problem ?? (simulated ? "Simulé : aucun appel à Buffer, données fictives (autorisé explicitement sur ce serveur)" : "Réel : Buffer est lu par les comptes connectés ci-dessous"),
+            value: problem ?? (simulated ? "Simulé (pile de test) : aucun appel à Buffer, données fictives" : "Réel : Buffer est lu par les comptes connectés ci-dessous"),
             ok: problem === null,
             note: realBufferBlockedInDevelopment() ? "mode réel ignoré en développement" : undefined,
           },
@@ -131,7 +131,7 @@ export default async function Page() {
           { label: "Chiffrement des clés", value: credentialKeyAvailable() ? `Disponible (clé maître n° ${keyVersion ?? "?"}) : les clés sont chiffrées avant enregistrement` : "Indisponible : aucune clé Buffer ne peut être enregistrée", ok: credentialKeyAvailable() },
         ]} />
         {connections === null ? (
-          <p className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Les connexions demandent la migration 0012 de la base de données.</p>
+          <p className="rounded-2xl border border-dashed p-4 text-sm text-muted-foreground">Les comptes Buffer ne peuvent pas être gérés : la base de données n&apos;est pas à jour.</p>
         ) : (
           <ConnectionsPanel
             connections={connections}
@@ -146,9 +146,9 @@ export default async function Page() {
       <Section id="publications" title="Publications" description="Règles appliquées à toute publication. Elles sont fixées par l'application et ne se désactivent pas.">
         <Rows rows={[
           { label: "Validation", value: "Le client approuve une version exacte ; la programmation se fait ensuite à la main dans Buffer" },
-          { label: "Tag de soumission", value: `« ${env.reviewTag} »`, note: "posé dans Buffer" },
-          { label: "Profil", value: env.profile === "pilot" ? "Pilote : notifications simulées et minimales" : "Standard" },
-          { label: "Résultat inconnu", value: "Jamais de renvoi automatique : le brouillon est retrouvé, ou son absence confirmée par une personne" },
+          { label: "Tag de soumission", value: env.reviewTagLabel, note: "posé dans Buffer" },
+          { label: "Accord du client", value: "Attaché au contenu : il tombe si le texte, les médias ou une date déjà validée changent dans Buffer" },
+          { label: "Profil", value: env.profile === "pilot" ? "Pilote : envoi d'e-mails désactivé" : "Standard" },
           { label: "Synchronisation", value: <Link href="/admin/synchronisation" className="font-medium text-foreground underline-offset-4 hover:underline">Dernière réussie : {dateTime(status.lastSuccessAt)}</Link>, ok: status.consecutiveFailures === 0 },
           { label: "Annulations à confirmer", value: `${status.urgent.pendingCancellations}`, ok: status.urgent.pendingCancellations === 0 },
         ]} />
@@ -156,7 +156,7 @@ export default async function Page() {
 
       <Section id="notifications" title="Notifications" description="Messages envoyés aux clients et à l'administrateur.">
         <Rows rows={[
-          { label: "Mode", value: sendsNotifications ? "Envoi réel" : "Simulation : aucun message ne sort du serveur" },
+          { label: "Mode", value: sendsNotifications ? "E-mails envoyés par le service configuré sur le serveur" : "E-mails désactivés : les notifications sont seulement enregistrées", ok: sendsNotifications },
           { label: "Contenu", value: env.notificationContent === "minimal" ? "Minimal : aucun texte de publication dans les messages" : "Complet" },
           { label: "Préférences", value: <Link href="/admin/notifications" className="font-medium text-foreground underline-offset-4 hover:underline">Journal et préférences</Link> },
         ]} />
@@ -164,7 +164,7 @@ export default async function Page() {
 
       <Section id="securite" title="Sécurité" description="Accès et opérations sensibles. Les secrets ne sont jamais affichés.">
         <Rows rows={[
-          { label: "Comptes utilisateurs", value: "Créés par l'administrateur depuis la fiche d'un client" },
+          { label: "Comptes utilisateurs", value: "Créés sur le serveur par l'administrateur, puis associés à un client depuis sa fiche" },
           { label: "Secret d'automatisation", value: process.env.AUTOMATION_SECRET ? "Présent" : "Absent", ok: Boolean(process.env.AUTOMATION_SECRET) },
           { label: "Clés Buffer", value: "Chiffrées en base, déchiffrées par le serveur uniquement, jamais envoyées au navigateur" },
           {
@@ -200,7 +200,7 @@ export default async function Page() {
           ...ready.checks.filter((check) => !check.ok).map((check) => ({ label: "À corriger", value: check.name, ok: false })),
           { label: "Planificateur", value: status.lastScheduledAt ? `Dernier passage : ${dateTime(status.lastScheduledAt)}` : "Jamais passé", note: `toutes les ${env.syncIntervalMinutes} min` },
           { label: "Dernier échec", value: status.lastFailureAt ? `${dateTime(status.lastFailureAt)} — ${status.lastError ?? ""}` : "Aucun" },
-          { label: "Sauvegardes", value: "Suivies hors de l'application, par la supervision du serveur", note: "voir docs/SAUVEGARDE.md" },
+          { label: "Sauvegardes", value: "Non vérifiables depuis cet écran : elles sont suivies par la supervision du serveur" },
         ]} />
       </Section>
     </div>

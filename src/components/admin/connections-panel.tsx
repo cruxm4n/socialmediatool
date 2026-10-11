@@ -348,7 +348,7 @@ export function ConnectionsPanel({
             {!canStoreKeys && <p className="text-xs text-tone-red">Compte réel indisponible : le serveur n&apos;a pas de clé de chiffrement (CADENCE_CREDENTIALS_KEY).</p>}
             <div className="grid grid-cols-1 gap-1.5">
               <Label htmlFor="connection-label">Nom de la connexion</Label>
-              <Input id="connection-label" className="min-h-11 sm:min-h-8" value={label} maxLength={80} onChange={(event) => setLabel(event.target.value)} placeholder="Buffer de Maison Colibri" autoComplete="off" />
+              <Input id="connection-label" className="min-h-11 sm:min-h-8" value={label} maxLength={80} onChange={(event) => setLabel(event.target.value)} placeholder="Buffer du client" autoComplete="off" />
             </div>
             {!organizationId && (
               <div className="grid grid-cols-1 gap-1.5">
@@ -392,7 +392,7 @@ export function ConnectionsPanel({
           <DialogHeader>
             <DialogTitle>Remplacer la clé de « {replacing?.label} »</DialogTitle>
             <DialogDescription>
-              Pour une nouvelle clé du MÊME compte Buffer{replacing?.accountLabel ? ` (${replacing.accountLabel})` : ""}. {simulated
+              Pour une nouvelle clé du même compte Buffer{replacing?.accountLabel ? ` (${replacing.accountLabel})` : ""}. {simulated
                 ? "Le serveur est en simulation : la clé ne peut pas être vérifiée."
                 : "Cadence vérifie auprès de Buffer qu'elle appartient bien à ce compte ; sinon, l'ancienne clé reste en place."}
               {" "}Pour un autre compte, créez une nouvelle connexion : les publications déjà programmées restent rattachées à leur compte d&apos;origine.

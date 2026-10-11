@@ -11,12 +11,12 @@ export function LoginForm() {
   const [state, action, pending] = useActionState(signIn, null);
 
   return (
-    <form action={action} className="grid gap-4">
-      <div className="grid gap-2">
+    <form action={action} className="grid grid-cols-1 gap-4">
+      <div className="grid grid-cols-1 gap-2">
         <Label htmlFor="email">Adresse e-mail</Label>
         <Input id="email" name="email" type="email" autoComplete="email" required className="h-10" />
       </div>
-      <div className="grid gap-2">
+      <div className="grid grid-cols-1 gap-2">
         <Label htmlFor="password">Mot de passe</Label>
         <Input id="password" name="password" type="password" autoComplete="current-password" required className="h-10" />
       </div>

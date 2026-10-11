@@ -21,7 +21,7 @@ export function Panel({ title, children, className }: { title: string; children:
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="grid gap-1.5">
+    <div className="grid grid-cols-1 gap-1.5">
       <dt className="text-xs font-medium tracking-wide text-muted-foreground uppercase">{label}</dt>
       <dd className="min-w-0 text-sm">{children}</dd>
     </div>
@@ -69,7 +69,7 @@ export function StatusBanner({
 export function AlertList({ alerts }: { alerts: PostAlert[] }) {
   if (alerts.length === 0) return null;
   return (
-    <ul className="grid gap-2">
+    <ul className="grid grid-cols-1 gap-2">
       {alerts.map((alert) => (
         <li
           key={alert.message}
@@ -93,7 +93,7 @@ export function PostContent({ post, showTechnical = false }: { post: PostView; s
   return (
     <section className="overflow-hidden rounded-2xl border bg-card">
       <div className="grid grid-cols-1 gap-6 p-4 sm:p-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,400px)]">
-        <dl className="grid content-start gap-5">
+        <dl className="grid grid-cols-1 content-start gap-5">
           <Field label="Réseau">
             <span className="flex items-center gap-2 font-medium">
               <NetworkIcon network={post.network} />
@@ -106,7 +106,7 @@ export function PostContent({ post, showTechnical = false }: { post: PostView; s
             <span className="font-medium" data-testid="post-date">
               {post.dueAt ? formatDateTime(post.dueAt, post.timezone) : "Sans date"}
             </span>{" "}
-            <span className="text-xs text-muted-foreground">heure de Paris</span>
+            <span className="text-xs text-muted-foreground">{post.timezone === "Europe/Paris" ? "heure de Paris" : `fuseau ${post.timezone.replace(/_/g, " ")}`}</span>
           </Field>
 
           <Field label="Texte">
@@ -156,7 +156,7 @@ export function PostContent({ post, showTechnical = false }: { post: PostView; s
 /** Versions successives du contenu : ce que le client a eu sous les yeux à chaque fois. */
 export function VersionHistory({ versions, current, timezone }: { versions: PostVersion[]; current: number; timezone: string }) {
   return (
-    <ol className="grid gap-3" data-testid="versions">
+    <ol className="grid grid-cols-1 gap-3" data-testid="versions">
       {versions.map((version) => (
         <li key={version.version}>
           <details className="group rounded-xl border px-3 py-2" open={version.version === current && versions.length === 1}>

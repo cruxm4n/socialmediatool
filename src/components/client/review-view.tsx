@@ -50,7 +50,7 @@ export function ReviewView({
   const [pending, startTransition] = useTransition();
 
   const decidable = canDecide(post);
-  // Une publication dont la date est passée ne pourrait plus être programmée : l'approbation est fermée.
+  // Date déjà dépassée : l'approbation est fermée tant que l'agence ne l'a pas corrigée (même règle que la base).
   const approvable = decidable && hasUsableDueDate(post, now);
   const approver = profiles.find((profile) => profile.id === post.approvedById);
 
@@ -123,9 +123,11 @@ export function ReviewView({
             </div>
           }
         >
-          {approvable
-            ? "Vérifiez le texte, le visuel et la date ci-dessous."
-            : "La date prévue est absente ou dépassée : cette publication ne peut pas être approuvée en l'état. Demandez une modification pour que votre agence la reprogramme."}
+          {!approvable
+            ? "La date prévue est dépassée : cette publication ne peut pas être approuvée en l'état. Demandez une modification pour que votre agence la reprogramme."
+            : post.dueAt
+              ? "Vérifiez le texte, le visuel et la date ci-dessous."
+              : "Vérifiez le texte et le visuel ci-dessous. La date de publication sera fixée par votre agence."}
         </StatusBanner>
       )}
       {!decidable && nextPendingId && (
@@ -229,7 +231,7 @@ export function ReviewView({
             <DialogTitle className="font-display text-xl font-medium">Demander des modifications</DialogTitle>
             <DialogDescription>Expliquez ce que vous souhaitez changer. Votre agence vous renverra une nouvelle version.</DialogDescription>
           </DialogHeader>
-          <div className="grid gap-2">
+          <div className="grid grid-cols-1 gap-2">
             <Label htmlFor="change-body">Votre demande</Label>
             <Textarea
               id="change-body"

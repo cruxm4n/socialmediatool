@@ -297,7 +297,7 @@ export function NetworkPreview({ post }: PreviewProps) {
     <figure>
       <Preview post={post} />
       <figcaption className="mt-3 text-center text-xs text-muted-foreground">
-        Aperçu simulé — le rendu réel sur le réseau peut différer légèrement.
+        Aperçu indicatif : le rendu réel sur le réseau peut différer légèrement.
       </figcaption>
     </figure>
   );

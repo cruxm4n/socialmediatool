@@ -33,7 +33,7 @@ export const STATUS_LABELS: Record<NotificationStatus, string> = {
   pending: "En attente",
   sending: "En cours d'envoi",
   sent: "Envoyée",
-  simulated: "Simulée",
+  simulated: "Enregistrée, non envoyée",
   failed: "Échec",
   cancelled: "Annulée",
 };

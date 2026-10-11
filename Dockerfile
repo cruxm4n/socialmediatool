@@ -11,6 +11,10 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1 BUILD_STANDALONE=1
 RUN npm run build
+# Les visuels fictifs du Buffer simulé ne sont pas livrés dans une image de production. Une image destinée à une pile
+# de test (BUFFER_MODE=mock) se construit avec --build-arg INCLUDE_DEMO_MEDIA=1.
+ARG INCLUDE_DEMO_MEDIA=0
+RUN if [ "$INCLUDE_DEMO_MEDIA" != "1" ]; then rm -rf public/demo-media; fi
 
 FROM node:24-alpine AS run
 WORKDIR /app

@@ -25,5 +25,5 @@ export default async function Page() {
       href: `/admin/publications/${item.postId}`,
       recipientName: names.get(item.recipientId) ?? null,
     })) ?? null;
-  return <NotificationsView audience="admin" preferences={preferences} rows={rows} delivery={notificationMode()} />;
+  return <NotificationsView audience="admin" preferences={preferences} rows={rows} delivery={notificationMode()} emailEnabled={notificationMode() === "webhook"} />;
 }

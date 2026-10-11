@@ -57,7 +57,7 @@ export function ClientsView({
           <TriangleAlert className="mt-0.5 size-4 shrink-0" />
           <span>
             <span className="font-medium">
-              {unassigned.length} canal{unassigned.length > 1 ? "aux" : ""} sans client.
+              {unassigned.length} {unassigned.length > 1 ? "canaux" : "canal"} sans client.
             </span>{" "}
             Leurs publications ne sont visibles d&apos;aucun client tant qu&apos;ils ne sont pas attribués.
           </span>
