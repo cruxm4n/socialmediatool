@@ -20,5 +20,5 @@ export default async function Page({ params }: PageProps<"/admin/publications/[i
   ]);
   const [view] = buildPostViews([post], channels, session.organizations);
 
-  return <PostDetail post={view} comments={comments} events={events} profiles={profiles} now={new Date().toISOString()} reviewTag={env.reviewTag} versions={versions} organizations={session.organizations} />;
+  return <PostDetail post={view} comments={comments} events={events} profiles={profiles} now={new Date().toISOString()} reviewTag={env.reviewTagLabel} versions={versions} organizations={session.organizations} />;
 }

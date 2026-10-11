@@ -98,10 +98,8 @@ export function getPostAlerts(post: AlertInput, now: string): PostAlert[] {
     });
   }
   if (post.bufferStatus === "draft" && post.approvalStatus !== "none") {
-    if (!post.dueAt) {
-      alerts.push({ level: "warning", message: "Aucune date prévue dans Buffer : ce post ne pourra pas être approuvé." });
-    } else if (Date.parse(post.dueAt) <= Date.parse(now)) {
-      alerts.push({ level: "warning", message: "La date prévue est dépassée : modifiez-la dans Buffer." });
+    if (post.dueAt && Date.parse(post.dueAt) <= Date.parse(now)) {
+      alerts.push({ level: "warning", message: "La date prévue est dépassée : le client ne peut pas approuver ce brouillon. Corrigez-la dans Buffer." });
     }
   }
   return alerts;
@@ -131,9 +129,12 @@ export const CLIENT_EVENT_TYPES: PostEventType[] = [
   "published",
 ];
 
-/** La publication peut-elle encore être programmée à sa date ? Même règle que la fonction SQL decide_post. */
+/**
+ * La date prévue permet-elle l'approbation ? Même règle que la fonction SQL decide_post : un brouillon sans date
+ * est approuvable (l'agence fixera la date en programmant dans Buffer) ; une date déjà dépassée ne l'est pas.
+ */
 export function hasUsableDueDate(post: Pick<Post, "dueAt">, now: string): boolean {
-  return post.dueAt !== null && Date.parse(post.dueAt) > Date.parse(now);
+  return post.dueAt === null || Date.parse(post.dueAt) > Date.parse(now);
 }
 
 /** N'accepte que les liens http(s) : une adresse venue de l'extérieur ne doit jamais pouvoir exécuter du code. */

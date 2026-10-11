@@ -43,3 +43,26 @@ Une synchronisation coûte une requête (deux si plus de 100 posts actifs), plus
 - Posts avec vidéo, posts sans texte, Instagram et TikTok en mode « rappel » (`schedulingType: notification`).
 - Stabilité dans le temps des adresses de médias renvoyées par Buffer. Si elles changeaient d'un appel à l'autre, les validations seraient annulées à tort : à surveiller lors des premiers usages réels avec des médias téléversés dans Buffer.
 - Comportement au-delà de 500 posts actifs (la lecture s'arrête à cinq pages et le signale).
+
+## Vérification du 11 octobre 2026 (lecture seule)
+
+Cadence ne fait plus que **lire** Buffer : aucune des écritures décrites plus haut n'est utilisée par l'application, et son client Buffer n'en contient plus. Les lectures ont été revérifiées sur l'API réelle, sans aucune mutation :
+
+| Contrôle | Résultat |
+| --- | --- |
+| Schéma GraphQL (introspection) | Les champs lus existent toujours : `Post` (`id status text dueAt sentAt updatedAt externalLink channelId channelService schedulingType error.message tags.name assets`), `Channel`, `Account`, filtre `PostsFiltersInput.status`, tri `createdAt` |
+| Requête de relevé de Cadence, telle quelle | Acceptée par l'API sur deux comptes distincts (canaux, publications actives, dernières publiées, pagination) |
+| Client `BufferProvider` exécuté contre le compte de test | Compte constaté (`account.id`), 2 canaux, relevé complet, relecture d'une publication, publication inexistante → `null` |
+| Clé d'un autre compte que celui de la connexion | Refusée avant toute opération |
+| Clé invalide | Refusée par Buffer (HTTP 401), message clair, rien n'est enregistré |
+| Tentative d'écriture (`schedulePost`) | Refusée par Cadence, **zéro requête réseau** |
+
+### Limites réelles à connaître
+
+- **Statuts Buffer** : `draft`, `needs_approval`, `scheduled`, `sending`, `sent`, `error`. Il n'existe pas de statut « validé par le client » dans Buffer : la validation est un état **interne à Cadence**, distinct du statut Buffer.
+- **Le tag de soumission reste dans Buffer** après l'accord du client : Cadence ne le retire pas (lecture seule). L'agence peut le retirer à la main ; depuis la migration 0014, cela ne retire plus l'accord.
+- **Pas de webhook** : un changement dans Buffer n'est vu qu'à la synchronisation suivante.
+- **Quotas par clé** (en-tête `RateLimit`) : 100 / 15 min ; 250 ou 500 / jour ; 3 000 ou 15 000 / 30 jours selon l'offre. Une synchronisation coûte une à deux requêtes par compte.
+- **Offre gratuite** : 3 canaux, 3 tags, 10 publications programmées par compte (constaté sur le compte « Syno »).
+- **Pagination** : la lecture s'arrête à 500 publications actives par compte et le signale ; au-delà, rien n'est déclaré supprimé.
+- **Non vérifié en réel** : vidéos, documents, publications sans texte, adresses de médias dans la durée.

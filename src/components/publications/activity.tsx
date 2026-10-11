@@ -38,6 +38,7 @@ const EVENT_META: Record<PostEventType, { icon: LucideIcon; tone: string; actor?
     tone: AMBER,
     text: (event) => `Validation annulée : le contenu a changé dans Buffer (version ${event.version})`,
   },
+  date_set: { icon: CircleDot, tone: BLUE, text: () => "Date fixée dans Buffer après l'accord du client : l'accord reste valable" },
   unscheduled_in_buffer: { icon: ShieldAlert, tone: AMBER, text: () => "Repassée en brouillon dans Buffer : nouvelle validation demandée" },
   scheduled: { icon: CircleDot, tone: BLUE, text: () => "Programmée dans Buffer" },
   schedule_failed: { icon: TriangleAlert, tone: RED, text: () => "Échec de la programmation dans Buffer" },

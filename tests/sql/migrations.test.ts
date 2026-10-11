@@ -21,7 +21,7 @@ const events = async (bufferId: string) =>
 
 describe("migrations", () => {
   it("s'appliquent toutes, dans l'ordre, sur une base vide", async () => {
-    expect(migrationFiles()).toEqual(["0001_schema.sql", "0002_fiabilite.sql", "0003_isolation_modes.sql", "0004_fiabilite_statuts.sql", "0005_gestion_clients.sql", "0006_sync_planifiee.sql", "0007_notifications.sql", "0008_studio.sql", "0009_stabilisation.sql", "0010_contre_audit.sql", "0011_correction_v3.sql", "0012_connexions_fournisseur.sql", "0013_connexions_cycle_de_vie.sql"]);
+    expect(migrationFiles()).toEqual(["0001_schema.sql", "0002_fiabilite.sql", "0003_isolation_modes.sql", "0004_fiabilite_statuts.sql", "0005_gestion_clients.sql", "0006_sync_planifiee.sql", "0007_notifications.sql", "0008_studio.sql", "0009_stabilisation.sql", "0010_contre_audit.sql", "0011_correction_v3.sql", "0012_connexions_fournisseur.sql", "0013_connexions_cycle_de_vie.sql", "0014_validation_manuelle.sql"]);
     db = await LocalDb.create();
     const functions = await db.sql<{ proname: string }>("select proname from pg_proc p join pg_namespace n on n.oid = p.pronamespace where n.nspname = 'public'");
     expect(functions.map((row) => row.proname)).toEqual(expect.arrayContaining(["claim_posts_for_scheduling_in_mode", "list_posts_to_unschedule_in_mode", "sync_buffer_posts"]));
@@ -175,32 +175,87 @@ describe("validation", () => {
     expect(await claim("real")).toEqual([]);
   });
 
-  it("est refusée sur une version périmée, une date passée ou une décision déjà prise", async () => {
+  it("est refusée sur une version périmée, une date passée ou une décision déjà prise ; acceptée sans date (0014)", async () => {
     db = await LocalDb.create();
     const { ines } = await db.seed();
     await db.sync([{ id: "p" }, { id: "passe", dueAt: PAST }, { id: "sans-date", dueAt: null }]);
     const post = await db.post("p");
     await expect(db.as(ines, "select public.decide_post($1, 'approved', 'ancienne-empreinte')", [post.id])).rejects.toThrow("stale_version");
     await expect(db.decide(ines, "passe", "approved")).rejects.toThrow("date_invalid");
-    await expect(db.decide(ines, "sans-date", "approved")).rejects.toThrow("date_invalid");
+    await db.decide(ines, "sans-date", "approved");
+    expect(await db.post("sans-date")).toMatchObject({ approval_status: "approved", approved_version: 1 });
     await db.decide(ines, "p", "approved");
     await expect(db.decide(ines, "p", "approved")).rejects.toThrow("not_pending");
     await expect(db.as("anon", "select public.decide_post($1, 'approved', $2)", [post.id, post.content_hash])).rejects.toThrow(/permission denied/);
   });
 
-  it("est retirée si le tag est enlevé d'un brouillon approuvé, sans boucle d'échecs (0004)", async () => {
+  it("reste acquise si le tag est enlevé d'un brouillon approuvé (0014 ; elle était retirée depuis 0004)", async () => {
     db = await LocalDb.create();
     const { ines } = await db.seed();
     await db.sync([{ id: "p" }]);
     await db.decide(ines, "p", "approved");
+    const approved = await db.post("p");
     const result = await db.sync([{ id: "p", hasReviewTag: false }]);
-    expect(result.invalidated).toBe(1);
-    expect(await db.post("p")).toMatchObject({ approval_status: "none", approved_hash: null, schedule_state: "idle" });
-    expect(await claim("real")).toEqual([]);
-    expect(await events("p")).toEqual(["submitted", "approved", "withdrawn"]);
-    // Le tag revient : le post repasse en validation, il n'est pas approuvé d'office.
+    expect(result.invalidated).toBe(0);
+    expect(await db.post("p")).toMatchObject({ approval_status: "approved", approved_hash: approved.approved_hash, approved_version: 1, version: 1 });
+    expect(await events("p")).toEqual(["submitted", "approved"]);
+    // Le tag revient : rien ne change non plus.
     await db.sync([{ id: "p" }]);
+    expect(await db.post("p")).toMatchObject({ approval_status: "approved" });
+    // L'accord reste attaché au contenu : un texte modifié le fait tomber, tag présent ou non.
+    expect((await db.sync([{ id: "p", hasReviewTag: false, text: "Autre texte" }])).invalidated).toBe(1);
+    expect(await db.post("p")).toMatchObject({ approved_hash: null, version: 2 });
+  });
+
+  it("un tag enlevé retire toujours du circuit un brouillon en attente ou à modifier", async () => {
+    db = await LocalDb.create();
+    const { ines } = await db.seed();
+    await db.sync([{ id: "attente" }, { id: "a-modifier" }]);
+    await db.decide(ines, "a-modifier", "changes_requested", "Autre visuel");
+    await db.sync([{ id: "attente", hasReviewTag: false }, { id: "a-modifier", hasReviewTag: false }]);
+    expect(await db.post("attente")).toMatchObject({ approval_status: "none" });
+    expect(await db.post("a-modifier")).toMatchObject({ approval_status: "none" });
+    expect(await events("attente")).toEqual(["submitted", "withdrawn"]);
+  });
+
+  it("accord donné sans date : la date fixée ensuite dans Buffer ne redemande pas d'accord (0014)", async () => {
+    db = await LocalDb.create();
+    const { ines } = await db.seed();
+    await db.sync([{ id: "p", dueAt: null }]);
+    await db.decide(ines, "p", "approved");
+    // L'agence programme dans Buffer : même texte, mêmes médias, une date.
+    const dated = await db.sync([{ id: "p", status: "scheduled", dueAt: FUTURE }]);
+    expect(dated.invalidated).toBe(0);
+    const post = await db.post("p");
+    expect(post).toMatchObject({ approval_status: "approved", buffer_status: "scheduled", version: 2, approved_version: 2, schedule_state: "idle" });
+    expect(post.approved_hash).toBe(post.content_hash);
+    expect(await events("p")).toEqual(["submitted", "approved", "date_set"]);
+    // La date fait désormais partie de l'accord : la déplacer redemande un accord.
+    const moved = await db.sync([{ id: "p", status: "scheduled", dueAt: "2030-02-01T09:00:00.000Z" }]);
+    expect(moved.invalidated).toBe(1);
+    expect(await db.post("p")).toMatchObject({ approval_status: "pending", approved_hash: null, version: 3 });
+  });
+
+  it("accord donné sans date : une date fixée AVEC un autre texte redemande un accord", async () => {
+    db = await LocalDb.create();
+    const { ines } = await db.seed();
+    await db.sync([{ id: "p", dueAt: null }]);
+    await db.decide(ines, "p", "approved");
+    const result = await db.sync([{ id: "p", dueAt: FUTURE, text: "Texte retouché" }]);
+    expect(result.invalidated).toBe(1);
+    expect(await db.post("p")).toMatchObject({ approval_status: "pending", approved_hash: null, version: 2 });
+  });
+
+  it("accord donné avec une date : la retirer ou la changer redemande un accord", async () => {
+    db = await LocalDb.create();
+    const { ines } = await db.seed();
+    await db.sync([{ id: "p" }, { id: "q" }]);
+    await db.decide(ines, "p", "approved");
+    await db.decide(ines, "q", "approved");
+    const result = await db.sync([{ id: "p", dueAt: null }, { id: "q", dueAt: "2030-03-01T09:00:00.000Z" }]);
+    expect(result.invalidated).toBe(2);
     expect(await db.post("p")).toMatchObject({ approval_status: "pending" });
+    expect(await db.post("q")).toMatchObject({ approval_status: "pending" });
   });
 
   it("reste acquise si le tag est enlevé d'un post déjà programmé", async () => {

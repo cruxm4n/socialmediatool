@@ -26,7 +26,7 @@ function realProvider(connectionId: string, apiKey: string, accountId: string | 
   if (!provider) {
     // L'ancien client de cette connexion (clé remplacée) n'est plus conservé.
     for (const existing of realProviders.keys()) if (existing.startsWith(`${connectionId}:`)) realProviders.delete(existing);
-    provider = new BufferProvider(apiKey, env.reviewTag, fetch, accountId);
+    provider = new BufferProvider(apiKey, env.reviewTags, fetch, accountId);
     realProviders.set(key, provider);
   }
   return provider;

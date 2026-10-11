@@ -81,7 +81,7 @@ type Verification = { ok: true; account: BufferAccount } | { ok: false; message:
  */
 async function identify(key: string): Promise<Verification> {
   try {
-    return { ok: true, account: await new BufferProvider(key, env.reviewTag).describeAccount() };
+    return { ok: true, account: await new BufferProvider(key, env.reviewTags).describeAccount() };
   } catch (error) {
     if (error instanceof ProviderError && error.kind === "rate_limit") return { ok: false, message: "Buffer limite les requêtes de ce compte pour le moment : la clé n'a pas pu être vérifiée. Réessayez plus tard." };
     if (error instanceof ProviderError && error.kind === "network") return { ok: false, message: "Buffer n'a pas répondu : la clé n'a pas pu être vérifiée. Rien n'a été modifié." };

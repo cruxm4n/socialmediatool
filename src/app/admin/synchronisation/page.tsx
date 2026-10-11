@@ -10,5 +10,5 @@ export const metadata: Metadata = { title: "Synchronisation" };
 export default async function Page() {
   await requireAdmin();
   const [runs, status] = await Promise.all([listSyncRuns(25), getSyncStatus()]);
-  return <SyncView runs={runs} status={status} intervalMinutes={env.syncIntervalMinutes} now={new Date().toISOString()} mode={env.bufferMode} reviewTag={env.reviewTag} />;
+  return <SyncView runs={runs} status={status} intervalMinutes={env.syncIntervalMinutes} now={new Date().toISOString()} mode={env.bufferMode} reviewTag={env.reviewTagLabel} />;
 }

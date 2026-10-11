@@ -48,9 +48,9 @@ describe("alertes pour l'administrateur", () => {
     expect(getPostAlerts({ ...base, bufferStatus: "scheduled", approvalStatus: "approved" }, NOW)).toEqual([]);
   });
 
-  it("signale une date dépassée ou absente sur un post soumis", () => {
+  it("signale une date dépassée sur un post soumis ; une date absente n'est plus une anomalie (0014)", () => {
     expect(getPostAlerts({ ...base, approvalStatus: "approved", dueAt: "2026-10-01T08:00:00.000Z" }, NOW)[0].message).toContain("dépassée");
-    expect(getPostAlerts({ ...base, approvalStatus: "pending", dueAt: null }, NOW)[0].message).toContain("Aucune date");
+    expect(getPostAlerts({ ...base, approvalStatus: "pending", dueAt: null }, NOW)).toEqual([]);
   });
 
   it("reprend le message d'erreur de la programmation", () => {
@@ -77,11 +77,11 @@ describe("titre d'un post", () => {
 });
 
 describe("date prévue", () => {
-  it("n'est utilisable que si elle existe et se situe dans le futur", () => {
+  it("permet l'approbation si elle est à venir ou absente, jamais si elle est dépassée (0014)", () => {
     expect(hasUsableDueDate({ dueAt: FUTURE }, NOW)).toBe(true);
     expect(hasUsableDueDate({ dueAt: NOW }, NOW)).toBe(false);
     expect(hasUsableDueDate({ dueAt: "2026-10-01T08:00:00.000Z" }, NOW)).toBe(false);
-    expect(hasUsableDueDate({ dueAt: null }, NOW)).toBe(false);
+    expect(hasUsableDueDate({ dueAt: null }, NOW)).toBe(true);
   });
 });
 

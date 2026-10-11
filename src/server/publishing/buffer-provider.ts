@@ -109,7 +109,8 @@ export class BufferProvider implements PublishingProvider {
    */
   constructor(
     private readonly apiKey: string,
-    private readonly reviewTag: string,
+    /** Un tag, ou plusieurs : un brouillon portant l'un d'eux est soumis au client. */
+    private readonly reviewTags: string | string[],
     private readonly fetchImpl: typeof fetch = fetch,
     private readonly expectedAccountId: string | null = null,
   ) {}
@@ -234,7 +235,7 @@ export class BufferProvider implements PublishingProvider {
   }
 
   private toPost(raw: RawPost): ProviderPost {
-    const tag = normalize(this.reviewTag);
+    const tags = [this.reviewTags].flat().map(normalize);
     return {
       id: raw.id,
       channelId: raw.channelId,
@@ -246,7 +247,7 @@ export class BufferProvider implements PublishingProvider {
       updatedAt: raw.updatedAt,
       externalLink: raw.externalLink,
       error: raw.error?.message ?? null,
-      hasReviewTag: raw.tags.some((item) => normalize(item.name) === tag),
+      hasReviewTag: raw.tags.some((item) => tags.includes(normalize(item.name))),
       schedulingType: raw.schedulingType,
       assets: raw.assets.map((asset) => ({
         type: asset.type as PostAsset["type"],

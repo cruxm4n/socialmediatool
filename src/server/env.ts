@@ -79,8 +79,17 @@ export const env = {
   get bufferApiKey() {
     return required("BUFFER_API_KEY");
   },
-  get reviewTag() {
-    return process.env.BUFFER_REVIEW_TAG || "À valider";
+  /**
+   * Tags Buffer qui soumettent un brouillon au client. BUFFER_REVIEW_TAG en accepte plusieurs, séparés par des
+   * virgules ; par défaut « À valider » et « À vérifier ». La comparaison ignore la casse et les accents.
+   */
+  get reviewTags(): string[] {
+    const tags = (process.env.BUFFER_REVIEW_TAG ?? "").split(",").map((tag) => tag.trim()).filter(Boolean);
+    return tags.length > 0 ? tags : ["À valider", "À vérifier"];
+  },
+  /** Les mêmes tags, écrits pour une phrase : « À valider » ou « À vérifier ». */
+  get reviewTagLabel(): string {
+    return this.reviewTags.map((tag) => `« ${tag} »`).join(" ou ");
   },
   /**
    * Intervalle du planificateur, en minutes : sert à dire si les données sont « en retard ». Défaut prudent de

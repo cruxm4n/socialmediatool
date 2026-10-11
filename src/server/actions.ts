@@ -24,8 +24,7 @@ const DECISION_ERRORS: Record<string, string> = {
   not_draft: "Cette publication n'est plus un brouillon dans Buffer. Elle ne peut plus être validée ici.",
   stale_version: "La publication a été modifiée depuis son affichage. Rechargez la page pour voir la dernière version.",
   comment_required: "Expliquez la modification souhaitée.",
-  date_invalid: "La date prévue de cette publication est absente ou dépassée. Demandez à votre agence de la corriger avant de l'approuver.",
-  date_too_close: "La date prévue est trop proche (moins de 10 minutes). Demandez à votre agence de la repousser avant de l'approuver.",
+  date_invalid: "La date prévue de cette publication est dépassée. Demandez à votre agence de la corriger avant de l'approuver.",
   invalid_decision: "Demande invalide.",
 };
 

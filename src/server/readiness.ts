@@ -66,6 +66,8 @@ export async function readiness(): Promise<Readiness> {
       else if (!("0012" in status.checks)) checks.push({ name: "migration 0012 en place", ok: false });
       // Révocation sûre, identité des comptes et collisions refusées : sans 0013, cette version ne doit pas servir.
       else if (!("0013" in status.checks)) checks.push({ name: "migration 0013 en place", ok: false });
+      // Accord sans date et tag retiré après accord : sans 0014, le parcours de validation manuelle se bloque.
+      else if (!("0014" in status.checks)) checks.push({ name: "migration 0014 en place", ok: false });
     } catch (error) {
       checks.push({ name: error instanceof MissingFunctionError ? "migration 0011 absente (schema_status)" : "base de données joignable", ok: false });
     }

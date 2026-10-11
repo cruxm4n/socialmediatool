@@ -179,15 +179,15 @@ describe("B3 — approbations liées au propriétaire, au contenu et à la versi
     expect(await row("p")).toMatchObject({ approval_status: "none" });
   });
 
-  it("une date trop proche n'est pas approuvable : elle ne pourrait jamais être programmée", async () => {
+  it("une date proche mais à venir est approuvable depuis 0014 (plus de programmation automatique à garantir)", async () => {
     db = await LocalDb.create();
     const { ines } = await db.seed();
     const soon = new Date(Date.now() + 60_000).toISOString();
     await db.sync([{ id: "proche", dueAt: soon }, { id: "ok" }]);
-    await expect(db.decide(ines, "proche", "approved")).rejects.toThrow("date_too_close");
-    // La demande de modifications reste possible.
-    await db.decide(ines, "proche", "changes_requested", "Plus tard");
+    await db.decide(ines, "proche", "approved");
+    expect(await db.post("proche")).toMatchObject({ approval_status: "approved" });
     await db.decide(ines, "ok", "approved");
+    // L'ancienne réservation automatique, elle, garde sa marge : seule la date lointaine serait réservable.
     expect(await claim()).toHaveLength(1);
   });
 
