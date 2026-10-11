@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-import { approve, authFile, bufferId, mockBuffer, openPending, postLink, syncViaApi } from "./helpers";
+import { approve, authFile, automationHeaders, bufferId, mockBuffer, openPending, postLink, syncViaApi } from "./helpers";
 
 /*
  * Parcours de validation, avec un Buffer simulé.
@@ -10,24 +10,36 @@ import { approve, authFile, bufferId, mockBuffer, openPending, postLink, syncVia
 test.describe("validation par le client", () => {
   test.use({ storageState: authFile("INES") });
 
-  test("approuver programme la publication dans Buffer, une seule fois", async ({ page, request }) => {
+  test("approuver reste interne à Cadence : rien n'est programmé dans Buffer, ni à l'approbation ni aux synchronisations", async ({ page, request }) => {
     const before = (await mockBuffer(request, { action: "stats", key: "guji-li" })).scheduleCalls;
 
     await openPending(page, "maison-colibri", "guji-li");
     await approve(page);
-    await expect(page.getByText("Publication approuvée et programmée dans Buffer.")).toBeVisible();
-    await expect(page.locator('[data-status="scheduled"]').first()).toBeVisible();
+    await expect(page.getByText("Publication approuvée. Votre agence la programmera dans Buffer.")).toBeVisible();
+    await expect(page.getByText("Publication approuvée et programmée dans Buffer.")).toHaveCount(0);
+    await expect(page.locator('[data-status="approved"]').first()).toBeVisible();
+    await expect(page.locator('[data-status="scheduled"]')).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Approuver" })).toHaveCount(0);
     await expect(page.getByText("Inès Faure a approuvé la version 1")).toBeVisible();
 
+    // Dans Buffer, rien n'a bougé : toujours un brouillon, aucun appel de programmation.
     const stats = await mockBuffer(request, { action: "stats", key: "guji-li" });
-    expect(stats.post.status).toBe("scheduled");
-    expect(stats.scheduleCalls).toBe(before + 1);
+    expect(stats.post.status).toBe("draft");
+    expect(stats.scheduleCalls).toBe(before);
 
-    // Les synchronisations suivantes ne la reprogramment pas.
+    // Les synchronisations ne programment rien non plus.
     await syncViaApi(request);
     await syncViaApi(request);
-    expect((await mockBuffer(request, { action: "stats", key: "guji-li" })).scheduleCalls).toBe(before + 1);
+    const afterSync = await mockBuffer(request, { action: "stats", key: "guji-li" });
+    expect(afterSync.post.status).toBe("draft");
+    expect(afterSync.scheduleCalls).toBe(before);
+
+    // L'agence programme à la main dans Buffer : Cadence le constate à la synchronisation, sans rien écrire.
+    await mockBuffer(request, { action: "setStatus", key: "guji-li", status: "scheduled" });
+    await syncViaApi(request);
+    await page.reload();
+    await expect(page.locator('[data-status="scheduled"]').first()).toBeVisible();
+    expect((await mockBuffer(request, { action: "stats", key: "guji-li" })).scheduleCalls).toBe(before);
 
     // Une fois la décision prise, la fiche propose la publication suivante à valider.
     await page.getByRole("link", { name: "Publication suivante à valider" }).click();
@@ -111,7 +123,8 @@ test("une publication modifiée dans Buffer pendant la relecture ne peut pas êt
   await context.close();
 });
 
-test("cycle complet : demande de modifications, correction dans Buffer, approbation, programmation", async ({ browser, request }) => {
+test("cycle complet : demande de modifications, correction dans Buffer, approbation, programmation manuelle dans Buffer", async ({ browser, request }) => {
+  const scheduleCallsBefore = (await mockBuffer(request, { action: "stats", key: "fjord3-li" })).scheduleCalls;
   const sofia = await browser.newContext({ storageState: authFile("SOFIA") });
   const admin = await browser.newContext({ storageState: authFile("ADMIN") });
   const clientPage = await sofia.newPage();
@@ -141,34 +154,66 @@ test("cycle complet : demande de modifications, correction dans Buffer, approbat
   await openPending(clientPage, "nordwind-cycles", "fjord3-li");
   await expect(clientPage.getByTestId("post-text")).toContainText("4 990 € HT");
   await approve(clientPage);
-  await expect(clientPage.locator('[data-status="scheduled"]').first()).toBeVisible();
+  await expect(clientPage.locator('[data-status="approved"]').first()).toBeVisible();
 
-  // 5. Côté admin et côté Buffer, la publication est programmée.
+  // 5. L'approbation n'a rien écrit dans Buffer : l'admin voit l'accord et un brouillon à programmer.
   await adminPage.reload();
+  await expect(adminPage.getByText("En attente de programmation dans Buffer.")).toBeVisible();
+  expect((await mockBuffer(request, { action: "stats", key: "fjord3-li" })).post.status).toBe("draft");
+
+  // 6. L'admin programme à la main dans Buffer ; Cadence le constate à la synchronisation.
+  await mockBuffer(request, { action: "setStatus", key: "fjord3-li", status: "scheduled" });
+  await adminPage.getByRole("button", { name: "Synchroniser" }).click();
+  await expect(adminPage.getByText("Synchronisation terminée")).toBeVisible();
   await expect(adminPage.getByText("Programmée dans Buffer").first()).toBeVisible();
   await expect(adminPage.getByText("Version 2 approuvée par Sofia Lemaire")).toBeVisible();
-  expect((await mockBuffer(request, { action: "stats", key: "fjord3-li" })).post.status).toBe("scheduled");
+  const final = await mockBuffer(request, { action: "stats", key: "fjord3-li" });
+  expect(final.post.status).toBe("scheduled");
+  // Aucune programmation n'est venue de Cadence, de bout en bout.
+  expect(final.scheduleCalls).toBe(scheduleCallsBefore);
 
   await sofia.close();
   await admin.close();
 });
 
-test("modifier une publication approuvée et programmée annule la validation et la déprogramme", async ({ browser, request }) => {
+test("modifier une publication approuvée et programmée annule la validation ; Cadence le signale sans rien déprogrammer", async ({ browser, request }) => {
   const ines = await browser.newContext({ storageState: authFile("INES") });
+  const admin = await browser.newContext({ storageState: authFile("ADMIN") });
   const page = await ines.newPage();
+  const adminPage = await admin.newPage();
   await openPending(page, "maison-colibri", "guji-ig");
   await approve(page);
-  await expect(page.locator('[data-status="scheduled"]').first()).toBeVisible();
+  await expect(page.locator('[data-status="approved"]').first()).toBeVisible();
+  // L'agence programme à la main dans Buffer, après l'accord.
+  await mockBuffer(request, { action: "setStatus", key: "guji-ig", status: "scheduled" });
+  await syncViaApi(request);
   expect((await mockBuffer(request, { action: "stats", key: "guji-ig" })).post.status).toBe("scheduled");
 
-  // L'agence modifie le post programmé dans Buffer.
+  // L'agence modifie ensuite le post programmé dans Buffer : la validation tombe.
   await mockBuffer(request, { action: "editText", key: "guji-ig", text: "Texte changé après la validation du client." });
-  const result = await syncViaApi(request);
+  const response = await request.post("/api/automation/sync", { headers: automationHeaders() });
+  // La synchronisation signale l'écart (502) : une publication est programmée sans accord valable.
+  expect(response.status()).toBe(502);
+  const result = await response.json();
   expect(result.invalidated).toBe(1);
-  expect(result.unscheduled).toBe(1);
+  expect(result.unscheduled).toBe(0);
+  expect(result.unscheduleFailures).toBe(1);
+  expect(result.error).toContain("Repassez-les en brouillon dans Buffer");
 
-  // Dans Buffer, le post est redevenu un brouillon ; côté client, il est de nouveau à valider.
+  // Cadence n'a RIEN modifié dans Buffer : le post y est toujours programmé. L'administrateur est alerté.
+  expect((await mockBuffer(request, { action: "stats", key: "guji-ig" })).post.status).toBe("scheduled");
+  await adminPage.goto("/admin/publications");
+  await postLink(adminPage, "guji-ig").click();
+  await expect(adminPage.getByRole("alert").filter({ hasText: "Programmé dans Buffer sans validation du client" })).toBeVisible();
+  await expect(adminPage.getByRole("alert").filter({ hasText: "repassez-le en brouillon dans Buffer (Cadence n'y modifie rien)" })).toBeVisible();
+
+  // L'agence repasse le post en brouillon à la main : le retour est constaté, le client peut de nouveau décider.
+  await mockBuffer(request, { action: "setStatus", key: "guji-ig", status: "draft" });
+  const settled = await syncViaApi(request);
+  expect(settled.unscheduled).toBe(1);
+  expect(settled.unscheduleFailures).toBe(0);
   expect((await mockBuffer(request, { action: "stats", key: "guji-ig" })).post.status).toBe("draft");
+  await admin.close();
   await page.goto("/client/maison-colibri/a-valider");
   await postLink(page, "guji-ig").click();
   await expect(page.getByText("Cette proposition attend votre décision")).toBeVisible();
@@ -176,29 +221,34 @@ test("modifier une publication approuvée et programmée annule la validation et
   await ines.close();
 });
 
-test("un échec de programmation est signalé, puis rattrapé à la synchronisation suivante", async ({ browser, request }) => {
+test("un Buffer prêt à refuser une programmation n'est jamais sollicité : l'approbation aboutit sans incident", async ({ browser, request }) => {
   const hugo = await browser.newContext({ storageState: authFile("HUGO") });
   const admin = await browser.newContext({ storageState: authFile("ADMIN") });
   const clientPage = await hugo.newPage();
   const adminPage = await admin.newPage();
 
+  // Le Buffer simulé échouerait à la prochaine programmation : comme Cadence n'en demande aucune, rien n'échoue.
   await mockBuffer(request, { action: "failNextSchedule", message: "Canal Facebook déconnecté (panne simulée)." });
+  const before = (await mockBuffer(request, { action: "stats", key: "atelier-fb" })).scheduleCalls;
   await openPending(clientPage, "maison-colibri", "atelier-fb");
   await approve(clientPage);
-  await expect(clientPage.getByText("La programmation dans Buffer n'a pas abouti")).toBeVisible();
-  // Le client voit un incident, pas le détail technique.
-  await expect(clientPage.getByText("Un incident technique retarde cette publication")).toBeVisible();
+  await expect(clientPage.getByText("Publication approuvée. Votre agence la programmera dans Buffer.")).toBeVisible();
+  await expect(clientPage.getByText("La programmation dans Buffer n'a pas abouti")).toHaveCount(0);
+  await expect(clientPage.getByText("Un incident technique retarde cette publication")).toHaveCount(0);
   await expect(clientPage.getByText("Canal Facebook déconnecté")).toHaveCount(0);
 
   await adminPage.goto("/admin/publications");
   await postLink(adminPage, "atelier-fb").click();
-  await expect(adminPage.locator('[data-status="error"]').first()).toBeVisible();
-  await expect(adminPage.getByRole("alert").filter({ hasText: "Canal Facebook déconnecté (panne simulée)." })).toBeVisible();
+  await expect(adminPage.locator('[data-status="approved"]').first()).toBeVisible();
+  await expect(adminPage.locator('[data-status="error"]')).toHaveCount(0);
+  await expect(adminPage.getByText("En attente de programmation dans Buffer.")).toBeVisible();
 
   await adminPage.getByRole("button", { name: "Synchroniser" }).click();
   await expect(adminPage.getByText("Synchronisation terminée")).toBeVisible();
-  await expect(adminPage.locator('[data-status="scheduled"]').first()).toBeVisible();
-  expect((await mockBuffer(request, { action: "stats", key: "atelier-fb" })).post.status).toBe("scheduled");
+  await expect(adminPage.locator('[data-status="approved"]').first()).toBeVisible();
+  const after = await mockBuffer(request, { action: "stats", key: "atelier-fb" });
+  expect(after.post.status).toBe("draft");
+  expect(after.scheduleCalls).toBe(before);
 
   await hugo.close();
   await admin.close();

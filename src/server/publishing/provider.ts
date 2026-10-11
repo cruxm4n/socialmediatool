@@ -140,6 +140,19 @@ export class ProviderError extends Error {
   }
 }
 
+/** Phrase du refus de toute écriture vers le vrai Buffer. */
+export const BUFFER_READ_ONLY = "Cadence est en lecture seule vis-à-vis de Buffer : rien n'y est créé, modifié, programmé ni déprogrammé. Faites l'opération dans Buffer.";
+
+/**
+ * Refus d'une écriture vers le vrai Buffer. Résultat certain (« failed ») : aucun appel n'est parti. Il ne dépend
+ * d'aucune variable d'environnement.
+ */
+export function readOnlyRefusal(): ProviderError {
+  const error = new ProviderError(BUFFER_READ_ONLY);
+  error.refusal = "writes_disabled";
+  return error;
+}
+
 /** Critères pour retrouver, après un résultat incertain, un brouillon que Cadence a peut-être créé. */
 export interface DraftLookup {
   channelId: string;

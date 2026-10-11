@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { BufferProvider, parseRetryAfter } from "@/server/publishing/buffer-provider";
-import type { DraftContent } from "@/server/publishing/provider";
+import { BUFFER_READ_ONLY, type DraftContent } from "@/server/publishing/provider";
 
 /*
  * (Mission V3, C08) Retry-After : durées conservées sans raccourcissement, formes valides non numériques, valeur absente
@@ -114,21 +114,21 @@ describe("comptage des requêtes Buffer par opération (budget de quota)", () =>
     expect(total()).toBe(3);
   });
 
-  it("programmer un post : 1 lecture + 1 écriture ; l'annuler : 1 lecture + 1 écriture", async () => {
+  it("lire un post : 1 requête ; programmer ou déprogrammer : refusé sans aucune requête — lecture seule", async () => {
     const { provider, counts, total } = counted();
     const live = (await provider.getPost("p1"))!;
-    await provider.schedulePost(live);
-    expect(total()).toBe(2);
-    expect(counts).toMatchObject({ "lecture d'un post": 1, "écriture : modification": 1 });
-    await provider.unschedulePost((await provider.getPost("p1"))!);
-    expect(total()).toBe(4);
+    expect(total()).toBe(1);
+    await expect(provider.schedulePost(live)).rejects.toThrow(BUFFER_READ_ONLY);
+    await expect(provider.unschedulePost(live)).rejects.toThrow(BUFFER_READ_ONLY);
+    expect(total()).toBe(1);
+    expect(counts).toEqual({ "lecture d'un post": 1 });
   });
 
-  it("créer un brouillon : canal + tags (1re fois) + création ; ensuite canal + création", async () => {
-    const { provider, total } = counted();
-    await provider.createDraft(content);
-    expect(total()).toBe(3);
-    await provider.createDraft(content);
-    expect(total()).toBe(5);
+  it("créer un brouillon : refusé sans aucune requête (ni canal, ni tags, ni création) — lecture seule", async () => {
+    const { provider, counts, total } = counted();
+    await expect(provider.createDraft(content)).rejects.toThrow(BUFFER_READ_ONLY);
+    await expect(provider.createDraft(content)).rejects.toThrow(BUFFER_READ_ONLY);
+    expect(total()).toBe(0);
+    expect(counts).toEqual({});
   });
 });

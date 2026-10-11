@@ -2,7 +2,6 @@ import "server-only";
 
 import type { PostAsset } from "@/lib/types";
 import { MissingFunctionError, rpc } from "@/server/automation-rpc";
-import { BUFFER_WRITES_DISABLED, env } from "@/server/env";
 import { activeRateLimitPause, recordRateLimit } from "@/server/quota";
 import { ProviderError, sameContent, type PublishingProvider } from "@/server/publishing/provider";
 
@@ -77,23 +76,27 @@ export interface CompensationOutcome {
   deferred: number;
 }
 
-/** Repasse en brouillon les posts programmés dont la programmation n'est plus légitime. */
+/** Phrase enregistrée tant qu'une publication reste programmée dans Buffer sans accord valable. */
+export const STILL_SCHEDULED = "Toujours programmée dans Buffer sans accord valable du client : repassez-la en brouillon dans Buffer (Cadence ne modifie rien dans Buffer).";
+
+/**
+ * CONSTAT des publications programmées dont l'accord n'est plus valable (« annulation à confirmer »).
+ *
+ * Lecture seule : Cadence ne déprogramme rien. Chaque publication est relue dans Buffer ;
+ *  - brouillon, publiée, en erreur ou disparue → l'état constaté est enregistré, l'alerte se lève ;
+ *  - encore programmée → rien n'est modifié dans Buffer ; l'alerte reste, avec la marche à suivre.
+ */
 export async function unscheduleInvalidatedPosts(provider: PublishingProvider, options: { lease?: Lease } = {}): Promise<CompensationOutcome> {
   const lease = options.lease ?? NO_LEASE;
   const pending = await rpcForMode("list_posts_to_unschedule", provider.mode, {});
   const outcome: CompensationOutcome = { done: 0, failures: 0, blocked: null, rateLimited: null, deferred: 0 };
   if (pending.length === 0) return outcome;
 
-  // Barrière d'activation fermée : aucune écriture ne part, annulation comprise. L'état reste « à confirmer ».
-  if (provider.mode === "real" && !env.bufferWritesEnabled) {
-    for (const post of pending) await rpc("complete_unscheduling", { p_post_id: post.id, p_ok: false, p_error: `${BUFFER_WRITES_DISABLED} Annulation reportée.` });
-    return { ...outcome, failures: pending.length, deferred: pending.length, blocked: BUFFER_WRITES_DISABLED };
-  }
-  // Un refus de quota (429) n'est pas contourné, même pour annuler : l'état reste « à confirmer » et visible.
+  // Un refus de quota (429) n'est pas contourné, même pour relire : l'état reste « à confirmer » et visible.
   const pause = await activeRateLimitPause(provider.mode);
   if (pause?.hard) {
-    for (const post of pending) await rpc("complete_unscheduling", { p_post_id: post.id, p_ok: false, p_error: `Quota Buffer refusé jusqu'à ${pause.until} : annulation reportée.` });
-    return { ...outcome, failures: pending.length, deferred: pending.length, blocked: "Quota Buffer atteint : annulations reportées." };
+    for (const post of pending) await rpc("complete_unscheduling", { p_post_id: post.id, p_ok: false, p_error: `Quota Buffer refusé jusqu'à ${pause.until} : relecture reportée.` });
+    return { ...outcome, failures: pending.length, deferred: pending.length, blocked: "Quota Buffer atteint : relectures reportées." };
   }
 
   for (const [index, post] of pending.entries()) {
@@ -110,16 +113,16 @@ export async function unscheduleInvalidatedPosts(provider: PublishingProvider, o
     }
     try {
       const live = await provider.getPost(post.buffer_post_id);
-      let observed: string = live ? live.status : "missing";
-      if (live && (live.status === "scheduled" || live.status === "needs_approval")) {
-        // Le fournisseur renvoie le post tel qu'il l'a enregistré : c'est CE statut qui fait foi, pas l'appel.
-        const result = await provider.unschedulePost(live);
-        observed = result.status;
+      const observed: string = live ? live.status : "missing";
+      if (observed === "scheduled" || observed === "needs_approval") {
+        // Toujours programmée : seule une personne peut la repasser en brouillon, dans Buffer.
+        outcome.failures += 1;
+        await rpc("complete_unscheduling", { p_post_id: post.id, p_ok: false, p_error: STILL_SCHEDULED });
+        continue;
       }
-      // Seul un statut réellement constaté dans Buffer est enregistré. Un statut inattendu n'est jamais présenté
-      // comme une annulation réussie : il reste « à confirmer » et sera relu.
+      // Seul un statut réellement constaté dans Buffer est enregistré. Un statut inattendu reste « à confirmer ».
       if (!["draft", "sent", "sending", "error", "missing"].includes(observed)) {
-        throw new ProviderError(`Statut Buffer inattendu après la déprogrammation : « ${observed} ». L'annulation n'est pas confirmée.`);
+        throw new ProviderError(`Statut Buffer inattendu : « ${observed} ». Le retour en brouillon n'est pas constaté.`);
       }
       await rpc("complete_unscheduling", { p_post_id: post.id, p_ok: true, p_observed_status: observed });
       outcome.done += 1;

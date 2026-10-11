@@ -40,8 +40,7 @@ vi.mock("@/server/studio", () => ({
 const provider = { getPost: vi.fn(), rescheduleDraft: vi.fn() };
 vi.mock("@/server/publishing", () => ({ getProvider: () => provider }));
 const runSync = vi.fn(async () => ({ ok: true }));
-const scheduleApprovedPosts = vi.fn(async () => ({ scheduled: 0, failures: 0, stale: false }));
-vi.mock("@/server/sync", () => ({ runSync, scheduleApprovedPosts }));
+vi.mock("@/server/sync", () => ({ runSync }));
 const dispatchNotifications = vi.fn(async () => ({}));
 vi.mock("@/server/notifications", () => ({ dispatchNotifications }));
 
@@ -156,13 +155,16 @@ describe("déplacement au calendrier", () => {
 describe("approbation groupée", () => {
   const items = [{ postId: ID, expectedHash: "h1" }, { postId: ORG, expectedHash: "h2" }, { postId: CHANNEL, expectedHash: "h3" }];
 
-  it("décide chaque publication séparément, avec la version affichée, puis programme en une fois", async () => {
+  it("décide chaque publication séparément, avec la version affichée, sans rien programmer — lecture seule", async () => {
     const result = await approvePosts(items);
     expect(result).toMatchObject({ ok: true, approved: 3, refused: [], message: "3 publications approuvées." });
     expect(rpcCalls.map((call) => [call.name, call.params.p_decision, call.params.p_expected_hash])).toEqual([
       ["decide_post", "approved", "h1"], ["decide_post", "approved", "h2"], ["decide_post", "approved", "h3"],
     ]);
-    expect(scheduleApprovedPosts).toHaveBeenCalledTimes(1);
+    expect(runSync).not.toHaveBeenCalled();
+    expect(provider.getPost).not.toHaveBeenCalled();
+    expect(provider.rescheduleDraft).not.toHaveBeenCalled();
+    expect(pushDraftToBuffer).not.toHaveBeenCalled();
     expect(dispatchNotifications).toHaveBeenCalledTimes(1);
   });
 
@@ -176,7 +178,7 @@ describe("approbation groupée", () => {
   it("rien d'approuvé : aucune programmation ; sélection vide ou trop grande refusée", async () => {
     rpcResults.decide_post = { data: { [ID]: "date_invalid" }, error: null };
     expect(await approvePosts([items[0]])).toMatchObject({ ok: false, approved: 0 });
-    expect(scheduleApprovedPosts).not.toHaveBeenCalled();
+    expect(runSync).not.toHaveBeenCalled();
     expect((await approvePosts([])).ok).toBe(false);
     expect((await approvePosts(Array.from({ length: 51 }, () => items[0]))).ok).toBe(false);
   });

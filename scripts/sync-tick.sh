@@ -1,6 +1,6 @@
 #!/bin/sh
 # Un passage du planificateur : demande à Cadence de synchroniser Buffer.
-# Lancé toutes les 5 minutes par une tâche planifiée (voir docs/PLANIFICATEUR.md).
+# Lancé à intervalle régulier (60 minutes conseillées) par une tâche planifiée (voir docs/SYNCHRONISATION.md).
 #
 # Variables : AUTOMATION_SECRET (obligatoire), CADENCE_URL (défaut http://127.0.0.1:3000).
 # Si AUTOMATION_SECRET est absent, il est lu dans le fichier CADENCE_ENV_FILE (défaut .env.local).

@@ -60,7 +60,7 @@ export function SyncView({
     <div className="grid animate-rise grid-cols-1 gap-6">
       <PageHeader
         title="Synchronisation"
-        description="Chaque synchronisation lit Buffer, met à jour les publications, puis programme celles que le client a approuvées."
+        description="Chaque synchronisation lit Buffer et met à jour les publications. Rien n'est modifié dans Buffer : la programmation s'y fait à la main."
         actions={<SyncButton variant="default" label="Synchroniser maintenant" />}
       />
 
@@ -103,7 +103,7 @@ export function SyncView({
             <p className="flex items-start gap-2 font-semibold text-tone-red">
               <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden="true" />
               {status.urgent.pendingCancellations > 0
-                ? `${status.urgent.pendingCancellations} programmation${status.urgent.pendingCancellations > 1 ? "s" : ""} à annuler dans Buffer — non constatée${status.urgent.pendingCancellations > 1 ? "s" : ""} annulée${status.urgent.pendingCancellations > 1 ? "s" : ""}`
+                ? `${status.urgent.pendingCancellations} publication${status.urgent.pendingCancellations > 1 ? "s" : ""} programmée${status.urgent.pendingCancellations > 1 ? "s" : ""} dans Buffer sans accord valable — à repasser en brouillon dans Buffer`
                 : `${status.urgent.staleClaims} programmation${status.urgent.staleClaims > 1 ? "s" : ""} en cours depuis longtemps`}
             </p>
             <ul className="mt-2 grid gap-1 text-foreground">
@@ -116,7 +116,7 @@ export function SyncView({
                     {status.urgent.lastAttemptAt ? `, dernier essai ${formatRelative(status.urgent.lastAttemptAt, now)}` : ", aucun essai pour l'instant"}.
                   </li>
                   {status.urgent.lastAttemptError && <li className="text-xs text-muted-foreground">Dernière erreur : {status.urgent.lastAttemptError}</li>}
-                  <li>Les nouvelles programmations sont suspendues tant que ces annulations ne sont pas constatées. Procédure humaine : docs/EXPLOITATION.md (« Arrêt d&apos;urgence »).</li>
+                  <li>Cadence ne modifie rien dans Buffer : repassez ces publications en brouillon dans Buffer. Le retour en brouillon est constaté à la synchronisation suivante.</li>
                 </>
               )}
               {status.urgent.staleClaims > 0 && <li>{status.urgent.staleClaims} réservation{status.urgent.staleClaims > 1 ? "s" : ""} abandonnée{status.urgent.staleClaims > 1 ? "s" : ""} (arrêt probable du serveur) : rapprochée{status.urgent.staleClaims > 1 ? "s" : ""} de l&apos;état réel de Buffer par le traitement urgent.</li>}

@@ -48,7 +48,7 @@ vi.mock("@/server/publishing", () => ({ getProvider: () => provider }));
 const dispatchNotifications = vi.fn(async () => ({}));
 vi.mock("@/server/notifications", () => ({ dispatchNotifications }));
 
-const { runSync, scheduleApprovedPosts } = await import("@/server/sync");
+const { runSync } = await import("@/server/sync");
 
 const DUE = "2030-01-15T09:00:00.000Z";
 const live = (overrides: Partial<ProviderPost> = {}): ProviderPost => ({
@@ -81,12 +81,11 @@ beforeEach(() => {
 });
 
 describe("Contre-audit indépendant orchestration",()=>{
- it("une réservation périmée acceptée par Buffer doit être compensée avant la fin de la synchronisation",async()=>{
+ it("la synchronisation ne réserve rien et ne programme rien : aucune réservation périmée ne peut naître",async()=>{
   claimed=[claim()];completeOutcome="stale";
-  provider.schedulePost.mockImplementation(async(post:ProviderPost)=>{
-    toUnschedule=[claim()];provider.getPost.mockResolvedValue(live({status:"scheduled"}));return {...post,status:"scheduled" as const};
-  });
-  const r=await runSync("contre-audit");expect(r.ok).toBe(false);
-  expect(provider.unschedulePost).toHaveBeenCalledTimes(1);
+  const r=await runSync("contre-audit");expect(r.ok).toBe(true);
+  expect(rpcCalls.filter((call)=>call.name.startsWith("claim_posts_for_scheduling"))).toHaveLength(0);
+  expect(provider.schedulePost).toHaveBeenCalledTimes(0);
+  expect(provider.unschedulePost).toHaveBeenCalledTimes(0);
  });
 });

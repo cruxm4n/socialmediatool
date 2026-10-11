@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { BufferProvider } from "@/server/publishing/buffer-provider";
-import type { DraftContent } from "@/server/publishing/provider";
+import { BUFFER_READ_ONLY, ProviderError, type DraftContent } from "@/server/publishing/provider";
 
 /*
  * Contre-audit B6 : classement des réponses GraphQL de Buffer et réconciliation prudente.
@@ -32,15 +32,26 @@ function withWrite(write: () => Response | Promise<Response>) {
   return { provider: new BufferProvider("cle-factice", "À valider", fetchImpl as unknown as typeof fetch), calls };
 }
 
+/**
+ * Refus de lecture seule : erreur exacte, résultat certain (« failed »), et aucune écriture envoyée à Buffer
+ * (`calls` reste vide : la liste ne reçoit une entrée que pour une mutation réellement transmise).
+ */
+async function expectReadOnlyRefusal(promise: Promise<unknown>, calls: string[]) {
+  const error = await promise.then(() => null, (caught: unknown) => caught);
+  expect(error).toBeInstanceOf(ProviderError);
+  expect(error).toMatchObject({ message: BUFFER_READ_ONLY, kind: "api", outcome: "failed", refusal: "writes_disabled" });
+  expect(calls).toHaveLength(0);
+}
+
 describe("erreurs GraphQL d'une écriture (HTTP 200)", () => {
-  it("UNEXPECTED : l'effet est inconnu", async () => {
-    const { provider } = withWrite(() => json({ data: null, errors: [{ message: "Internal", extensions: { code: "UNEXPECTED" } }] }));
-    expect(await provider.createDraft(content).catch((e) => e)).toMatchObject({ outcome: "unknown", kind: "api" });
+  it("UNEXPECTED : l'effet est inconnu — refusé, lecture seule", async () => {
+    const { provider, calls } = withWrite(() => json({ data: null, errors: [{ message: "Internal", extensions: { code: "UNEXPECTED" } }] }));
+    await expectReadOnlyRefusal(provider.createDraft(content), calls);
   });
 
-  it("une erreur sans code ne prouve pas l'absence d'effet", async () => {
-    const { provider } = withWrite(() => json({ data: null, errors: [{ message: "???" }] }));
-    expect(await provider.createDraft(content).catch((e) => e)).toMatchObject({ outcome: "unknown" });
+  it("une erreur sans code ne prouve pas l'absence d'effet — refusé, lecture seule", async () => {
+    const { provider, calls } = withWrite(() => json({ data: null, errors: [{ message: "???" }] }));
+    await expectReadOnlyRefusal(provider.createDraft(content), calls);
   });
 
   it.each(["UNAUTHORIZED", "FORBIDDEN", "NOT_FOUND"])("%s : refus documenté, échec certain", async (code) => {
@@ -48,9 +59,9 @@ describe("erreurs GraphQL d'une écriture (HTTP 200)", () => {
     expect(await provider.createDraft(content).catch((e) => e)).toMatchObject({ outcome: "failed" });
   });
 
-  it("RATE_LIMIT_EXCEEDED : quota, avec le délai demandé conservé intégralement", async () => {
-    const { provider } = withWrite(() => json({ data: null, errors: [{ message: "Trop", extensions: { code: "RATE_LIMIT_EXCEEDED" } }] }, 200, { "retry-after": "259200" }));
-    expect(await provider.createDraft(content).catch((e) => e)).toMatchObject({ kind: "rate_limit", retryAfterSeconds: 259200, outcome: "failed" });
+  it("RATE_LIMIT_EXCEEDED : quota, avec le délai demandé conservé intégralement — refusé, lecture seule", async () => {
+    const { provider, calls } = withWrite(() => json({ data: null, errors: [{ message: "Trop", extensions: { code: "RATE_LIMIT_EXCEEDED" } }] }, 200, { "retry-after": "259200" }));
+    await expectReadOnlyRefusal(provider.createDraft(content), calls);
   });
 
   it("un refus typé (MutationError) est un échec certain", async () => {
@@ -58,37 +69,35 @@ describe("erreurs GraphQL d'une écriture (HTTP 200)", () => {
     expect(await provider.createDraft(content).catch((e) => e)).toMatchObject({ outcome: "failed" });
   });
 
-  it("un résultat nul ou sans post ni message est inconnu, jamais un échec certain", async () => {
+  it("un résultat nul ou sans post ni message est inconnu, jamais un échec certain — refusé, lecture seule", async () => {
     for (const data of [{ createPost: null }, { createPost: { __typename: "PostActionSuccess" } }]) {
-      const { provider } = withWrite(() => json({ data }));
-      expect(await provider.createDraft(content).catch((e) => e), JSON.stringify(data)).toMatchObject({ outcome: "unknown" });
+      const { provider, calls } = withWrite(() => json({ data }));
+      await expectReadOnlyRefusal(provider.createDraft(content), calls);
     }
   });
 
-  it("un succès accompagné d'avertissements conserve l'identifiant du post créé", async () => {
-    const { provider } = withWrite(() => json({ data: { createPost: { __typename: "PostActionSuccess", post: raw() } }, errors: [{ message: "Avertissement" }] }));
-    expect((await provider.createDraft(content)).id).toBe("created-1");
+  it("un succès accompagné d'avertissements conserve l'identifiant du post créé — refusé, lecture seule", async () => {
+    const { provider, calls } = withWrite(() => json({ data: { createPost: { __typename: "PostActionSuccess", post: raw() } }, errors: [{ message: "Avertissement" }] }));
+    await expectReadOnlyRefusal(provider.createDraft(content), calls);
   });
 
-  it("HTTP 5xx et coupure : inconnus ; 2xx illisible : inconnu", async () => {
+  it("HTTP 5xx et coupure : inconnus ; 2xx illisible : inconnu — refusé, lecture seule", async () => {
     const five = withWrite(() => new Response("oops", { status: 502 }));
-    expect(await five.provider.createDraft(content).catch((e) => e)).toMatchObject({ outcome: "unknown", kind: "network" });
+    await expectReadOnlyRefusal(five.provider.createDraft(content), five.calls);
     const garbled = withWrite(() => new Response("<html>", { status: 200 }));
-    expect(await garbled.provider.createDraft(content).catch((e) => e)).toMatchObject({ outcome: "unknown" });
+    await expectReadOnlyRefusal(garbled.provider.createDraft(content), garbled.calls);
     const cut = withWrite(() => { throw new TypeError("fetch failed"); });
-    expect(await cut.provider.createDraft(content).catch((e) => e)).toMatchObject({ outcome: "unknown", kind: "network" });
+    await expectReadOnlyRefusal(cut.provider.createDraft(content), cut.calls);
   });
 
-  it("une écriture n'est jamais rejouée par le client", async () => {
+  it("une écriture n'est jamais rejouée par le client — refusé, lecture seule", async () => {
     const { provider, calls } = withWrite(() => new Response("oops", { status: 503 }));
-    await provider.createDraft(content).catch(() => undefined);
-    expect(calls).toHaveLength(1);
+    await expectReadOnlyRefusal(provider.createDraft(content), calls);
   });
 
-  it("une création réussie mais dont le garde-fou échoue garde l'identifiant créé", async () => {
-    const { provider } = withWrite(() => json({ data: { createPost: { __typename: "PostActionSuccess", post: raw({ status: "scheduled" }) } } }));
-    const error = await provider.createDraft(content).catch((e) => e);
-    expect(error.createdPostId).toBe("created-1");
+  it("une création réussie mais dont le garde-fou échoue garde l'identifiant créé — refusé, lecture seule", async () => {
+    const { provider, calls } = withWrite(() => json({ data: { createPost: { __typename: "PostActionSuccess", post: raw({ status: "scheduled" }) } } }));
+    await expectReadOnlyRefusal(provider.createDraft(content), calls);
   });
 });
 
@@ -162,8 +171,8 @@ describe("réconciliation (findDraftCandidates)", () => {
 });
 
 describe("quota", () => {
-  it("un Retry-After de plusieurs jours est transmis tel quel (HTTP 429)", async () => {
-    const { provider } = withWrite(() => json({}, 429, { "retry-after": "172800" }));
-    expect(await provider.updateDraft("p", content).catch((e) => e)).toMatchObject({ kind: "rate_limit", retryAfterSeconds: 172800 });
+  it("un Retry-After de plusieurs jours est transmis tel quel (HTTP 429) — refusé, lecture seule", async () => {
+    const { provider, calls } = withWrite(() => json({}, 429, { "retry-after": "172800" }));
+    await expectReadOnlyRefusal(provider.updateDraft("p", content), calls);
   });
 });

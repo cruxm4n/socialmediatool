@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { BufferProvider, parseRateLimit } from "@/server/publishing/buffer-provider";
 import { MockProvider } from "@/server/publishing/mock-provider";
-import { ProviderError, sameContent, type ProviderPost } from "@/server/publishing/provider";
+import { BUFFER_READ_ONLY, ProviderError, sameContent, type ProviderPost } from "@/server/publishing/provider";
 
 const RAW_POST = {
   id: "p1",
@@ -33,6 +33,18 @@ function fakeBuffer(handlers: (query: string, variables: Record<string, unknown>
     return handlers(body.query, body.variables);
   }) as unknown as typeof fetch;
   return { fetchImpl, calls };
+}
+
+/**
+ * Refus de lecture seule : l'opération rejette avec la phrase exacte et un résultat certain (« failed »), et aucune
+ * mutation n'a quitté le serveur (aucun appel dont le corps contient « mutation »).
+ */
+async function expectReadOnlyRefusal(promise: Promise<unknown>, fetchImpl: typeof fetch) {
+  const error = await promise.then(() => null, (caught: unknown) => caught);
+  expect(error).toBeInstanceOf(ProviderError);
+  expect(error).toMatchObject({ message: BUFFER_READ_ONLY, kind: "api", outcome: "failed", refusal: "writes_disabled" });
+  const sent = (fetchImpl as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+  expect(sent.filter(([, init]) => String((init as RequestInit | undefined)?.body ?? "").includes("mutation"))).toHaveLength(0);
 }
 
 describe("lecture du quota Buffer", () => {
@@ -106,38 +118,36 @@ describe("client de l'API Buffer", () => {
     await expect(new BufferProvider("k", "À valider", fetchImpl).getPost("absent")).resolves.toBeNull();
   });
 
-  it("programme un brouillon en renvoyant le texte, la date et le mode", async () => {
-    const { fetchImpl, calls } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, status: "scheduled" } } } }));
-    const result = await new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost);
-
-    expect(result.status).toBe("scheduled");
-    expect(calls[0].variables.input).toEqual({
-      id: "p1", saveToDraft: false, text: "Bonjour", mode: "customScheduled", schedulingType: "automatic", dueAt: "2026-12-15T10:00:00.000Z",
-    });
+  it("programme un brouillon en renvoyant le texte, la date et le mode — refusé, lecture seule", async () => {
+    const { fetchImpl } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, status: "scheduled" } } } }));
+    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost), fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(0);
   });
 
-  it("renvoie le média quand le post n'a pas de texte", async () => {
-    const { fetchImpl, calls } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, status: "draft" } } } }));
-    await new BufferProvider("k", "À valider", fetchImpl).unschedulePost({
+  it("renvoie le média quand le post n'a pas de texte — refusé, lecture seule", async () => {
+    const { fetchImpl } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, status: "draft" } } } }));
+    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).unschedulePost({
       ...livePost, text: "", assets: [{ type: "image", source: "https://img/1.jpg", thumbnail: "" }],
-    });
-    expect(calls[0].variables.input).toEqual({ id: "p1", saveToDraft: true, assets: [{ image: { url: "https://img/1.jpg" } }] });
+    }), fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(0);
   });
 
-  it("refuse de programmer un post sans date", async () => {
+  it("refuse de programmer un post sans date — refusé, lecture seule", async () => {
     const { fetchImpl, calls } = fakeBuffer(() => json({}));
-    await expect(new BufferProvider("k", "À valider", fetchImpl).schedulePost({ ...livePost, dueAt: null })).rejects.toThrow("date");
+    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost({ ...livePost, dueAt: null }), fetchImpl);
     expect(calls).toHaveLength(0);
   });
 
-  it("remonte le refus de Buffer comme une erreur", async () => {
+  it("remonte le refus de Buffer comme une erreur — refusé, lecture seule", async () => {
     const { fetchImpl } = fakeBuffer(() => json({ data: { editPost: { __typename: "InvalidInputError", message: "Invalid post: Post must have either text or media." } } }));
-    await expect(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost)).rejects.toThrow("Post must have either text or media");
+    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost), fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(0);
   });
 
-  it("considère comme un échec une réponse qui ne passe pas le post en « programmé »", async () => {
+  it("considère comme un échec une réponse qui ne passe pas le post en « programmé » — refusé, lecture seule", async () => {
     const { fetchImpl } = fakeBuffer(() => json({ data: { editPost: { __typename: "PostActionSuccess", post: RAW_POST } } }));
-    await expect(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost)).rejects.toThrow("n'a pas programmé");
+    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost), fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(0);
   });
 
   it("signale le dépassement de quota avec le délai d'attente", async () => {
@@ -167,12 +177,12 @@ describe("client de l'API Buffer", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
-  it("ne retente jamais une écriture : on ignore si Buffer l'a prise en compte", async () => {
+  it("ne retente jamais une écriture : on ignore si Buffer l'a prise en compte — refusé, lecture seule", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("ECONNRESET");
     }) as unknown as typeof fetch;
-    await expect(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost)).rejects.toMatchObject({ kind: "network" });
-    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    await expectReadOnlyRefusal(new BufferProvider("k", "À valider", fetchImpl).schedulePost(livePost), fetchImpl);
+    expect(fetchImpl).toHaveBeenCalledTimes(0);
   });
 
   it("traite une erreur 5xx comme une panne passagère et une erreur 401 comme une clé invalide", async () => {
@@ -227,59 +237,48 @@ describe("brouillons du Studio dans Buffer", () => {
     });
   const success = (name: string, status = "draft") => json({ data: { [name]: { __typename: "PostActionSuccess", post: { ...RAW_POST, status } } } });
 
-  it("crée toujours un brouillon tagué « à valider », jamais un post programmé", async () => {
+  it("crée toujours un brouillon tagué « à valider », jamais un post programmé — refusé, lecture seule", async () => {
     const { fetchImpl, calls } = withTag(() => success("createPost"));
-    const created = await new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT);
-    expect(created.status).toBe("draft");
-    const input = calls.at(-1)!.variables.input as Record<string, unknown>;
-    expect(input).toMatchObject({
-      channelId: "c1", saveToDraft: true, mode: "customScheduled", schedulingType: "automatic", dueAt: CONTENT.dueAt, text: CONTENT.text, tagIds: ["tag-valider"],
-      assets: [{ image: { url: "https://stockage/a.jpg" } }, { video: { url: "https://stockage/b.mp4" } }],
-      metadata: { instagram: { type: "carousel", shouldShareToFeed: true } },
-    });
-    expect(calls.at(-1)!.query).toContain("createPost");
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT), fetchImpl);
+    expect(calls).toHaveLength(0);
   });
 
-  it("refuse d'envoyer si le tag de validation n'existe pas dans Buffer, sans le créer", async () => {
+  it("refuse d'envoyer si le tag de validation n'existe pas dans Buffer, sans le créer — refusé, lecture seule", async () => {
     const { fetchImpl, calls } = fakeBuffer((query) =>
       query.includes("channel(input") ? json({ data: { channel: { organizationId: "org1" } } }) : json({ data: { tagsV2: { edges: [] } } }));
-    await expect(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT)).rejects.toThrow("n'existe pas dans Buffer");
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT), fetchImpl);
     expect(calls.some((call) => call.query.includes("mutation"))).toBe(false);
   });
 
-  it("si Buffer programme malgré tout le post créé, il est aussitôt repassé en brouillon", async () => {
+  it("si Buffer programme malgré tout le post créé, il est aussitôt repassé en brouillon — refusé, lecture seule", async () => {
     const mutations: Record<string, unknown>[] = [];
     const { fetchImpl } = withTag((query, variables) => {
       mutations.push(variables.input as Record<string, unknown>);
       return query.includes("createPost") ? success("createPost", "scheduled") : success("editPost", "draft");
     });
-    expect((await new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT)).status).toBe("draft");
-    expect(mutations).toHaveLength(2);
-    expect(mutations[1]).toMatchObject({ id: "p1", saveToDraft: true });
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT), fetchImpl);
+    expect(mutations).toHaveLength(0);
   });
 
-  it("met à jour un brouillon existant sans en créer un second, et le laisse en brouillon", async () => {
+  it("met à jour un brouillon existant sans en créer un second, et le laisse en brouillon — refusé, lecture seule", async () => {
     const { fetchImpl, calls } = fakeBuffer(() => success("editPost"));
-    await new BufferProvider("cle", "À valider", fetchImpl).updateDraft("p1", { ...CONTENT, service: "linkedin", assets: [] });
-    expect(calls).toHaveLength(1);
-    expect(calls[0].query).toContain("editPost");
-    expect(calls[0].variables.input).toMatchObject({ id: "p1", saveToDraft: true, text: CONTENT.text, assets: [] });
-    expect(calls[0].variables.input).not.toHaveProperty("metadata");
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", fetchImpl).updateDraft("p1", { ...CONTENT, service: "linkedin", assets: [] }), fetchImpl);
+    expect(calls).toHaveLength(0);
   });
 
-  it("déplace un brouillon en renvoyant son texte, et refuse de déplacer un post programmé", async () => {
+  it("déplace un brouillon en renvoyant son texte, et refuse de déplacer un post programmé — refusé, lecture seule", async () => {
     const { fetchImpl, calls } = fakeBuffer(() => success("editPost"));
     const provider = new BufferProvider("cle", "À valider", fetchImpl);
     const draft = { id: "p1", channelId: "c1", service: "twitter", status: "draft", text: "Bonjour", dueAt: "2026-12-15T10:00:00.000Z", sentAt: null, updatedAt: null, externalLink: null, error: null, hasReviewTag: true, schedulingType: "automatic", assets: [] } as ProviderPost;
-    await provider.rescheduleDraft(draft, "2026-12-20T10:00:00.000Z");
-    expect(calls[0].variables.input).toEqual({ id: "p1", saveToDraft: true, mode: "customScheduled", schedulingType: "automatic", dueAt: "2026-12-20T10:00:00.000Z", text: "Bonjour" });
-    await expect(provider.rescheduleDraft({ ...draft, status: "scheduled" }, "2026-12-20T10:00:00.000Z")).rejects.toThrow("Seul un brouillon");
-    expect(calls).toHaveLength(1);
+    await expectReadOnlyRefusal(provider.rescheduleDraft(draft, "2026-12-20T10:00:00.000Z"), fetchImpl);
+    await expectReadOnlyRefusal(provider.rescheduleDraft({ ...draft, status: "scheduled" }, "2026-12-20T10:00:00.000Z"), fetchImpl);
+    expect(calls).toHaveLength(0);
   });
 
-  it("remonte le refus de Buffer à la création", async () => {
-    const { fetchImpl } = withTag(() => json({ data: { createPost: { __typename: "LimitReachedError", message: "Scheduled posts limit reached" } } }));
-    await expect(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT)).rejects.toThrow("Buffer a refusé la création : Scheduled posts limit reached");
+  it("remonte le refus de Buffer à la création — refusé, lecture seule", async () => {
+    const { fetchImpl, calls } = withTag(() => json({ data: { createPost: { __typename: "LimitReachedError", message: "Scheduled posts limit reached" } } }));
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT), fetchImpl);
+    expect(calls).toHaveLength(0);
   });
 
   it("Buffer simulé : crée, met à jour et déplace un brouillon, sans jamais programmer", async () => {
@@ -320,41 +319,39 @@ describe("résultat d'une écriture Buffer : certain ou inconnu (audit B6)", () 
     throw new Error("aucune erreur levée");
   };
 
-  it("un délai dépassé pendant une création est un résultat INCONNU et n'est jamais retenté", async () => {
+  it("un délai dépassé pendant une création est un résultat INCONNU et n'est jamais retenté — refusé, lecture seule", async () => {
     const { fetchImpl, calls } = withWrite(() => {
       throw Object.assign(new Error("timeout"), { name: "TimeoutError" });
     });
-    const error = await failure(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT));
-    expect(error).toMatchObject({ kind: "network", outcome: "unknown" });
-    expect(calls.filter((query) => query.includes("createPost"))).toHaveLength(1);
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT), fetchImpl);
+    expect(calls.filter((query) => query.includes("createPost"))).toHaveLength(0);
   });
 
-  it("une erreur 5xx pendant une création est inconnue ; une réponse 2xx illisible aussi", async () => {
-    const five = await failure(new BufferProvider("cle", "À valider", withWrite(() => new Response("oups", { status: 502 })).fetchImpl).createDraft(CONTENT));
-    expect(five).toMatchObject({ kind: "network", outcome: "unknown" });
-    const garbled = await failure(new BufferProvider("cle", "À valider", withWrite(() => new Response("<html>", { status: 200 })).fetchImpl).createDraft(CONTENT));
-    expect(garbled).toMatchObject({ outcome: "unknown" });
+  it("une erreur 5xx pendant une création est inconnue ; une réponse 2xx illisible aussi — refusé, lecture seule", async () => {
+    const five = withWrite(() => new Response("oups", { status: 502 }));
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", five.fetchImpl).createDraft(CONTENT), five.fetchImpl);
+    const garbled = withWrite(() => new Response("<html>", { status: 200 }));
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", garbled.fetchImpl).createDraft(CONTENT), garbled.fetchImpl);
   });
 
-  it("un refus applicatif, un quota ou une clé refusée sont des échecs certains, avec le délai de reprise", async () => {
-    const refused = await failure(new BufferProvider("cle", "À valider", withWrite(() => json({ data: { createPost: { __typename: "MutationError", message: "Texte vide" } } })).fetchImpl).createDraft(CONTENT));
-    expect(refused).toMatchObject({ kind: "api", outcome: "failed" });
-    const quota = await failure(new BufferProvider("cle", "À valider", withWrite(() => json({}, { status: 429, headers: { "retry-after": "600" } })).fetchImpl).createDraft(CONTENT));
-    expect(quota).toMatchObject({ kind: "rate_limit", outcome: "failed", retryAfterSeconds: 600 });
-    const key = await failure(new BufferProvider("cle", "À valider", withWrite(() => json({}, { status: 401 })).fetchImpl).createDraft(CONTENT));
-    expect(key).toMatchObject({ outcome: "failed" });
+  it("un refus applicatif, un quota ou une clé refusée sont des échecs certains, avec le délai de reprise — refusé, lecture seule", async () => {
+    const refused = withWrite(() => json({ data: { createPost: { __typename: "MutationError", message: "Texte vide" } } }));
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", refused.fetchImpl).createDraft(CONTENT), refused.fetchImpl);
+    const quota = withWrite(() => json({}, { status: 429, headers: { "retry-after": "600" } }));
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", quota.fetchImpl).createDraft(CONTENT), quota.fetchImpl);
+    const key = withWrite(() => json({}, { status: 401 }));
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", key.fetchImpl).createDraft(CONTENT), key.fetchImpl);
   });
 
-  it("brouillon créé puis remise en brouillon impossible : l'identifiant du brouillon accompagne l'erreur", async () => {
+  it("brouillon créé puis remise en brouillon impossible : l'identifiant du brouillon accompagne l'erreur — refusé, lecture seule", async () => {
     let writes = 0;
     const { fetchImpl } = withWrite(() => {
       writes += 1;
       if (writes === 1) return json({ data: { createPost: { __typename: "PostActionSuccess", post: { ...RAW_POST, id: "cree-9", status: "scheduled" } } } });
       throw Object.assign(new Error("coupure"), { name: "TimeoutError" });
     });
-    const error = await failure(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT));
-    expect(error.createdPostId).toBe("cree-9");
-    expect(error.outcome).toBe("unknown");
+    await expectReadOnlyRefusal(new BufferProvider("cle", "À valider", fetchImpl).createDraft(CONTENT), fetchImpl);
+    expect(writes).toBe(0);
   });
 
   it("la réconciliation lit sans écrire : elle ne retient que le canal, le texte et l'instant exacts", async () => {

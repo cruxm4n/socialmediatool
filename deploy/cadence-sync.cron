@@ -1,4 +1,4 @@
 # Planificateur de Cadence — tâche planifiée de la machine qui héberge l'application.
-# NON INSTALLÉ : voir docs/PLANIFICATEUR.md avant de l'activer.
+# NON INSTALLÉ : voir docs/SYNCHRONISATION.md avant de l'activer. Une lecture par heure (prudent pour les quotas Buffer).
 # Remplacer /chemin/vers/cadence par le dossier du projet, puis : crontab -e, et coller la ligne.
-*/5 * * * * /chemin/vers/cadence/scripts/sync-tick.sh >> /chemin/vers/cadence/sync.log 2>&1
+0 * * * * /chemin/vers/cadence/scripts/sync-tick.sh >> /chemin/vers/cadence/sync.log 2>&1

@@ -3,8 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProviderError, type ProviderPost, type PublishingProvider } from "@/server/publishing/provider";
 
 /*
- * (Mission V3, C03/T03) Traitement urgent : reprise des annulations à confirmer et des réservations abandonnées,
- * indépendante du poll général. La base et Buffer sont des doublures ; l'horloge est contrôlée pour la boucle.
+ * (Mission V3, C03/T03) Traitement urgent : constat des annulations à confirmer et des réservations abandonnées,
+ * indépendant du poll général. Lecture seule vis-à-vis de Buffer. La base et Buffer sont des doublures ; l'horloge
+ * est contrôlée pour la boucle.
  */
 
 type Call = { name: string; params: Record<string, unknown> };
@@ -49,8 +50,9 @@ const dispatchNotifications = vi.fn(async () => ({}));
 vi.mock("@/server/notifications", () => ({ dispatchNotifications }));
 
 const { runUrgent, runUrgentCycle } = await import("@/server/urgent");
-const { runSync, scheduleApprovedPosts } = await import("@/server/sync");
+const { runSync } = await import("@/server/sync");
 const { startUrgentLoop } = await import("@/server/urgent-loop");
+const { STILL_SCHEDULED } = await import("@/server/compensation");
 
 const DUE = "2030-01-15T09:00:00.000Z";
 const live = (overrides: Partial<ProviderPost> = {}): ProviderPost => ({
@@ -100,15 +102,26 @@ describe("traitement urgent : réveil", () => {
     expect(await runUrgent()).toMatchObject({ ok: true, skipped: "unsupported" });
   });
 
-  it("une annulation en attente est compensée SANS lire l'instantané général de Buffer", async () => {
+  it("une annulation en attente est constatée SANS lire l'instantané général de Buffer : déjà brouillon, elle est enregistrée — lecture seule", async () => {
+    summary = { pending_unschedule: 1, orphan_claims: 0 };
+    toUnschedule = [pending()];
+    provider.getPost.mockResolvedValue(live({ status: "draft" }));
+    const result = await runUrgent();
+    expect(result).toMatchObject({ ok: true, compensated: 1, compensationFailures: 0 });
+    expect(provider.fetchSnapshot).not.toHaveBeenCalled();
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+    expect(of("complete_unscheduling")).toEqual([expect.objectContaining({ p_post_id: "p1", p_ok: true, p_observed_status: "draft" })]);
+    expect(of("finish_urgent_run")).toEqual([expect.objectContaining({ p_token: "u1", p_ok: true })]);
+  });
+
+  it("une annulation encore programmée n'est jamais déprogrammée : elle reste « à confirmer » — lecture seule", async () => {
     summary = { pending_unschedule: 1, orphan_claims: 0 };
     toUnschedule = [pending()];
     provider.getPost.mockResolvedValue(live({ status: "scheduled" }));
     const result = await runUrgent();
-    expect(result).toMatchObject({ ok: true, compensated: 1, compensationFailures: 0 });
-    expect(provider.fetchSnapshot).not.toHaveBeenCalled();
-    expect(of("complete_unscheduling")).toEqual([expect.objectContaining({ p_post_id: "p1", p_ok: true, p_observed_status: "draft" })]);
-    expect(of("finish_urgent_run")).toEqual([expect.objectContaining({ p_token: "u1", p_ok: true })]);
+    expect(result).toMatchObject({ ok: false, compensated: 0, compensationFailures: 1 });
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+    expect(of("complete_unscheduling")).toEqual([expect.objectContaining({ p_post_id: "p1", p_ok: false, p_error: STILL_SCHEDULED })]);
   });
 
   it("un autre traitement urgent est en cours : aucun appel, aucune double annulation", async () => {
@@ -120,25 +133,22 @@ describe("traitement urgent : réveil", () => {
 });
 
 describe("bail de la synchronisation générale (exécution plus longue que cinq minutes)", () => {
-  const claim = (id: string) => ({ id, buffer_post_id: `b-${id}`, text: "Texte validé", assets: [], due_at: DUE, service: "twitter", token: `jeton-${id}` });
-
-  it("bail perdu : le détenteur expiré ne programme plus rien, ne confirme rien comme un nouveau détenteur", async () => {
-    claimedForSync = [claim("p1"), claim("p2")];
+  it("bail perdu : le détenteur expiré ne constate rien, n'écrit rien, et ne consigne aucune annulation comme faite — lecture seule", async () => {
+    toUnschedule = [pending("p1", "b-p1"), pending("p2", "b-p2")];
     syncLease = false;
-    provider.getPost.mockResolvedValue(live({ status: "draft" }));
     const result = await runSync("test");
+    expect(provider.getPost).not.toHaveBeenCalled();
     expect(provider.schedulePost).not.toHaveBeenCalled();
-    expect(result.ok).toBe(false);
-    // Les réservations sont libérées avec un échec certain (aucun effet externe), jamais confirmées.
-    expect(of("complete_scheduling").every((params) => params.p_ok === false)).toBe(true);
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+    expect(of("complete_unscheduling")).toEqual([]);
+    expect(result).toMatchObject({ ok: false, unscheduled: 0, unscheduleFailures: 2 });
   });
 
-  it("bail renouvelé avant chaque écriture externe", async () => {
-    claimedForSync = [claim("p1"), claim("p2")];
-    provider.getPost.mockImplementation(async (id: string) => live({ id, status: "draft" }));
-    provider.schedulePost.mockImplementation(async (post: ProviderPost) => ({ ...post, status: "scheduled" as const }));
+  it("bail renouvelé avant chaque lecture externe — lecture seule", async () => {
+    toUnschedule = [pending("p1", "b-p1"), pending("p2", "b-p2")];
+    provider.getPost.mockImplementation(async (id: string) => live({ id, status: "scheduled" }));
     await runSync("test");
-    expect(provider.schedulePost).toHaveBeenCalledTimes(2);
+    expect(provider.getPost).toHaveBeenCalledTimes(2);
     expect(of("renew_sync_run").length).toBeGreaterThanOrEqual(2);
   });
 });
@@ -155,20 +165,21 @@ describe("traitement urgent : compensation et quota", () => {
     expect(of("complete_unscheduling").some((params) => params.p_ok === true)).toBe(false);
   });
 
-  it("une pause préventive (rien n'a été refusé) laisse passer la compensation", async () => {
+  it("une pause préventive (rien n'a été refusé) laisse passer le constat — lecture seule", async () => {
     toUnschedule = [pending()];
     pause = { until: "2030-01-01T00:00:00Z", reason: "Quota presque épuisé", hard: false };
-    provider.getPost.mockResolvedValue(live({ status: "scheduled" }));
+    provider.getPost.mockResolvedValue(live({ status: "draft" }));
     expect(await runUrgentCycle(provider)).toMatchObject({ ok: true, compensated: 1 });
+    expect(provider.getPost).toHaveBeenCalledTimes(1);
   });
 
-  it("un 429 pendant la compensation pose la pause, n'insiste pas, et n'annonce rien d'annulé", async () => {
+  it("un 429 pendant le constat pose la pause, n'insiste pas, et n'annonce rien de constaté", async () => {
     toUnschedule = [pending("p1", "b1"), pending("p2", "b2")];
-    provider.getPost.mockResolvedValue(live({ status: "scheduled" }));
-    provider.unschedulePost.mockRejectedValue(new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", 172_800));
+    provider.getPost.mockRejectedValue(new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", 172_800));
     const result = await runUrgentCycle(provider);
     expect(result).toMatchObject({ ok: false, compensated: 0, compensationFailures: 2 });
-    expect(provider.unschedulePost).toHaveBeenCalledTimes(1);
+    expect(provider.getPost).toHaveBeenCalledTimes(1);
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
     expect(of("set_sync_backoff")).toEqual([expect.objectContaining({ p_seconds: 172_800 })]);
     expect(of("complete_unscheduling").every((params) => params.p_ok === false)).toBe(true);
   });
@@ -199,23 +210,22 @@ describe("réservations abandonnées (crash entre l'acceptation par Buffer et la
     expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 
-  it("programmé mais le contenu de Buffer a changé : annulation demandée puis exécutée dans le même passage", async () => {
+  it("programmé mais le contenu de Buffer a changé : annulation demandée, puis constatée dans le même passage sans déprogrammation — lecture seule", async () => {
     orphans = [orphan()];
-    provider.getPost.mockResolvedValue(live({ status: "scheduled", text: "Texte retouché dans Buffer" }));
-    // La base, après la demande, liste la publication à annuler.
-    const original = provider.getPost;
-    original.mockImplementation(async () => {
+    // La lecture de la réservation révèle le contenu modifié ; la base liste ensuite la publication à confirmer.
+    provider.getPost.mockImplementation(async () => {
       toUnschedule = [pending()];
       return live({ status: "scheduled", text: "Texte retouché dans Buffer" });
     });
     const result = await runUrgentCycle(provider);
     expect(of("mark_unschedule_needed")).toEqual([expect.objectContaining({ p_post_id: "p1" })]);
     expect(of("complete_scheduling")).toEqual([]);
-    expect(provider.unschedulePost).toHaveBeenCalledTimes(1);
-    expect(result).toMatchObject({ compensated: 1 });
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+    expect(of("complete_unscheduling")).toEqual([expect.objectContaining({ p_post_id: "p1", p_ok: false, p_error: STILL_SCHEDULED })]);
+    expect(result).toMatchObject({ ok: false, compensated: 0, compensationFailures: 1 });
   });
 
-  it("confirmation refusée par la base (« stale ») : compensation immédiate", async () => {
+  it("confirmation refusée par la base (« stale ») : aucune déprogrammation, constat immédiat — lecture seule", async () => {
     orphans = [orphan()];
     completeSchedulingAnswer = "stale";
     provider.getPost.mockImplementation(async () => {
@@ -223,8 +233,9 @@ describe("réservations abandonnées (crash entre l'acceptation par Buffer et la
       return live({ status: "scheduled" });
     });
     const result = await runUrgentCycle(provider);
-    expect(provider.unschedulePost).toHaveBeenCalledTimes(1);
-    expect(result.compensated).toBe(1);
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+    expect(of("complete_unscheduling")).toEqual([expect.objectContaining({ p_post_id: "p1", p_ok: false, p_error: STILL_SCHEDULED })]);
+    expect(result).toMatchObject({ compensated: 0, compensationFailures: 1 });
   });
 
   it("brouillon constaté : échec certain enregistré pour CETTE tentative (jeton)", async () => {
@@ -288,15 +299,14 @@ describe("boucle de réveil, horloge contrôlée", () => {
     expect(max).toBe(1);
   });
 
-  it("chronologie : une annulation apparue à T+10 s est tentée avant T+60 s, très en deçà du poll de 30 minutes et d'une échéance à T+11 min", async () => {
+  it("chronologie : une annulation apparue à T+10 s est constatée avant T+60 s, très en deçà du poll de 30 minutes et d'une échéance à T+11 min — lecture seule", async () => {
     summary = { pending_unschedule: 0, orphan_claims: 0 };
-    let attemptedAtMs: number | null = null;
-    provider.getPost.mockResolvedValue(live({ status: "scheduled" }));
-    provider.unschedulePost.mockImplementation(async (post: ProviderPost) => {
-      attemptedAtMs = Date.now() - start;
-      return { ...post, status: "draft" as const };
-    });
+    let checkedAtMs: number | null = null;
     const start = Date.now();
+    provider.getPost.mockImplementation(async () => {
+      checkedAtMs = Date.now() - start;
+      return live({ status: "scheduled" });
+    });
     const loop = startUrgentLoop(() => runUrgent());
     // Invalidation locale à T+10 s (par exemple un accord retiré) ; le serveur redémarre à T+0 et son poll est à T+30 min.
     await vi.advanceTimersByTimeAsync(10_000);
@@ -304,10 +314,11 @@ describe("boucle de réveil, horloge contrôlée", () => {
     toUnschedule = [pending()];
     await vi.advanceTimersByTimeAsync(60_000);
     loop.stop();
-    expect(attemptedAtMs).not.toBeNull();
-    expect(attemptedAtMs!).toBeLessThanOrEqual(10_000 + 60_000);
-    expect(attemptedAtMs!).toBeLessThan(11 * 60_000);
+    expect(checkedAtMs).not.toBeNull();
+    expect(checkedAtMs!).toBeLessThanOrEqual(10_000 + 60_000);
+    expect(checkedAtMs!).toBeLessThan(11 * 60_000);
     expect(provider.fetchSnapshot).not.toHaveBeenCalled();
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
   });
 });
 
@@ -322,28 +333,19 @@ describe("profil pilote : échéance d'au moins 24 h, vérifiée à chaque progr
   });
 });
 
-describe("profil pilote : programmation refusée sous 24 h, sans appel à Buffer", () => {
+describe("profil pilote : lecture seule, y compris avec des accords anciens et des échéances proches", () => {
   const soon = new Date(Date.now() + 3_600_000).toISOString();
   const later = new Date(Date.now() + 3 * 86_400_000).toISOString();
   const claim = (id: string, dueAt: string) => ({ id, buffer_post_id: `b-${id}`, text: "Texte validé", assets: [], due_at: dueAt, service: "twitter", token: `jeton-${id}` });
 
-  it("un accord ancien repris tardivement ne contourne pas la règle", async () => {
+  it("des publications approuvées sont réservables, runSync ne réserve et ne programme rien, même en profil pilote — lecture seule", async () => {
     profile = "pilot";
     claimedForSync = [claim("proche", soon), claim("loin", later)];
     provider.getPost.mockImplementation(async (id: string) => live({ id, dueAt: id === "b-proche" ? soon : later }));
-    const result = await scheduleApprovedPosts();
-    expect(provider.schedulePost).toHaveBeenCalledTimes(1);
-    expect(provider.getPost).not.toHaveBeenCalledWith("b-proche");
-    expect(of("complete_scheduling")).toEqual(expect.arrayContaining([
-      expect.objectContaining({ p_post_id: "proche", p_ok: false, p_token: "jeton-proche" }),
-    ]));
-    expect(result.failures).toBe(1);
-  });
-
-  it("profil standard : la marge de 5 minutes de la base reste la seule règle", async () => {
-    claimedForSync = [claim("proche", soon)];
-    provider.getPost.mockResolvedValue(live({ id: "b-proche", dueAt: soon }));
-    await scheduleApprovedPosts();
-    expect(provider.schedulePost).toHaveBeenCalledTimes(1);
+    const result = await runSync("test");
+    expect(names().filter((name) => name.startsWith("claim_posts_for_scheduling"))).toHaveLength(0);
+    expect(provider.schedulePost).not.toHaveBeenCalled();
+    expect(provider.unschedulePost).not.toHaveBeenCalled();
+    expect(result).toMatchObject({ scheduled: 0, scheduleFailures: 0 });
   });
 });

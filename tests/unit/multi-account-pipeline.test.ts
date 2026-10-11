@@ -4,15 +4,16 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { ProviderPost } from "@/server/publishing/provider";
+import { ProviderError, type ProviderPost } from "@/server/publishing/provider";
 import { ConnectionRouter, type ConnectionRow, type ConnectionState } from "@/server/publishing/router";
 import { emptyState, FileProvider, readState, writeState, type FakeBufferState } from "../support/file-provider";
 
 /*
- * La chaîne RÉELLE (programmation après accord, annulation, reprise des réservations abandonnées, synchronisation)
+ * La chaîne RÉELLE (constat après accord, annulation, reprise des réservations abandonnées, synchronisation)
  * branchée sur le routeur de connexions, avec deux faux comptes Buffer persistants. La base est une doublure qui
  * enregistre chaque appel ; les comptes, eux, comptent chaque requête reçue.
- * Invariant : ce qui arrive au compte du client A (panne, quota, révocation) ne bloque ni ne modifie le compte du client B.
+ * Lecture seule : Cadence ne programme ni ne déprogramme jamais. Invariant : ce qui arrive au compte du client A
+ * (panne, quota, révocation) ne bloque ni ne modifie le compte du client B.
  */
 
 const A = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -72,7 +73,7 @@ const makeRouter = () =>
 vi.mock("@/server/publishing", () => ({ getProvider: () => makeRouter() }));
 vi.mock("@/server/notifications", () => ({ dispatchNotifications: vi.fn(async () => ({})) }));
 
-const { scheduleApprovedPosts, runSync } = await import("@/server/sync");
+const { runSync } = await import("@/server/sync");
 const { unscheduleInvalidatedPosts, reconcileOrphanClaims } = await import("@/server/compensation");
 
 const post = (id: string, channelId: string, status: ProviderPost["status"] = "draft"): ProviderPost => ({
@@ -107,66 +108,72 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(dir, { recursive: true, force: true }));
 
-describe("programmation après accord, deux comptes", () => {
-  it("chaque publication est programmée dans SON compte, jamais dans l'autre", async () => {
-    claimed = [claim("p-a1", "a1"), claim("p-b1", "b1")];
-    const outcome = await scheduleApprovedPosts();
-    expect(outcome).toMatchObject({ scheduled: 2, failures: 0 });
+describe("constat après accord (lecture seule), deux comptes", () => {
+  it("chaque publication est CONSTATÉE dans SON compte, jamais dans l'autre — lecture seule", async () => {
+    patch(fileA, (state) => { state.posts.a1.status = "scheduled"; });
+    patch(fileB, (state) => { state.posts.b1.status = "draft"; });
+    toUnschedule = [claim("p-a1", "a1"), claim("p-b1", "b1")];
+    const outcome = await unscheduleInvalidatedPosts(makeRouter());
+    expect(outcome).toMatchObject({ done: 1, failures: 1 });
+    expect(readState(fileA).calls).toEqual({ getPost: 1 });
+    expect(readState(fileB).calls).toEqual({ getPost: 1 });
     expect(readState(fileA).posts.a1.status).toBe("scheduled");
-    expect(readState(fileB).posts.b1.status).toBe("scheduled");
-    expect(readState(fileA).calls).toEqual({ getPost: 1, schedulePost: 1 });
-    expect(readState(fileB).calls).toEqual({ getPost: 1, schedulePost: 1 });
+    expect(readState(fileB).posts.b1.status).toBe("draft");
     expect(readState(fileA).posts.b1).toBeUndefined();
   });
 
-  it("compte A injoignable : ses publications échouent, celles de B sont programmées, aucune pause globale", async () => {
+  it("compte A injoignable : ses publications restent « à confirmer », celles de B sont constatées, aucune pause globale — lecture seule", async () => {
     patch(fileA, (state) => { state.faults.push("getPost:fail"); });
-    claimed = [claim("p-a1", "a1"), claim("p-a2", "a2"), claim("p-b1", "b1"), claim("p-b2", "b2")];
-    const outcome = await scheduleApprovedPosts();
-    expect(outcome).toMatchObject({ scheduled: 2, failures: 2, rateLimited: null });
+    patch(fileB, (state) => { state.posts.b1.status = "draft"; state.posts.b2.status = "draft"; });
+    toUnschedule = [claim("p-a1", "a1"), claim("p-a2", "a2"), claim("p-b1", "b1"), claim("p-b2", "b2")];
+    const outcome = await unscheduleInvalidatedPosts(makeRouter());
+    expect(outcome).toMatchObject({ done: 2, failures: 2, rateLimited: null });
     // A n'a reçu qu'UN appel : après la panne, il n'est plus sollicité pendant ce passage.
     expect(readState(fileA).calls).toEqual({ getPost: 1 });
-    expect(readState(fileB).posts.b1.status).toBe("scheduled");
-    expect(readState(fileB).posts.b2.status).toBe("scheduled");
-    const done = of("complete_scheduling");
+    expect(readState(fileB).calls).toEqual({ getPost: 2 });
+    const done = of("complete_unscheduling");
     expect(done.filter((params) => params.p_ok === true).map((params) => params.p_post_id)).toEqual(["p-b1", "p-b2"]);
-    // La première erreur de A est « incertaine » (la requête est peut-être partie) ; la seconde est un refus sans appel.
-    expect(done.find((params) => params.p_post_id === "p-a1")).toMatchObject({ p_ok: false, p_uncertain: true });
+    expect(done.find((params) => params.p_post_id === "p-a1")).toMatchObject({ p_ok: false });
     expect(done.find((params) => params.p_post_id === "p-a2")).toMatchObject({ p_ok: false });
-    expect(done.find((params) => params.p_post_id === "p-a2")!.p_uncertain).toBeUndefined();
     expect(of("set_sync_backoff")).toEqual([]);
   });
 
-  it("publication dont la connexion est révoquée : refusée sans appel, sans repli sur le compte restant", async () => {
+  it("publication dont la connexion est révoquée : refusée sans appel, sans repli sur le compte restant — lecture seule", async () => {
     rows = [row(B, "Nordwind")];
-    claimed = [claim("p-a1", "a1"), claim("p-b1", "b1")];
-    const outcome = await scheduleApprovedPosts();
-    expect(outcome).toMatchObject({ scheduled: 1, failures: 1 });
+    patch(fileB, (state) => { state.posts.b1.status = "draft"; });
+    toUnschedule = [claim("p-a1", "a1"), claim("p-b1", "b1")];
+    const outcome = await unscheduleInvalidatedPosts(makeRouter());
+    expect(outcome).toMatchObject({ done: 1, failures: 1 });
     expect(total(fileA)).toBe(0);
-    expect(readState(fileB).calls).toEqual({ getPost: 1, schedulePost: 1 });
-    expect(String(of("complete_scheduling").find((params) => params.p_post_id === "p-a1")!.p_error)).toMatch(/révoquée ou indisponible/);
+    expect(readState(fileB).calls).toEqual({ getPost: 1 });
+    expect(String(of("complete_unscheduling").find((params) => params.p_post_id === "p-a1")!.p_error)).toMatch(/révoquée ou indisponible/);
   });
 });
 
 describe("annulation (compensation), deux comptes", () => {
   beforeEach(() => {
     patch(fileA, (state) => { state.posts.a1.status = "scheduled"; state.posts.a2.status = "scheduled"; });
-    patch(fileB, (state) => { state.posts.b1.status = "scheduled"; });
+    patch(fileB, (state) => { state.posts.b1.status = "draft"; });
     toUnschedule = [claim("p-a1", "a1"), claim("p-a2", "a2"), claim("p-b1", "b1")];
   });
 
-  it("refus de quota (429) du compte A : pause enregistrée sur A seul ; l'annulation de B est confirmée ; pas de pause globale", async () => {
-    patch(fileA, (state) => { state.faults.push("unschedulePost:429"); });
+  it("refus de quota (429) du compte A : pause enregistrée sur A seul ; le constat de B est confirmé ; pas de pause globale — lecture seule", async () => {
+    // Le compte A répond 429 à la lecture (après l'appel réel, compté par le faux Buffer).
+    const original = providerA.getPost.bind(providerA);
+    vi.spyOn(providerA, "getPost").mockImplementation(async (id: string) => {
+      await original(id);
+      throw new ProviderError("Quota de requêtes Buffer atteint.", "rate_limit", 172_800);
+    });
     const outcome = await unscheduleInvalidatedPosts(makeRouter());
     expect(outcome).toMatchObject({ done: 1, failures: 2, blocked: null, rateLimited: null });
     expect(readState(fileB).posts.b1.status).toBe("draft");
     // A : une lecture et une tentative ; la seconde publication de A n'a déclenché AUCUN appel (pause du compte).
-    expect(readState(fileA).calls).toEqual({ getPost: 1, unschedulePost: 1 });
+    expect(readState(fileA).calls).toEqual({ getPost: 1 });
     expect(connectionStates).toEqual([{ id: A, state: expect.objectContaining({ ok: false, pauseSeconds: 172_800 }) }]);
     expect(of("set_sync_backoff")).toEqual([]);
     const done = of("complete_unscheduling");
     expect(done.filter((params) => params.p_ok === true).map((params) => params.p_post_id)).toEqual(["p-b1"]);
-    // Rien n'est annoncé annulé pour A : ses deux publications restent « à confirmer ».
+    // Rien n'est annoncé constaté pour A : ses deux publications restent « à confirmer ».
     expect(done.filter((params) => params.p_ok === false).map((params) => params.p_post_id)).toEqual(["p-a1", "p-a2"]);
     expect(readState(fileA).posts.a1.status).toBe("scheduled");
   });

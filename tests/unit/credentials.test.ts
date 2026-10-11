@@ -125,7 +125,7 @@ describe("mode réel et serveur de développement", () => {
     expect(bufferModeProblem()).toBeNull();
   });
 
-  it("les écritures vers le vrai Buffer sont fermées par défaut ; seule CADENCE_BUFFER_WRITES=enabled les ouvre", async () => {
+  it("les écritures vers le vrai Buffer sont fermées par défaut ; seule CADENCE_BUFFER_WRITES=enabled les ouvre — refusé, lecture seule", async () => {
     const { env } = await import("@/server/env");
     Object.assign(process.env, { BUFFER_MODE: "real", NODE_ENV: "production" });
     for (const value of [undefined, "", "1", "true", "Enabled", "disabled"]) {
@@ -133,8 +133,9 @@ describe("mode réel et serveur de développement", () => {
       else process.env.CADENCE_BUFFER_WRITES = value;
       expect(env.bufferWritesEnabled).toBe(false);
     }
+    // La variable n'est plus lue en mode réel : « enabled » n'ouvre rien non plus.
     process.env.CADENCE_BUFFER_WRITES = "enabled";
-    expect(env.bufferWritesEnabled).toBe(true);
+    expect(env.bufferWritesEnabled).toBe(false);
     // Le Buffer simulé n'envoie rien nulle part : la barrière ne le concerne pas.
     delete process.env.CADENCE_BUFFER_WRITES;
     Object.assign(process.env, { BUFFER_MODE: "mock", NODE_ENV: "test" });

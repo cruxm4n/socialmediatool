@@ -8,7 +8,7 @@ Buffer devient l'outil de création, de gestion des médias, de programmation et
 
 **Cible MVP :** brouillon Buffer → synchronisation Cadence → décision client → programmation manuelle dans Buffer.
 
-**Comportement encore présent dans le backend :** l'approbation appelle le moteur de programmation et les synchronisations peuvent programmer ou déprogrammer. En mode réel, la barrière `CADENCE_BUFFER_WRITES` ferme ces écritures par défaut ; ne pas l'activer. Les validations exigent encore une date future. Le flux manuel complet nécessite donc une transition métier et SQL, décrite dans [NEXT_STEPS.md](NEXT_STEPS.md). La suppression des écrans Studio ne réalise pas cette transition.
+**Lecture seule vis-à-vis de Buffer (branche `fix/cadence-read-only-buffer-2026-10-11`) :** une approbation, une demande de modification, un commentaire ou une synchronisation n'écrivent rien dans Buffer. Le client du vrai Buffer ne contient plus aucune mutation et `CADENCE_BUFFER_WRITES` n'est plus lue. La programmation se fait à la main dans Buffer après l'accord ; Cadence constate et signale une programmation sans accord valable, sans pouvoir l'empêcher. L'approbation exige toujours un brouillon daté dans le futur, et la date fait partie de l'accord. Voir [docs/SYNCHRONISATION.md](docs/SYNCHRONISATION.md). L'ancien moteur du Studio (`src/server/studio*.ts`) reste présent mais n'est importé par aucun écran ; ses écritures sont refusées par le client Buffer.
 
 L'interface Studio a été retirée ; ses anciens liens redirigent vers les publications après contrôle administrateur. Les calendriers permettent de consulter, filtrer et ouvrir une fiche. Les données, médias, versions, migrations et tests historiques restent conservés.
 

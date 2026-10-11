@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     default: "Cadence — gestion éditoriale",
     template: "%s · Cadence",
   },
-  description: "Planification, validation et programmation des contenus sociaux multi-clients.",
+  description: "Portail de validation des contenus sociaux multi-clients.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

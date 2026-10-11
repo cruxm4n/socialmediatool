@@ -79,7 +79,7 @@ export function getPostAlerts(post: AlertInput, now: string): PostAlert[] {
     alerts.push({
       level: "error",
       message:
-        "Programmé dans Buffer sans validation du client. Le dashboard ne l'a pas programmé : repassez-le en brouillon dans Buffer si c'est une erreur.",
+        "Programmé dans Buffer sans validation du client : repassez-le en brouillon dans Buffer si c'est une erreur.",
     });
   }
   if (post.bufferStatus === "error") {
@@ -94,12 +94,12 @@ export function getPostAlerts(post: AlertInput, now: string): PostAlert[] {
   if (post.scheduleState === "unschedule_pending") {
     alerts.push({
       level: "warning",
-      message: "Modifié après validation : ce post doit repasser en brouillon dans Buffer (en cours).",
+      message: "Programmé dans Buffer alors que la validation n'est plus valable : repassez-le en brouillon dans Buffer (Cadence n'y modifie rien).",
     });
   }
   if (post.bufferStatus === "draft" && post.approvalStatus !== "none") {
     if (!post.dueAt) {
-      alerts.push({ level: "warning", message: "Aucune date prévue dans Buffer : ce post ne pourra pas être programmé." });
+      alerts.push({ level: "warning", message: "Aucune date prévue dans Buffer : ce post ne pourra pas être approuvé." });
     } else if (Date.parse(post.dueAt) <= Date.parse(now)) {
       alerts.push({ level: "warning", message: "La date prévue est dépassée : modifiez-la dans Buffer." });
     }

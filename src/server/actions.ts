@@ -11,7 +11,7 @@ import { errorCodeIn } from "@/lib/domain/errors";
 import { getSession, homePath } from "@/server/auth";
 import { dispatchNotifications } from "@/server/notifications";
 import { createSessionClient } from "@/server/supabase/clients";
-import { runSync, scheduleApprovedPosts, type SyncResult } from "@/server/sync";
+import { runSync, type SyncResult } from "@/server/sync";
 
 const SESSION_EXPIRED: ActionResult = { ok: false, message: "Votre session a expiré. Reconnectez-vous.", expired: true };
 
@@ -25,7 +25,7 @@ const DECISION_ERRORS: Record<string, string> = {
   stale_version: "La publication a été modifiée depuis son affichage. Rechargez la page pour voir la dernière version.",
   comment_required: "Expliquez la modification souhaitée.",
   date_invalid: "La date prévue de cette publication est absente ou dépassée. Demandez à votre agence de la corriger avant de l'approuver.",
-  date_too_close: "La date prévue est trop proche pour être programmée (moins de 10 minutes). Demandez à votre agence de la repousser avant de l'approuver.",
+  date_too_close: "La date prévue est trop proche (moins de 10 minutes). Demandez à votre agence de la repousser avant de l'approuver.",
   invalid_decision: "Demande invalide.",
 };
 
@@ -74,25 +74,6 @@ function notifySoon(): void {
   }
 }
 
-/**
- * Une action d'administration peut avoir placé des programmations en « annulation à confirmer » (transfert,
- * archivage, retrait d'un membre) : la compensation part tout de suite, une fois la réponse envoyée.
- */
-function compensateSoon(): void {
-  try {
-    after(async () => {
-      try {
-        const { compensatePendingUnschedules } = await import("@/server/sync");
-        await compensatePendingUnschedules();
-      } catch {
-        // La reprise de chaque synchronisation s'en charge.
-      }
-    });
-  } catch {
-    // Hors d'une requête (tests) : la synchronisation suivante compense.
-  }
-}
-
 const decisionSchema = z.object({
   postId: z.string().uuid(),
   expectedHash: z.string().min(1),
@@ -114,29 +95,15 @@ async function decide(decision: "approved" | "changes_requested", input: unknown
 }
 
 /**
- * Approbation par le client, puis programmation immédiate dans Buffer.
- * Les droits sont vérifiés par la fonction SQL decide_post, pas ici.
+ * Approbation par le client. La décision reste interne à Cadence : RIEN n'est envoyé à Buffer. L'agence programme
+ * ensuite la publication à la main dans Buffer. Les droits sont vérifiés par la fonction SQL decide_post, pas ici.
  */
 export async function approvePost(input: { postId: string; expectedHash: string }): Promise<ActionResult> {
   const result = await decide("approved", input);
   if (!result.ok) return result;
-
-  let message = "Publication approuvée et programmée dans Buffer.";
-  try {
-    const scheduling = await scheduleApprovedPosts(result.postId);
-    if (scheduling.writesDisabled) {
-      message = "Publication approuvée. La programmation dans Buffer n'est pas encore activée par votre agence : elle sera faite dès son activation.";
-    } else if (scheduling.paused) {
-      message = "Publication approuvée. Le quota de requêtes Buffer est atteint : la programmation reprendra d'elle-même à la fin de la pause.";
-    } else if (scheduling.scheduled === 0) {
-      message = "Publication approuvée. La programmation dans Buffer n'a pas abouti : votre agence est prévenue et elle sera retentée.";
-    }
-  } catch {
-    message = "Publication approuvée. La programmation dans Buffer sera effectuée à la prochaine synchronisation.";
-  }
   notifySoon();
   revalidatePath("/", "layout");
-  return { ok: true, message };
+  return { ok: true, message: "Publication approuvée. Votre agence la programmera dans Buffer." };
 }
 
 /**
@@ -156,8 +123,7 @@ export async function approvePosts(items: { postId: string; expectedHash: string
     else refused.push({ postId: item.postId, message: result.message });
   }
   if (approved > 0) {
-    // Programmation de tout ce qui vient d'être approuvé ; en cas de panne, la synchronisation suivante s'en charge.
-    await scheduleApprovedPosts().catch(() => undefined);
+    // Décisions internes à Cadence : rien n'est envoyé à Buffer.
     notifySoon();
     revalidatePath("/", "layout");
   }
@@ -252,7 +218,6 @@ export async function setOrganizationArchived(input: { id: string; archived: boo
   if (refusal) return refusal;
   const result = await adminRpc("admin_set_organization_archived", { p_id: parsed.data.id, p_archived: parsed.data.archived });
   if (result.failure) return result.failure;
-  compensateSoon();
   revalidatePath("/", "layout");
   return { ok: true, message: parsed.data.archived ? "Client archivé : ses membres n'ont plus accès." : "Client restauré." };
 }
@@ -276,11 +241,10 @@ export async function assignChannel(input: { channelId: string; organizationId: 
   }
   if (result.failure?.code === "migration_required") return assignChannelLegacy(channelId, organizationId);
   if (result.failure) return result.failure;
-  compensateSoon();
   revalidatePath("/", "layout");
   const suspended = result.data.suspended_posts ?? 0;
   const suspension = suspended > 0
-    ? ` ${suspended} publication${suspended > 1 ? "s" : ""} non publiée${suspended > 1 ? "s" : ""} suspendue${suspended > 1 ? "s" : ""} (validation retirée) ; l'annulation des programmations déjà acceptées par Buffer est lancée tout de suite et sera confirmée dans le suivi (reprise à chaque synchronisation si elle échoue).`
+    ? ` ${suspended} publication${suspended > 1 ? "s" : ""} non publiée${suspended > 1 ? "s" : ""} suspendue${suspended > 1 ? "s" : ""} (validation retirée). Si certaines sont déjà programmées dans Buffer, repassez-les en brouillon dans Buffer : Cadence n'y modifie rien.`
     : "";
   if (!organizationId) return { ok: true, message: `Canal détaché.${suspension}` };
   return {
@@ -339,7 +303,6 @@ export async function setMember(input: { organizationId: string; userId: string;
   if (refusal) return refusal;
   const result = await adminRpc("admin_set_member", { p_organization_id: parsed.data.organizationId, p_user_id: parsed.data.userId, p_member: parsed.data.member });
   if (result.failure) return result.failure;
-  if (!parsed.data.member) compensateSoon();
   revalidatePath("/", "layout");
   return { ok: true, message: parsed.data.member ? "Accès accordé." : "Accès retiré." };
 }

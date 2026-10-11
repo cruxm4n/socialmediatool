@@ -58,6 +58,6 @@ function bufferState(mode: "real" | "mock", buffer: { accounts: number; writesEn
   if (buffer.problem) return { key: "configuration", dot: "bg-tone-red", title: "Buffer : configuration à corriger", text: "Aucune opération vers Buffer n'a lieu tant que la configuration du serveur n'est pas corrigée.", link: "Voir les paramètres" };
   if (buffer.accounts === 0) return { key: "aucun-compte", dot: "bg-tone-red", title: "Aucun compte Buffer connecté", text: "Rien n'est lu ni envoyé. Connectez le compte Buffer de chaque client.", link: "Connecter un compte" };
   const accounts = `${buffer.accounts} compte${buffer.accounts > 1 ? "s" : ""} Buffer connecté${buffer.accounts > 1 ? "s" : ""}`;
-  if (!buffer.writesEnabled) return { key: "lecture-seule", dot: "bg-tone-amber", title: `${accounts} — lecture seule`, text: "Les publications sont lues dans Buffer. L'envoi et la programmation ne sont pas activés sur ce serveur.", link: null };
+  if (!buffer.writesEnabled) return { key: "lecture-seule", dot: "bg-tone-amber", title: `${accounts} — lecture seule`, text: "Les publications sont lues dans Buffer. Cadence n'y modifie rien : la programmation s'y fait à la main.", link: null };
   return { key: "connecte", dot: "bg-tone-green", title: accounts, text: "Les publications se créent dans Buffer. Ce tableau de bord gère leur validation.", link: null };
 }

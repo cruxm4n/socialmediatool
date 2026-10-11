@@ -37,7 +37,8 @@ services:
       # joignable depuis Internet tant qu'un reverse proxy HTTPS n'est pas configuré.
       - "127.0.0.1:3000:3000"
 
-  # Planificateur : demande une synchronisation Buffer toutes les SYNC_INTERVAL_MINUTES (5 par défaut).
+  # Planificateur : demande une LECTURE de Buffer toutes les SYNC_INTERVAL_MINUTES (60 par défaut). Cadence ne
+  # modifie jamais Buffer. Chaque compte Buffer est lu séparément, avec son propre quota (docs/SYNCHRONISATION.md).
   # Désactivé par défaut. Activation : docker compose --profile scheduler up -d scheduler
   scheduler:
     profiles: ["scheduler"]
@@ -56,7 +57,6 @@ services:
       CADENCE_URL: http://web:3000
     volumes:
       - ./scripts/sync-tick.sh:/sync-tick.sh:ro
-      - ./scripts/urgent-tick.sh:/urgent-tick.sh:ro
-    # Deux boucles : lecture générale toutes les SYNC_INTERVAL_MINUTES ; surveillance du traitement URGENT chaque minute
-    # (indépendante de l'intervalle général : une annulation en attente ne doit jamais attendre le prochain poll).
-    entrypoint: ["/bin/sh", "-c", "(while true; do /bin/sh /urgent-tick.sh || true; sleep 60; done) & while true; do /bin/sh /sync-tick.sh || true; sleep $$(( $${SYNC_INTERVAL_MINUTES:-5} * 60 )); done"]
+    # Une seule boucle : lecture générale toutes les SYNC_INTERVAL_MINUTES. Il n'y a plus de traitement urgent à la
+    # minute (Cadence ne programme ni n'annule rien) : il relirait Buffer chaque minute et consommerait le quota.
+    entrypoint: ["/bin/sh", "-c", "while true; do /bin/sh /sync-tick.sh || true; sleep $$(( $${SYNC_INTERVAL_MINUTES:-60} * 60 )); done"]

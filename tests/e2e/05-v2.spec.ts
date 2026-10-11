@@ -15,7 +15,7 @@ test.describe("administrateur", () => {
     expect(await syncViaApi(request)).toMatchObject({ ok: true });
     await page.goto("/admin/synchronisation");
     await expect(page.getByTestId("sync-state")).toHaveAttribute("data-level", "ok");
-    await expect(page.getByTestId("sync-state")).toContainText("Actif, toutes les 5 min");
+    await expect(page.getByTestId("sync-state")).toContainText("Actif, toutes les 60 min");
     await expect(page.getByTestId("last-sync")).toHaveAttribute("data-level", "ok");
   });
 

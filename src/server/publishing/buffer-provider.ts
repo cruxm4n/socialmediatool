@@ -1,6 +1,7 @@
 import type { BufferStatus, PostAsset } from "@/lib/types";
 import {
   ProviderError,
+  readOnlyRefusal,
   type DraftContent,
   type DraftLookup,
   type ProviderChannel,
@@ -97,7 +98,6 @@ export function accountLabel(name: string | null | undefined, email: string | nu
 export class BufferProvider implements PublishingProvider {
   readonly mode = "real" as const;
   private organizationIds: string[] | null = null;
-  private reviewTagIds = new Map<string, string>();
   private lastRateLimit: RateLimit | null = null;
 
   private identityChecked = false;
@@ -162,6 +162,8 @@ export class BufferProvider implements PublishingProvider {
 
   private async send<T>(query: string, variables: Record<string, unknown>): Promise<T> {
     const isMutation = query.trimStart().startsWith("mutation");
+    // Dernier garde-fou : même si une mutation était réintroduite plus haut, elle ne quitterait pas le serveur.
+    if (isMutation) throw readOnlyRefusal();
     let response: Response;
     try {
       response = await this.fetchImpl(ENDPOINT, {
@@ -330,125 +332,17 @@ export class BufferProvider implements PublishingProvider {
   }
 
   /*
-   * editPost exige de renvoyer le texte (ou un média) : sans cela Buffer répond
-   * « Post must have either text or media ». Médias et tags omis sont conservés.
+   * LECTURE SEULE. Cadence ne crée, ne modifie, ne programme et ne déprogramme rien dans Buffer : tout cela se fait à
+   * la main dans Buffer. Ce fournisseur ne contient plus aucune mutation ; les opérations d'écriture du contrat sont
+   * refusées ici, sans appel réseau et quelle que soit la configuration (CADENCE_BUFFER_WRITES n'a plus d'effet).
    */
-  private async edit(post: ProviderPost, saveToDraft: boolean): Promise<ProviderPost> {
-    const input: Record<string, unknown> = { id: post.id, saveToDraft };
-    if (post.text.trim().length > 0) {
-      input.text = post.text;
-    } else {
-      input.assets = post.assets.map((asset) =>
-        asset.type === "video" ? { video: { url: asset.source } } : { image: { url: asset.source } },
-      );
-    }
-    if (!saveToDraft) {
-      input.mode = "customScheduled";
-      input.schedulingType = post.schedulingType ?? "automatic";
-      input.dueAt = post.dueAt;
-    }
-
-    const data = await this.request<{ editPost: { __typename: string; message?: string; post?: RawPost } }>(
-      `mutation Edit($input: EditPostInput!) {
-        editPost(input: $input) {
-          __typename
-          ... on PostActionSuccess { post { ${POST_FIELDS} } }
-          ... on MutationError { message }
-        }
-      }`,
-      { input },
-    );
-    return this.toPost(this.postOf("editPost", data.editPost));
-  }
-
-  /** Envoie une création ou une modification et renvoie le post obtenu, ou lève le refus de Buffer. */
-  private async mutate(name: "createPost" | "editPost", type: "CreatePostInput" | "EditPostInput", input: Record<string, unknown>): Promise<ProviderPost> {
-    const data = await this.request<Record<string, { __typename: string; message?: string; post?: RawPost }>>(
-      `mutation Write($input: ${type}!) {
-        ${name}(input: $input) {
-          __typename
-          ... on PostActionSuccess { post { ${POST_FIELDS} } }
-          ... on MutationError { message }
-        }
-      }`,
-      { input },
-    );
-    return this.toPost(this.postOf(name, data[name]));
-  }
-
-  /**
-   * Post d'un résultat de mutation. Un refus typé (« message ») est un échec certain (documentation Buffer :
-   * erreurs corrigeables par l'utilisateur). Un résultat sans post ni message, ou absent, ne dit rien de l'effet :
-   * résultat inconnu, jamais une nouvelle création automatique.
-   */
-  private postOf(name: string, result: { __typename?: string; message?: string; post?: RawPost } | null | undefined): RawPost {
-    if (result?.post) return result.post;
-    const what = name === "createPost" ? "la création" : "la modification";
-    if (result?.message) throw new ProviderError(`Buffer a refusé ${what} : ${result.message}`);
-    throw new ProviderError(`Réponse de Buffer sans résultat pour ${what} (${result?.__typename ?? "absente"}) : l'opération a peut-être été appliquée.`, "api", undefined, "unknown");
-  }
-
-  /** Identifiant du tag de validation dans l'organisation Buffer du canal. Le tag n'est jamais créé d'ici. */
-  private async reviewTagIdFor(channelId: string): Promise<string> {
-    const { channel } = await this.request<{ channel: { organizationId: string } }>(
-      `query Channel($id: ChannelId!) { channel(input: { id: $id }) { organizationId } }`,
-      { id: channelId },
-    );
-    const cached = this.reviewTagIds.get(channel.organizationId);
-    if (cached) return cached;
-    const data = await this.request<{ tagsV2: { edges: { node: { id: string; name: string } }[] } }>(
-      `query Tags($org: OrganizationId!) { tagsV2(first: 100, input: { organizationId: $org }) { edges { node { id name } } } }`,
-      { org: channel.organizationId },
-    );
-    const wanted = normalize(this.reviewTag);
-    const tag = data.tagsV2.edges.find((edge) => normalize(edge.node.name) === wanted);
-    if (!tag) throw new ProviderError(`Le tag « ${this.reviewTag} » n'existe pas dans Buffer : créez-le dans Buffer avant d'envoyer un contenu en validation.`);
-    this.reviewTagIds.set(channel.organizationId, tag.node.id);
-    return tag.node.id;
-  }
-
-  /** Champs de contenu communs à la création et à la modification. Toujours en brouillon. */
-  private draftInput(content: DraftContent): Record<string, unknown> {
-    const hasVideo = content.assets.some((asset) => asset.type === "video");
-    const metadata =
-      content.service === "instagram"
-        ? { instagram: { type: content.assets.length > 1 ? "carousel" : hasVideo ? "reel" : "post", shouldShareToFeed: true } }
-        : content.service === "facebook"
-          ? { facebook: { type: "post" } }
-          : undefined;
-    return {
-      text: content.text,
-      dueAt: content.dueAt,
-      mode: "customScheduled",
-      schedulingType: "automatic",
-      saveToDraft: true,
-      assets: content.assets.map((asset) => (asset.type === "video" ? { video: { url: asset.url } } : { image: { url: asset.url } })),
-      ...(metadata ? { metadata } : {}),
-    };
-  }
-
-  /** Garde-fou : quoi que Buffer ait fait, un contenu du Studio ne reste jamais programmé sans validation. */
-  private async ensureDraft(post: ProviderPost): Promise<ProviderPost> {
-    if (post.status === "draft") return post;
-    if (post.status === "scheduled" || post.status === "needs_approval") return this.unschedulePost(post);
-    throw new ProviderError(`Buffer a renvoyé un statut inattendu (« ${post.status} ») : vérifiez ce post dans Buffer.`);
+  private refuseWrite(): never {
+    throw readOnlyRefusal();
   }
 
   async createDraft(content: DraftContent): Promise<ProviderPost> {
-    // La recherche du tag précède toute écriture : son échec ne prouve rien d'une création (aucune n'a été tentée).
-    let tagId: string;
-    try {
-      tagId = await this.reviewTagIdFor(content.channelId);
-    } catch (error) {
-      throw error instanceof ProviderError ? new ProviderError(error.message, error.kind, error.retryAfterSeconds, "failed") : error;
-    }
-    const created = await this.mutate("createPost", "CreatePostInput", { channelId: content.channelId, tagIds: [tagId], source: "cadence", ...this.draftInput(content) });
-    try {
-      return await this.ensureDraft(created);
-    } catch (error) {
-      // Le brouillon existe : son identifiant accompagne l'erreur pour ne jamais être perdu (ni recréé).
-      throw (error instanceof ProviderError ? error : new ProviderError(error instanceof Error ? error.message : String(error))).withCreatedPost(created.id);
-    }
+    void content;
+    return this.refuseWrite();
   }
 
   /**
@@ -474,36 +368,22 @@ export class BufferProvider implements PublishingProvider {
   }
 
   async updateDraft(postId: string, content: DraftContent): Promise<ProviderPost> {
-    return this.ensureDraft(await this.mutate("editPost", "EditPostInput", { id: postId, ...this.draftInput(content) }));
+    void postId; void content;
+    return this.refuseWrite();
   }
 
   async rescheduleDraft(post: ProviderPost, dueAt: string): Promise<ProviderPost> {
-    if (post.status !== "draft") throw new ProviderError("Seul un brouillon peut changer de date depuis Cadence.");
-    // Comme pour la programmation : Buffer exige le texte (ou un média). Médias et tags omis sont conservés.
-    const content = post.text.trim().length > 0
-      ? { text: post.text }
-      : { assets: post.assets.map((asset) => (asset.type === "video" ? { video: { url: asset.source } } : { image: { url: asset.source } })) };
-    const moved = await this.mutate("editPost", "EditPostInput", {
-      id: post.id, saveToDraft: true, mode: "customScheduled", schedulingType: post.schedulingType ?? "automatic", dueAt, ...content,
-    });
-    return this.ensureDraft(moved);
+    void post; void dueAt;
+    return this.refuseWrite();
   }
 
   async schedulePost(post: ProviderPost): Promise<ProviderPost> {
-    if (!post.dueAt) throw new ProviderError("Ce post n'a pas de date prévue.");
-    const result = await this.edit(post, false);
-    if (result.status !== "scheduled") {
-      // Buffer a répondu mais a changé le post d'une autre façon : l'effet est réel, il ne s'agit pas d'un refus.
-      throw new ProviderError(`Buffer n'a pas programmé le post (statut « ${result.status} »).`, "api", undefined, "unknown");
-    }
-    return result;
+    void post;
+    return this.refuseWrite();
   }
 
   async unschedulePost(post: ProviderPost): Promise<ProviderPost> {
-    const result = await this.edit(post, true);
-    if (result.status !== "draft") {
-      throw new ProviderError(`Buffer n'a pas repassé le post en brouillon (statut « ${result.status} »).`);
-    }
-    return result;
+    void post;
+    return this.refuseWrite();
   }
 }

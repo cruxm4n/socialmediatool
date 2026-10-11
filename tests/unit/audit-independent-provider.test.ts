@@ -1,5 +1,6 @@
 import {describe,it,expect,vi} from "vitest";
 import {BufferProvider} from "@/server/publishing/buffer-provider";
+import {BUFFER_READ_ONLY} from "@/server/publishing/provider";
 import type {DraftContent} from "@/server/publishing/provider";
 const due="2030-01-15T09:00:00.000Z";
 const raw={id:"created-1",channelId:"c1",channelService:"linkedin",text:"Audit",dueAt:due,status:"draft",sentAt:null,updatedAt:null,externalLink:null,schedulingType:"automatic",error:null,tags:[{name:"À valider"}],assets:[]};
@@ -15,15 +16,15 @@ function provider(write:()=>Response){
  return new BufferProvider("audit-fake-key","À valider",fetchImpl as typeof fetch);
 }
 describe("Contre-audit provider — aucune API réelle",()=>{
- it("une mutation HTTP 200 avec UNEXPECTED ne prouve pas un échec certain",async()=>{
-  const p=provider(()=>json({data:null,errors:[{message:"Internal server error",extensions:{code:"UNEXPECTED"}}]}));
-  const error=await p.createDraft(content).catch(e=>e);expect(error.outcome).toBe("unknown");
+ it("une mutation HTTP 200 avec UNEXPECTED ne prouve pas un échec certain — refusé, lecture seule",async()=>{
+  const write=vi.fn(()=>json({data:null,errors:[{message:"Internal server error",extensions:{code:"UNEXPECTED"}}]}));
+  const p=provider(write);
+  const error=await p.createDraft(content).catch(e=>e);expect(error).toMatchObject({message:BUFFER_READ_ONLY,outcome:"failed",refusal:"writes_disabled"});expect(write).not.toHaveBeenCalled();
  });
- it("un succès GraphQL accompagné d'un avertissement ne doit pas perdre son identifiant",async()=>{
-  const p=provider(()=>json({data:{createPost:{__typename:"PostActionSuccess",post:raw}},errors:[{message:"Warning from another field"}]}));
-  let id:string|undefined;
-  try{id=(await p.createDraft(content)).id;}catch(e){id=(e as {createdPostId?:string}).createdPostId;}
-  expect(id).toBe("created-1");
+ it("un succès GraphQL accompagné d'un avertissement ne doit pas perdre son identifiant — refusé, lecture seule",async()=>{
+  const write=vi.fn(()=>json({data:{createPost:{__typename:"PostActionSuccess",post:raw}},errors:[{message:"Warning from another field"}]}));
+  const p=provider(write);
+  const error=await p.createDraft(content).catch(e=>e);expect(error).toMatchObject({message:BUFFER_READ_ONLY,outcome:"failed",refusal:"writes_disabled"});expect(write).not.toHaveBeenCalled();
  });
  it("la réconciliation ne doit pas déclarer absent un post existant en erreur",async()=>{
   const fetchImpl=vi.fn(async(_url:unknown,init?:RequestInit)=>{
@@ -34,8 +35,9 @@ describe("Contre-audit provider — aucune API réelle",()=>{
   const p=new BufferProvider("audit-fake-key","À valider",fetchImpl as typeof fetch);
   const r=await p.findDraftCandidates({channelId:"c1",text:"Audit",dueAt:due});expect(r.candidates.length).toBe(1);
  });
- it("un 429 conserve un Retry-After long fourni par Buffer",async()=>{
-  const p=provider(()=>json({}, {"retry-after":"172800"},429));
-  const error=await p.updateDraft("p",content).catch(e=>e);expect(error.retryAfterSeconds).toBe(172800);
+ it("un 429 conserve un Retry-After long fourni par Buffer — refusé, lecture seule",async()=>{
+  const write=vi.fn(()=>json({}, {"retry-after":"172800"},429));
+  const p=provider(write);
+  const error=await p.updateDraft("p",content).catch(e=>e);expect(error).toMatchObject({message:BUFFER_READ_ONLY,outcome:"failed",refusal:"writes_disabled"});expect(write).not.toHaveBeenCalled();
  });
 });
