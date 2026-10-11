@@ -369,7 +369,9 @@ describe("contrôle indépendant multi-comptes — PostgreSQL natif et deux faux
   it("N17 — invariant : révocation normale et réservation concurrentes ne laissent jamais une programmation sans clé", async () => {
     const pa = await approved("A");
     // La révocation a validé « aucun effet », mais sa transaction n'a pas encore été rendue visible.
-    const revoking = transaction(`begin; select set_config('request.jwt.claim.sub','${adminId}',false); set role authenticated; select public.admin_revoke_provider_connection('${A}',false); select pg_sleep(3); commit;`, '"revoked": true');
+    // Le rôle anon de la pile Supabase a un statement_timeout de 3 s : maintenir le verrou 2 s
+    // suffit après le signal ready, sans confondre ce délai de sécurité avec une corruption d'état.
+    const revoking = transaction(`begin; select set_config('request.jwt.claim.sub','${adminId}',false); set role authenticated; select public.admin_revoke_provider_connection('${A}',false); select pg_sleep(2); commit;`, '"revoked": true');
     await revoking.ready;
     await scheduleApprovedPosts(pa.localId);
     await revoking.done();

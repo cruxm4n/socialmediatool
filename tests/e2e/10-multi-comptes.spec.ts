@@ -1,7 +1,7 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
 
 import { requireEnv } from "../support/env";
-import { authFile, mockBuffer, syncViaApi } from "./helpers";
+import { authFile, automationHeaders, mockBuffer, syncViaApi } from "./helpers";
 
 /*
  * Deux clients, deux comptes Buffer SYNTHÉTIQUES distincts, de bout en bout dans un vrai navigateur.
@@ -149,7 +149,10 @@ test.describe.serial("deux clients, deux comptes Buffer synthétiques", () => {
     await expect(page.getByText("La programmation dans Buffer n'a pas abouti")).toBeVisible();
     expect((await statusOf(request, "A", "bienvenue-ig")).scheduleCalls).toBe(1);
 
-    const sync = await syncViaApi(request);
+    const response = await request.post("/api/automation/sync", { headers: automationHeaders() });
+    expect(response.status()).toBe(502);
+    const sync = await response.json();
+    expect(sync).toMatchObject({ ok: false, scheduleFailures: 1 });
     expect(JSON.stringify(sync)).toContain("non lu");
     const adminPage = await admin(browser);
     await adminPage.goto("/admin/parametres");

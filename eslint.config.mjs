@@ -13,6 +13,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    "test-results/**",
+    "playwright-report/**",
+    ".captures/**",
   ]),
   {
     // Contre-tests du contre-audit indépendant, importés TELS QUELS (leurs attentes ne sont pas modifiées).
